@@ -55,6 +55,7 @@ for key in metadata.keys():
 #Display a table of metadata
 pd.set_printoptions(max_colwidth=-1)
 display.HTML(metadata[['bamName', 'celltypeoforigin', 'celltissuesourcepreinduction', 'disease', 'diffnameshort', 'run', 'lane', 'index', 'donorsex.cell.lines', 'numberofreads', 'uniquelyalignedreads', 'ratio']].to_html())
+#display.HTML(metadata.to_html())
 
 # <markdowncell>
 
@@ -69,7 +70,8 @@ print data.shape
 
 # <markdowncell>
 
-# Fillter out those genes where more than 90% of the samples have 0 expression and variance <=.5
+# #Filter and Normalize
+# Fillter out those genes where more than 90% of the samples have 0 expression and variance <=.2
 # Then normalize by subtracting the mean of each row.
 # Visualize
 
@@ -84,7 +86,7 @@ geneLoci = geneLoci[idx]
 
 #Log transform and mean Center
 dataNorm=np.log2(data+1)
-dataNorm=scale(dataNorm, center=True, scale=True)
+dataNorm=scale(dataNorm, center=True, scale=False)
 print dataNorm.shape
 
 #Plot distribution and standard deviation
@@ -95,6 +97,10 @@ n, bins, patches = pylab.hist(dataNorm.flatten(), 100, normed=True);
 pylab.plot(bins, stats.norm.pdf(bins, mu, sigma), 'r', linewidth=2)
 pylab.subplot(1,2,2);
 pylab.hist(np.std(dataNorm,1),100);
+
+# <markdowncell>
+
+# #Perform SVD analysis
 
 # <codecell>
 
