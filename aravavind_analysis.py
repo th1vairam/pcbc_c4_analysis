@@ -11,8 +11,12 @@ import scipy.stats as stats
 from MicroArray import QaD_SVD, scale
 
 DATA_ID = 'syn1968267'
-METADATA_ID = 'syn2024470'
+METADATA_ID = 'syn2248030'
 syn = synapseclient.login()
+
+# <codecell>
+
+syn.onweb(METADATA_ID)
 
 # <markdowncell>
 
@@ -29,8 +33,11 @@ dataEnt=syn.get(DATA_ID)
 df=pd.read_csv(dataEnt.path,sep='\t', index_col=0)
 genes, geneNames, geneLoci = np.asarray(df.index, dtype=np.str), np.asarray(df['symbol'], dtype=np.str), np.asarray(df['locus'], dtype=np.str)
 df = df.drop(['symbol', 'locus'], axis=1)
-labels = np.asarray(df.keys())
-data = df.as_matrix()
+
+#Drop the sex confounded genes and pseudogenes
+
+#labels = np.asarray(df.keys())
+#data = df.as_matrix()
 
 # <markdowncell>
 
