@@ -4,16 +4,16 @@
 # <codecell>
 
 import synapseclient
-import IPython.display as display
-from IPython.core.display import display as display2
 import numpy as np
 import pandas as pd
 import scipy.stats as stats
 import statsmodels.formula.api as sm
+import statsmodels.stats.multitest as smm
+import IPython.display as display
+
 import MicroArray
 from synapseHelpers import query2df
 from toppGenePost import ToppGeneEnrichement
-from multiprocessing import Pool
 
 EXPR_ID = 'syn1968267'
 METH_ID = 'syn2233188'
@@ -21,7 +21,6 @@ MIRSEQ_ID = 'syn2233189'
 METADATA_ID = 'syn2248030'
 pd.set_option('max_columns', 200)
 syn = synapseclient.login()
-pool=Pool()
 
 # <markdowncell>
 
@@ -77,6 +76,9 @@ pylab.xticks(range(metadata.shape[1]), metadata.columns, rotation=90)
 pylab.yticks(range(metadata.shape[1]), metadata.columns)
 pylab.title('Similarity betweeen covariates')
 print 
+
+# <codecell>
+
 
 # <markdowncell>
 
@@ -151,11 +153,11 @@ logExprData.ix[:,:] = logExprData.ix[:,:]/logExprData.ix[:,:].std(skipna=True)
 
 # <codecell>
 
-reload(MicroArray)
 #Standardize each row (gene) to z-score
 d = logExprData.T - logExprData.T.mean(skipna=True)
 d.ix[:,:] = d.ix[:,:]/d.ix[:,:].std(skipna=True)
 pylab.figure(figsize=(20,20))
+#Perfrom SVD analysis
 u, s, vt = MicroArray.QaD_SVD(d.T, metadata.drop('diffnameshort', axis=1));
 
 # <codecell>
@@ -226,24 +228,83 @@ for i in range(2):
 
 # <codecell>
 
-%%time
-#Put the data into temporary datastructure
-df = logExprDataNorm.T
-#I have to temporarily rename the genes to work with Patsy formulas
-df.columns = ['gene_%i' %i for i in range(len(df.columns))] 
-df['origcell'] = metadata['origcell']
-df['inductiongenes'] = metadata['inductiongenes']
+def runModels(data):
+    #Put the data into temporary datastructure
+    df = data.T
+    #I have to temporarily rename the genes to work with Patsy formulas
+    df.columns = ['gene_%i' %i for i in range(len(df.columns))] 
+    df['origcell'] = metadata['origcell']
+    df['inductiongenes'] = metadata['inductiongenes']
 
-def model(geneName):
-    mod1 = sm.ols('%s ~ origcell' %geneName, df)
-    mod2 = sm.ols('%s ~ inductiongenes' %geneName, df)
-    return mod1.fit().f_pvalue, mod2.fit().f_pvalue
+    def model(geneName):
+        mod1 = sm.ols('%s ~ origcell' %geneName, df)
+        mod2 = sm.ols('%s ~ inductiongenes' %geneName, df)
+        return mod1.fit().f_pvalue, mod2.fit().f_pvalue
     
-pvals = np.asarray(pool.map(model, df.columns[:-2]))
+    #from multiprocessing import Pool
+    #pool = Pool()
+    pvals = map(model, df.columns[:-2])
+    #pool.join()
+    pvals = np.asarray(pvals)
     
-models = pd.DataFrame(symbol.copy())
-models['origcell_models']=pvals[:,0]
-models['inductiongenes_models']=pvals[:,1]
-#models['p_origcell'] = [x.f_pvalue for x in model_origcell]
-#models['p_inductiongenes']=[x.f_pvalue for x in model_inductiongenes]  
+    models = pd.DataFrame(symbol.copy())
+    models['origcell']=pvals[:,0]
+    models['inductiongenes']=pvals[:,1]
+    return models
+
+normPvals = runModels(logExprDataNorm)
+origPvals = runModels(logExprData)
+
+# <markdowncell>
+
+# ###Compare these models to the genelists found by Nathan
+
+# <codecell>
+
+import matplotlib_venn
+
+#Determine significant genes using Benjamini-Hochberg FDR correction
+def filterPvals2GeneSymbols(pvals):
+    pval_pass = smm.multipletests(pvals, alpha=0.05, method='fdr_bh')[0]
+    return symbol[pval_pass]
+
+coi_signficant_logExprData= filterPvals2GeneSymbols(origPvals.origcell)
+coi_signficant_logExprDataNorm= filterPvals2GeneSymbols(normPvals.origcell)
+nathan_coi=pd.DataFrame.from_csv('COI-GeneExpression-signatures.csv')
+matplotlib_venn.venn3([set(coi_signficant_logExprData), set(coi_signficant_logExprDataNorm),  
+                       set(nathan_coi.index)], 
+                       set_labels=['unormalized', 'normalized', 'AltAnalyze'])
+pylab.title('Significant Gene counts for COI')
+
+
+
+#pd.DataFrame.from_csv('Vectors-GeneExpression-signatures.csv')
+
+# <codecell>
+
+inductiongenes_signficant_logExprData= filterPvals2GeneSymbols(origPvals.inductiongenes)
+inductiongenes_signficant_logExprDataNorm= filterPvals2GeneSymbols(normPvals.inductiongenes)
+nathan_inductiongenes=pd.DataFrame.from_csv('GeneCombinations-GeneExpression-signatures.csv')
+matplotlib_venn.venn3([set(inductiongenes_signficant_logExprData), set(inductiongenes_signficant_logExprDataNorm),  
+                       set(nathan_inductiongenes.index)], 
+                       set_labels=['unormalized', 'normalized', 'AltAnalyze'])
+pylab.title('Significant Gene counts for Induction Genes')
+
+# <markdowncell>
+
+# ####Explore some of the specific different genes
+
+# <codecell>
+
+diffSet = list(set(coi_signficant_logExprDataNorm) -  set(nathan_coi.index))
+i = np.where(symbol==diffSet[1])[0][0]
+print i
+pd.concat([logExprDataNorm.ix[i,:], metadata['origcell']], axis=1).boxplot(by='origcell')
+pylab.xticks(rotation=90)
+#df = pd.concat([logExprData.ix[i,:], metadata['donorsex'], metadata['cnv'], metadata['ratio']], axis=1)
+#df.columns = ['gene', 'gender', 'cnv', 'ratio']
+
+# <markdowncell>
+
+# **Ah** This seems to be due to HESC vs iPSC - should HESC be excluded for COI analysis?
 
