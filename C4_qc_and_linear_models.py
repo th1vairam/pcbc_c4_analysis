@@ -236,6 +236,10 @@ def runModels(data):
     df['origcell'] = metadata['origcell']
     df['inductiongenes'] = metadata['inductiongenes']
 
+    #Exclude HESCs
+    #idx = metadata.linetype !='hESC'
+    #df = df.ix[idx,:]
+    
     def model(geneName):
         mod1 = sm.ols('%s ~ origcell' %geneName, df)
         mod2 = sm.ols('%s ~ inductiongenes' %geneName, df)
@@ -277,9 +281,6 @@ matplotlib_venn.venn3([set(coi_signficant_logExprData), set(coi_signficant_logEx
 pylab.title('Significant Gene counts for COI')
 
 
-
-#pd.DataFrame.from_csv('Vectors-GeneExpression-signatures.csv')
-
 # <codecell>
 
 inductiongenes_signficant_logExprData= filterPvals2GeneSymbols(origPvals.inductiongenes)
@@ -297,7 +298,7 @@ pylab.title('Significant Gene counts for Induction Genes')
 # <codecell>
 
 diffSet = list(set(coi_signficant_logExprDataNorm) -  set(nathan_coi.index))
-i = np.where(symbol==diffSet[1])[0][0]
+i = np.where(symbol==diffSet[8])[0][0]
 print i
 pd.concat([logExprDataNorm.ix[i,:], metadata['origcell']], axis=1).boxplot(by='origcell')
 pylab.xticks(rotation=90)
