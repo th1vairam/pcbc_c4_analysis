@@ -77,9 +77,6 @@ pylab.yticks(range(metadata.shape[1]), metadata.columns)
 pylab.title('Similarity betweeen covariates')
 print 
 
-# <codecell>
-
-
 # <markdowncell>
 
 # Looking at these p-values and extracting the contigency tables of the extremely significant variables below a story emerges where some of these significant associations are expected while others might be more problematic.
@@ -128,6 +125,12 @@ exprData = exprData[cols]
 
 # <codecell>
 
+#Remove non protein coding genes
+biomart = pd.DataFrame.from_csv('biomart_ensembl_biotype.tsv', sep='\t')
+idx = biomart.index[biomart['Gene Biotype']=='protein_coding']
+exprData = exprData.select(lambda i: i.split('.')[0] in idx)
+print exprData.shape
+
 #Remove genes with excessive non-expressed samples (i.e >80% of samples with 0 expression)
 idx = (exprData==0).sum(1)/float(exprData.shape[1]-2) <=.2
 #AND low variance across samples
@@ -148,8 +151,8 @@ print exprData.shape
 ##Log transform data
 logExprData = np.log2(exprData.ix[:,:]+1)
 ##normalize each sample to be z-score
-logExprData = logExprData - logExprData.mean(skipna=True)
-logExprData.ix[:,:] = logExprData.ix[:,:]/logExprData.ix[:,:].std(skipna=True)
+logExprData = logExprData - logExprData.median(skipna=True)
+#logExprData = logExprData/logExprData.std(skipna=True)
 
 # <codecell>
 
@@ -158,7 +161,12 @@ d = logExprData.T - logExprData.T.mean(skipna=True)
 d.ix[:,:] = d.ix[:,:]/d.ix[:,:].std(skipna=True)
 pylab.figure(figsize=(20,20))
 #Perfrom SVD analysis
+#import mpld3
+
+#mpld3.enable_notebook()
 u, s, vt = MicroArray.QaD_SVD(d.T, metadata.drop('diffnameshort', axis=1));
+#mpld3.display.fig_to_d3?
+
 
 # <codecell>
 
@@ -191,15 +199,26 @@ ToppGeneEnrichement(pd.concat([symbol[idx][:100], symbol[idx][-100:]]))
 logExprDataNorm = np.empty_like(exprData.as_matrix())
 for i in range(exprData.shape[0]):
     #Build up data frame of gene and covariates
-    df = pd.concat([logExprData.ix[i,:], metadata['donorsex'], metadata['cnv'], metadata['ratio']], axis=1)
-    df.columns = ['gene', 'gender', 'cnv', 'ratio']
+    df = pd.concat([logExprData.ix[i,:], metadata['donorsex'], metadata['cnv'], 
+                    metadata['ratio'], metadata['run'], metadata['origlab']], axis=1)
+    df.columns = ['gene', 'gender', 'cnv', 'ratio', 'run', 'origlab']
     #Fit model
-    mod = sm.ols('gene ~ gender + cnv', df)
+    mod = sm.ols('gene ~ gender', df)
     res = mod.fit()
     df['res']=res.resid
     logExprDataNorm[i,:] = df['res']
     #df.boxplot(['gene','res'], by=['gender'])
 logExprDataNorm = pd.DataFrame(logExprDataNorm, columns=exprData.columns, index=exprData.index)
+
+# <markdowncell>
+
+# ###Save output to Synapse
+
+# <codecell>
+
+logExprDataNorm.to_csv('normalized_log_transformed_data.tsv', sep='\t')
+file = syn.store(synapseclient.File('normalized_log_transformed_data.tsv'), used=[EXPR_ID, METADATA_ID], executed='syn2480756')
+syn.onweb(file)
 
 # <markdowncell>
 
@@ -257,7 +276,24 @@ def runModels(data):
     return models
 
 normPvals = runModels(logExprDataNorm)
-origPvals = runModels(logExprData)
+#origPvals = runModels(logExprData)
+
+# <rawcell>
+
+# ##Store the pvalues to synapse
+# models = pd.DataFrame(symbol.copy())
+# models['coi_fdr_corrected_p (normalized data)'] = smm.multipletests(normPvals.origcell, alpha=0.05, method='fdr_bh')[1]
+# models['genes_fdr_corrected_p (normalized data)'] = smm.multipletests(normPvals.inductiongenes, alpha=0.05, method='fdr_bh')[1]
+# 
+# models['coi_fdr_corrected_p (uncorrected data)'] = smm.multipletests(origPvals.origcell, alpha=0.05, method='fdr_bh')[1]
+# models['genes_fdr_corrected_p (uncorrected data)'] = smm.multipletests(origPvals.inductiongenes, alpha=0.05, method='fdr_bh')[1]
+# 
+# models.to_csv('model_corrected_pvalues_for_shane.csv')
+# 
+# code = syn.store(synapseclient.File('C4_qc_and_linear_models.ipynb', parent='syn1774100'))
+# ent = synapseclient.File('model_corrected_pvalues_for_shane.csv', parent='syn2332184')
+# ent = syn.store(ent, used=[EXPR_ID, METADATA_ID], executed=code)
+# syn.onweb(ent)   
 
 # <markdowncell>
 
@@ -272,23 +308,26 @@ def filterPvals2GeneSymbols(pvals):
     pval_pass = smm.multipletests(pvals, alpha=0.05, method='fdr_bh')[0]
     return symbol[pval_pass]
 
-coi_signficant_logExprData= filterPvals2GeneSymbols(origPvals.origcell)
+#coi_signficant_logExprData= filterPvals2GeneSymbols(origPvals.origcell)
 coi_signficant_logExprDataNorm= filterPvals2GeneSymbols(normPvals.origcell)
 nathan_coi=pd.DataFrame.from_csv('COI-GeneExpression-signatures.csv')
-matplotlib_venn.venn3([set(coi_signficant_logExprData), set(coi_signficant_logExprDataNorm),  
+matplotlib_venn.venn2([set(coi_signficant_logExprDataNorm),  #set(coi_signficant_logExprData), 
                        set(nathan_coi.index)], 
-                       set_labels=['unormalized', 'normalized', 'AltAnalyze'])
+                       set_labels=['normalized', 'AltAnalyze']) #'unormalized', 
 pylab.title('Significant Gene counts for COI')
+
+display.display_html(ToppGeneEnrichement(coi_signficant_logExprDataNorm, name='COI'))
+print set(nathan_coi.index).intersection(set(coi_signficant_logExprDataNorm))
 
 
 # <codecell>
 
-inductiongenes_signficant_logExprData= filterPvals2GeneSymbols(origPvals.inductiongenes)
+#inductiongenes_signficant_logExprData= filterPvals2GeneSymbols(origPvals.inductiongenes)
 inductiongenes_signficant_logExprDataNorm= filterPvals2GeneSymbols(normPvals.inductiongenes)
 nathan_inductiongenes=pd.DataFrame.from_csv('GeneCombinations-GeneExpression-signatures.csv')
-matplotlib_venn.venn3([set(inductiongenes_signficant_logExprData), set(inductiongenes_signficant_logExprDataNorm),  
+matplotlib_venn.venn2([set(inductiongenes_signficant_logExprDataNorm), #set(inductiongenes_signficant_logExprData), 
                        set(nathan_inductiongenes.index)], 
-                       set_labels=['unormalized', 'normalized', 'AltAnalyze'])
+                       set_labels=['normalized', 'AltAnalyze'])
 pylab.title('Significant Gene counts for Induction Genes')
 
 # <markdowncell>
@@ -298,7 +337,7 @@ pylab.title('Significant Gene counts for Induction Genes')
 # <codecell>
 
 diffSet = list(set(coi_signficant_logExprDataNorm) -  set(nathan_coi.index))
-i = np.where(symbol==diffSet[8])[0][0]
+i = np.where(symbol==diffSet[2])[0][0]
 print i
 pd.concat([logExprDataNorm.ix[i,:], metadata['origcell']], axis=1).boxplot(by='origcell')
 pylab.xticks(rotation=90)
