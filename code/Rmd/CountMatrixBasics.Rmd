@@ -38,7 +38,6 @@ countMat <- as.matrix(countMat)
 ## Metadata
 
 Get the metadata from the table.
-Currently, there is an issue with duplicate records in the sample processing metadata table which is propagated via a join to the RNASeq metadata table. As long as columns being used are related to the cell line and NOT the biological sample, applying a unique filter as below is sufficient.
 
 Lines failing QC are removed (using `pass_qc`), and lines annotated as being 'bad' for some other reason as well (using `bad_lines`). Only samples that are present in the count matrix and the metadata are included; some are likely missing and need to be added.
 
@@ -54,9 +53,6 @@ metadata <- synTableQuery(q)@values
 
 ## Remove fail qc and bad lines
 metadataFinal <- filter(metadata, !bad_lines, pass_qc, UID %in% colnames(countMat))
-
-## Because of metadata problems in the sample processing table, there are duplicates.
-metadataFinal <- metadataFinal %>% select(one_of(colsToUse)) %>% distinct
 
 rownames(metadataFinal) <- metadataFinal$UID
 ```
