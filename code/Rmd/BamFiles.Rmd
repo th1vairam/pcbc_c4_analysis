@@ -1,5 +1,5 @@
 ---
-title: "C4 Bam File Retrieval"
+title: "C4 mRNA Bam File Retrieval"
 author: "Kenneth Daily"
 date: "02/18/2015"
 output: html_document
@@ -27,12 +27,14 @@ knitr::opts_chunk$set(
   tidy = FALSE)
 ```
 
-This vignette shows how to get all of the bam files from PCBC.
+This vignette shows how to get all of the mRNA bam files from PCBC.
 
-First, we query for them. All bam files have the annotations `fileType` (bam) and `bamType` (mapped or unmapped). Here I'm just getting the first five (`LIMIT 5`):
+First, we query for them. All bam files have the annotations `fileType` (bam) and `bamType` (mapped or unmapped). They also have a `dataType` - here we want `mRNA`. 
+
+Here I'm just getting the first five (`LIMIT 5`):
 
 ```{r querybam}
-bamQuery <- "select UID,name from file where fileType=='bam' AND bamType=='mapped' and projectId=='syn1773109' LIMIT 5"
+bamQuery <- "select UID,name from file where dataType=='mRNA' AND fileType=='bam' AND bamType=='mapped' and projectId=='syn1773109' LIMIT 5"
 
 bamRes <- synQuery(bamQuery)
 ```
