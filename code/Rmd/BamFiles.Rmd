@@ -34,7 +34,7 @@ First, we query for them. All bam files have the annotations `fileType` (bam) an
 Here I'm just getting the first five (`LIMIT 5`):
 
 ```{r querybam}
-bamQuery <- "select UID,name from file where dataType=='mRNA' AND fileType=='bam' AND bamType=='mapped' and projectId=='syn1773109' LIMIT 5"
+bamQuery <- "select id,UID,name from file where dataType=='mRNA' AND fileType=='bam' AND bamType=='mapped' and projectId=='syn1773109' LIMIT 5"
 
 bamRes <- synQuery(bamQuery)
 ```
