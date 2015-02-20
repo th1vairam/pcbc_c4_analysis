@@ -429,3 +429,12 @@ METADATA = METADATA[RowsPresent,]
 rownames(METADATA) = METADATA$UID
 ```
 
+## Normalisation: Determine matrix for normalisation and differential expression analysis
+
+Remove genes that have less than 1 cpm counts in atleast 50% of samples
+
+```{r}
+PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT)
+print(PROCESSED_COUNTS$plotHist)
+```
+
