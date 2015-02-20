@@ -436,6 +436,26 @@ Remove genes that have less than 1 cpm counts in atleast 50% of samples
 
 ```{r}
 PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT)
+```
+
+```{r CPM_HISTOGRAM}
 print(PROCESSED_COUNTS$plotHist)
+```
+
+```{r}
+# Get subset of factor and continuous covariates for analysis
+COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
+
+# Cluster covariates
+COVARIATES[,FactorCovariates] = apply(COVARIATES[,FactorCovariates],2,function(cols){cols=as.numeric(unclass(factor(cols)))})
+
+pdf('COVARIATES_CLUSTERING.pdf',width=12,height=10)
+hv = heatmap.2(as.matrix(COVARIATES), col = brewer.pal(11,'Spectral'), scale='column',
+               Rowv = F, cex.lab = 1.5, cex.axis = 1.5, 
+               cex.main = 1.5, mar=c(18,10),labRow=c(),
+               xlab = "Covariates", ylab = "Samples", 
+               main = "Clustering of covariates", keysize=1)
+dev.off()
+
 ```
 
