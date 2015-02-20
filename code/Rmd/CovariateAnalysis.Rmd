@@ -17,6 +17,7 @@ library('ctv')
 library('ggplot2')
 library('psych')
 library('reshape2')
+library('gplots')
 
 synapseLogin()
 
@@ -428,6 +429,9 @@ METADATA$Diffname_short[grep('MESO',METADATA$Diffname_short)] = 'MESO'
 RowsPresent = match(colnames(COUNT), METADATA$UID);
 METADATA = METADATA[RowsPresent,]
 rownames(METADATA) = METADATA$UID
+
+# Get subset of factor and continuous covariates for analysis
+COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 ```
 
 ## Normalisation: Determine matrix for normalisation and differential expression analysis
@@ -442,20 +446,15 @@ PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT)
 print(PROCESSED_COUNTS$plotHist)
 ```
 
-```{r}
-# Get subset of factor and continuous covariates for analysis
-COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
-
+```{r COVARIATES_CLUSTERING}
 # Cluster covariates
 COVARIATES[,FactorCovariates] = apply(COVARIATES[,FactorCovariates],2,function(cols){cols=as.numeric(unclass(factor(cols)))})
-
-pdf('COVARIATES_CLUSTERING.pdf',width=12,height=10)
 hv = heatmap.2(as.matrix(COVARIATES), col = brewer.pal(11,'Spectral'), scale='column',
                Rowv = F, cex.lab = 1.5, cex.axis = 1.5, 
                cex.main = 1.5, mar=c(18,10),labRow=c(),
                xlab = "Covariates", ylab = "Samples", 
                main = "Clustering of covariates", keysize=1)
-dev.off()
 
+print(hv)
 ```
 
