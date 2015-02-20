@@ -1,0 +1,125 @@
+---
+title: "miRNA descriptive analysis"
+author: "Lorena Pantano"
+date: "02/09/2015"
+output: html_document
+---
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE}
+library(tidyr)
+library(dplyr)
+library(knitr)
+library(synapseClient)
+library(DESeq2)
+library(vcd)
+library(CHBUtils)
+
+synapseLogin()
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=TRUE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE)
+```
+
+# Load Data
+
+## Get metadata and count matrix 
+
+```{r get-id}
+Query <- "select id,UID,name,fileType,dataType from file where name=='Summarized miRNA Counts' AND  projectId=='syn1773109'"
+res <- synQuery(Query)
+mat_file = synGet(res$file.id)
+
+Query <- "select id,UID,name,fileType,dataType from file where name=='miRNA metadata' AND  projectId=='syn1773109'"
+res <- synQuery(Query)
+meta_file = synGet(res$file.id)
+
+```
+
+
+## Clean and sync tables
+
+```{r getcountmat}
+meta = read.table(meta_file@filePath,header=1,row.names=1,sep="\t")
+row.names(meta) = gsub("-",".",row.names(meta))
+mat = read.table(mat_file@filePath,header=T,row.names=1,sep="\t")
+
+meta_clean = meta[ row.names(meta) %in% colnames(mat), ]
+mat = mat[,as.character(row.names(meta_clean))]
+mat[is.na(mat)] = 0
+```
+
+# Results
+
+## Correlation of metadata variables
+
+```{r cor}
+get_cor = function(v){
+    v=as.character(v)
+    x = as.factor(as.character(meta_clean[,v[1]]))
+    y = as.factor(as.character(meta_clean[,v[2]]))
+    dd = data.frame(x=x,y=y)
+    dd = dd[rowSums(is.na(dd))==0,]
+    sm = chisq.test(dd$y, dd$x)
+    r= assocstats(xtabs(~x+y,data=dd))$cramer
+    pval = sm$p.value
+    list(r,pval)
+}
+
+cols = c("originating.lab",
+         "Diffname.short","Gender","Tissue.of.Origin",
+         "Cell.Type.of.Origin","Cell.Line.Type","Reprogramming.Gene.Combination")
+cols_format = sub("[::.::]","\n",cols)
+
+comp = expand.grid(cols,cols)
+c = apply(comp,1,get_cor)
+res = cbind(comp,do.call(rbind,c))
+names(res)[3:4] = c("cor","pvalue")
+
+cor_mat = tidyr::spread(res[,c(1,2,3)],"Var1","cor")
+cor_mat = cor_mat[,2:ncol(cor_mat)]
+cor_mat = matrix(unlist(cor_mat),nrow=7)
+row.names(cor_mat) = cols_format
+colnames(cor_mat) = cols_format
+
+pval_mat = tidyr::spread(res[,c(1,2,4)],"Var1","pvalue")
+pval_mat = pval_mat[,2:ncol(pval_mat)]
+pval_mat = matrix(unlist(pval_mat), nrow=7)
+row.names(pval_mat) = cols_format
+colnames(pval_mat) = cols_format
+
+cor_mat[is.na(cor_mat)] = 0
+corrplot(cor_mat, p.mat = pval_mat, ,method = 'number', insig = "blank", is.corr=TRUE,sig.level = 0.05,tl.cex = 0.7, cl.cex=0.7)
+```
+
+
+## PCA
+
+```{r deseq2}
+dds = DESeqDataSetFromMatrix(mat[rowMeans(mat)>5,],colData = meta_clean, design =~1)
+rlogMat = rlog(dds, blind= TRUE)
+```
+
+
+```{r plotpca}
+plotPCA(rlogMat, intgroup = "Gender", ntop=200)
+plotPCA(rlogMat, intgroup = "Cell.Type.of.Origin", ntop=200)
+plotPCA(rlogMat, intgroup = "Tissue.of.Origin", ntop=200)
+plotPCA(rlogMat, intgroup = "originating.lab", ntop=200)
+plotPCA(rlogMat, intgroup = "Reprogramming.Gene.Combination", ntop=200)
+plotPCA(rlogMat, intgroup = "Cell.Line.Type", ntop=200)
+plotPCA(rlogMat, intgroup = "CellDiffState", ntop=200)
+plotPCA(rlogMat, intgroup = "GroupLevel1.DifferentiationState", ntop=200)
+plotPCA(rlogMat, intgroup = "GroupLevel3.DifferentiationState", ntop=200)
+
+
+plotPCA(rlogMat, intgroup = "Donor.Life.Stage", ntop=200)
+plotPCA(rlogMat, intgroup = "GroupLevel2.DifferentiationState", ntop=200)
+```
+
+
