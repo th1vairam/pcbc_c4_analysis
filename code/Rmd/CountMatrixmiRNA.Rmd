@@ -5,14 +5,15 @@ date: "02/09/2015"
 output: html_document
 ---
 
-```{r libs, echo=FALSE, warning=FALSE, message=FALSE}
+```{r libs, warning=FALSE, message=FALSE}
 library(tidyr)
 library(dplyr)
 library(knitr)
 library(synapseClient)
 library(DESeq2)
 library(vcd)
-library(CHBUtils)
+# library(CHBUtils)
+library(corrplot)
 
 synapseLogin()
 
@@ -65,8 +66,8 @@ get_cor = function(v){
     y = as.factor(as.character(meta_clean[,v[2]]))
     dd = data.frame(x=x,y=y)
     dd = dd[rowSums(is.na(dd))==0,]
-    sm = chisq.test(dd$y, dd$x)
-    r= assocstats(xtabs(~x+y,data=dd))$cramer
+    sm = chisq.test(dd$y, dd$x) # get a p-value
+    r= assocstats(xtabs(~x+y,data=dd))$cramer # get a R^2 value for categorical vars
     pval = sm$p.value
     list(r,pval)
 }
@@ -74,7 +75,7 @@ get_cor = function(v){
 cols = c("originating.lab",
          "Diffname.short","Gender","Tissue.of.Origin",
          "Cell.Type.of.Origin","Cell.Line.Type","Reprogramming.Gene.Combination")
-cols_format = sub("[::.::]","\n",cols)
+cols_format = sub("[::.::]","\n",cols) # reduce space of labels in heapmap
 
 comp = expand.grid(cols,cols)
 c = apply(comp,1,get_cor)
@@ -94,14 +95,15 @@ row.names(pval_mat) = cols_format
 colnames(pval_mat) = cols_format
 
 cor_mat[is.na(cor_mat)] = 0
-corrplot(cor_mat, p.mat = pval_mat, ,method = 'number', insig = "blank", is.corr=TRUE,sig.level = 0.05,tl.cex = 0.7, cl.cex=0.7)
+corrplot(cor_mat, p.mat = pval_mat, method = 'number', insig = "blank",  
+         is.corr=TRUE, sig.level = 0.05,tl.cex = 0.7, cl.cex=0.7)
 ```
 
 
 ## PCA
 
 ```{r deseq2}
-dds = DESeqDataSetFromMatrix(mat[rowMeans(mat)>5,],colData = meta_clean, design =~1)
+dds = DESeqDataSetFromMatrix(mat[rowMeans(mat)>5,], colData = meta_clean, design =~1)
 rlogMat = rlog(dds, blind= TRUE)
 ```
 
