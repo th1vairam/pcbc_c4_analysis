@@ -498,11 +498,11 @@ preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DM$desi
 ```
 
 ```{r fig.width=20, fig.height=10}
-PC_res[[1]]
+PC_res[[1]]$plotData
 ```
 
 ```{r fig.width=20, fig.height=10}
-PC_res[[2]]
+PC_res[[2]]$plotData
 ```
 
 Re-normalise with COVARIATES design matrix.
@@ -520,11 +520,11 @@ postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$
 ```
 
 ```{r fig.width=20, fig.height=10}
-PC_res[[1]]
+PC_res[[1]]$plotData
 ```
 
 ```{r fig.width=20, fig.height=10}
-PC_res[[2]]
+PC_res[[2]]$plotData
 ```
 
 ```{r RESIDUAL_PCA, fig.width=20, fig.height=10, eval=FALSE}
