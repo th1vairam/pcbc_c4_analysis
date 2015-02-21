@@ -19,6 +19,7 @@ library('psych')
 library('reshape2')
 library('gplots')
 
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 synapseLogin()
 
 options(xtable.type="html")
@@ -405,7 +406,7 @@ runPCAandPlotCorrelations <- function(genesBySamples, samplesByCovariates, dataN
 }
 ```
 
-```{r getdata}
+```{r getdata, cache=TRUE}
 # Get mRNA counts and metadata table
 
 # Get count matrix
@@ -441,9 +442,6 @@ METADATA = METADATA[!METADATA$bad_lines,]
 COUNT = COUNT[,METADATA$Cell_Type == "PSC" & !is.na(METADATA$Cell_Type)]
 METADATA = METADATA[METADATA$Cell_Type == "PSC" & !is.na(METADATA$Cell_Type),]
 
-
-# Get subset of factor and continuous covariates for analysis
-COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 ```
 
 ### Normalisation
@@ -460,32 +458,28 @@ print(PROCESSED_COUNTS$plotHist)
 
 ### Covariate clustering
 
-```{r COVARIATES_CLUSTERING}
+```{r COVARIATES_CLUSTERING, fig.width=12, fig.height=10}
+
+# Get subset of factor and continuous covariates for analysis
+COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
+
 # Cluster covariates
 COVARIATES[,FactorCovariates] = apply(COVARIATES[,FactorCovariates],2,function(cols){cols=as.numeric(unclass(factor(cols)))})
-hv = heatmap.2(as.matrix(COVARIATES), col = brewer.pal(11,'Spectral'), scale='column',
-               Rowv = T, cex.lab = 1.5, cex.axis = 1.5, 
-               cex.main = 1.5, mar=c(18,10),labRow=c(),
-               xlab = "Covariates", ylab = "Samples", 
-               main = "Clustering of covariates", keysize=1)
 
-print(hv)
+heatmap.2(as.matrix(COVARIATES), col = brewer.pal(11,'Spectral'), scale='column',
+          Rowv = T, cex.lab = 1.5, cex.axis = 1.5, 
+          cex.main = 1.5, mar=c(18,10),labRow=c(),
+          xlab = "Covariates", ylab = "Samples", 
+          main = "Clustering of covariates", keysize=1)
+
 ```
 
 ### Covariate correlation
 
 ```{r COVARIATES_CORRELATION, fig.width=12, fig.height=10}
-# Find correlation between covariates
 COVARIATES.CORRELATION = cor(COVARIATES,use = 'pairwise.complete.obs')
-
-# pdf('COVARIATES_CORRELATION.pdf',width=12,height=10)
-hv = heatmap.2(COVARIATES.CORRELATION, col = brewer.pal(11,'Spectral'), 
-               ColSideColors = rainbow(ncol(COVARIATES.CORRELATION),start=0,end=0.3),
-               cex.lab = 1.5, cex.axis = 1.5, cex.main = 0.6,mar = c(18,18),
-               xlab = "Covariates", ylab = "Covariates", 
-               main = "Correlation between covariates", keysize=1.3)
-# dev.off()
-
+p <- ggheatmap(abs(COVARIATES.CORRELATION))
+ggheatmap.show(p, col.width=0.3, row.width=0.15)
 ```
 
 Initial normalisation usign voom (with NULL design)
@@ -523,18 +517,23 @@ VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design
 PC_res=list()
 postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM$design,
                                                   'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
-pdf('ADJUSTED1_PCA.pdf',width=20,height=10)
-eval(PC_res)
-dev.off()
-
 ```
 
-```{r RESIDUAL_PCA, fig.width=20, fig.height=10}
-# Find PC of residual gene expression and significant covariates that are highly correlated with PCs
-result.lm = lm(t(VOOM.ADJUSTED.GENE_EXPRESSION$E) ~ 0 + DM$design)
-PC_res=list()
-postAdjustedSigCovars = runPCAandPlotCorrelations(t(result.lm$residuals), DM$design, 
-                                                  'residual', isKeyPlot=TRUE)
-eval(PC_res)
+```{r fig.width=20, fig.height=10}
+PC_res[[1]]
+```
+
+```{r fig.width=20, fig.height=10}
+PC_res[[2]]
+```
+
+```{r RESIDUAL_PCA, fig.width=20, fig.height=10, eval=FALSE}
+#### I'M BROKEN!
+# # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
+# result.lm = lm(t(VOOM.ADJUSTED.GENE_EXPRESSION$E) ~ 0 + DM$design)
+# PC_res=list()
+# postAdjustedSigCovars = runPCAandPlotCorrelations(t(result.lm$residuals), DM$design, 
+#                                                   'residual', isKeyPlot=TRUE)
+# eval(PC_res)
 ```
 
