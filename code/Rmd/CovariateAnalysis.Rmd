@@ -476,3 +476,24 @@ hv = heatmap.2(COVARIATES.CORRELATION, col = brewer.pal(11,'Spectral'),
 
 ```
 
+```{r}
+# Initial normalisation usign voom (with NULL desing)
+VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, plot=T)
+
+# Find PC of gene expression and significant covariates that are highly correlated with PCs
+DM = getDesignMatrix(METADATA[,c(FactorCovariates,ContCovariates)],FactorCovariates)
+```
+
+```{r}
+PC_res=list()
+preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DM$design,
+                                                 'NULL design(voom-normalized)', isKeyPlot=TRUE)
+```
+
+```{r fig.width=20, fig.height=10}
+PC_res[[1]]
+```
+
+```{r fig.width=20, fig.height=10}
+PC_res[[2]]
+```
