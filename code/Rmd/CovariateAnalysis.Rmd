@@ -428,13 +428,27 @@ RowsPresent = match(colnames(COUNT), METADATA$UID);
 METADATA = METADATA[RowsPresent,]
 rownames(METADATA) = METADATA$UID
 
+#### Pre processing mRNA expression counts and metadata ####
+# Remove samples that failed QC
+COUNT = COUNT[,METADATA$pass_qc]
+METADATA = METADATA[METADATA$pass_qc,]
+
+# Remove samples from bad lines
+COUNT = COUNT[,!METADATA$bad_lines]
+METADATA = METADATA[!METADATA$bad_lines,]
+
+# Remove somatic samples and samples with type N/A
+COUNT = COUNT[,METADATA$Cell_Type == "PSC" & !is.na(METADATA$Cell_Type)]
+METADATA = METADATA[METADATA$Cell_Type == "PSC" & !is.na(METADATA$Cell_Type),]
+
+
 # Get subset of factor and continuous covariates for analysis
 COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 ```
 
 ### Normalisation
 
-Determine matrix for normalisation and differential expression analysis. Remove genes that have less than 1 cpm counts in at least 50% of samples.
+Determine design matrix for normalisation and differential expression analysis. Remove genes that have less than 1 cpm counts in at least 50% of samples.
 
 ```{r}
 PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT)
@@ -447,17 +461,15 @@ print(PROCESSED_COUNTS$plotHist)
 ### Covariate clustering
 
 ```{r COVARIATES_CLUSTERING}
-## I'M BROKEN, FIX ME!
-
 # Cluster covariates
 COVARIATES[,FactorCovariates] = apply(COVARIATES[,FactorCovariates],2,function(cols){cols=as.numeric(unclass(factor(cols)))})
-# hv = heatmap.2(as.matrix(COVARIATES), col = brewer.pal(11,'Spectral'), scale='column',
-#                Rowv = T, cex.lab = 1.5, cex.axis = 1.5, 
-#                cex.main = 1.5, mar=c(18,10),labRow=c(),
-#                xlab = "Covariates", ylab = "Samples", 
-#                main = "Clustering of covariates", keysize=1)
-# 
-# print(hv)
+hv = heatmap.2(as.matrix(COVARIATES), col = brewer.pal(11,'Spectral'), scale='column',
+               Rowv = T, cex.lab = 1.5, cex.axis = 1.5, 
+               cex.main = 1.5, mar=c(18,10),labRow=c(),
+               xlab = "Covariates", ylab = "Samples", 
+               main = "Clustering of covariates", keysize=1)
+
+print(hv)
 ```
 
 ### Covariate correlation
@@ -476,8 +488,9 @@ hv = heatmap.2(COVARIATES.CORRELATION, col = brewer.pal(11,'Spectral'),
 
 ```
 
+Initial normalisation usign voom (with NULL design)
+
 ```{r}
-# Initial normalisation usign voom (with NULL desing)
 VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, plot=T)
 
 # Find PC of gene expression and significant covariates that are highly correlated with PCs
@@ -497,3 +510,31 @@ PC_res[[1]]
 ```{r fig.width=20, fig.height=10}
 PC_res[[2]]
 ```
+
+Re-normalise with COVARIATES design matrix.
+
+```{r ADJUSTED1_PCA}
+DM = getDesignMatrix(METADATA[,c('Diffname_short','run','lane','index','Cell_Line_Type',
+                                 'Cell_Type_of_Origin','Donor_Life_Stage')], FactorCovariates)
+
+VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM$design, plot=T)
+
+# Find PC of re-adjusted gene expression and significant covariates that are highly correlated with PCs
+PC_res=list()
+postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM$design,
+                                                  'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
+pdf('ADJUSTED1_PCA.pdf',width=20,height=10)
+eval(PC_res)
+dev.off()
+
+```
+
+```{r RESIDUAL_PCA, fig.width=20, fig.height=10}
+# Find PC of residual gene expression and significant covariates that are highly correlated with PCs
+result.lm = lm(t(VOOM.ADJUSTED.GENE_EXPRESSION$E) ~ 0 + DM$design)
+PC_res=list()
+postAdjustedSigCovars = runPCAandPlotCorrelations(t(result.lm$residuals), DM$design, 
+                                                  'residual', isKeyPlot=TRUE)
+eval(PC_res)
+```
+
