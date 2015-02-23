@@ -21,6 +21,7 @@ library('ctv')
 library('ggplot2')
 library('psych')
 library('reshape2')
+library('gplots')
 
 # Login to synapse
 synapseLogin()
