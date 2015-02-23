@@ -61,7 +61,6 @@ ALL_USED_OBJ[length(ALL_USED_OBJ)+1] = METADATA_OBJ;
 METADATA = METADATA_OBJ@values
 
 # Preprocess metadata
-# METADATA$UID = chartr('-+','..',METADATA$UID)
 METADATA[METADATA == 'N/A'] = NA
 METADATA$Diffname_short[grep('MESO',METADATA$Diffname_short)] = 'MESO'
 
