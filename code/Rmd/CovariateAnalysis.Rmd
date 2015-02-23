@@ -137,17 +137,17 @@ DM = getDesignMatrix(METADATA[,c(FactorCovariates,ContCovariates)],FactorCovaria
 ```
 
 ```{r}
-PC_res=list()
+# PC_res=list()
 preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DM$design,
                                                  'NULL design(voom-normalized)', isKeyPlot=TRUE)
 ```
 
 ```{r fig.width=20, fig.height=10}
-PC_res[[1]]$plotData
+preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```
 
 ```{r fig.width=20, fig.height=10}
-PC_res[[2]]$plotData
+preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```
 
 Re-normalise with COVARIATES design matrix.
@@ -159,17 +159,16 @@ DM = getDesignMatrix(METADATA[,c('Diffname_short','run','lane','index','Cell_Lin
 VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM$design, plot=T)
 
 # Find PC of re-adjusted gene expression and significant covariates that are highly correlated with PCs
-PC_res=list()
 postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM$design,
                                                   'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
 ```
 
 ```{r fig.width=20, fig.height=10}
-PC_res[[1]]$plotData
+postAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```
 
 ```{r fig.width=20, fig.height=10}
-PC_res[[2]]$plotData
+postAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 
 ```{r RESIDUAL_PCA, fig.width=20, fig.height=10, eval=FALSE}
