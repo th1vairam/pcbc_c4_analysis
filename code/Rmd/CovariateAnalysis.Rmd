@@ -47,10 +47,6 @@ FactorCovariates = c('Diffname_short','run','lane','index','Cell_Line_Type','Cel
 ContCovariates = c('numberReads','mappedReads')
 ```
 
-
-```{r utilfxns}
-```
-
 ```{r getdata, cache=TRUE}
 # Get mRNA counts and metadata table
 
