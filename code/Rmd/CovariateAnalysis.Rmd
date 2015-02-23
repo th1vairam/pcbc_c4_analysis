@@ -57,7 +57,7 @@ ContCovariates = c('numberReads','mappedReads')
 # Get count matrix
 COUNT_OBJ = synGet(COUNT_ID);
 ALL_USED_OBJ = list(COUNT_OBJ);
-COUNT = read.table(getFileLocation(COUNT_OBJ),header=T,row.names=1)
+COUNT = read.table(getFileLocation(COUNT_OBJ),header=T,row.names=1, check.names=FALSE)
 
 # Get metadata
 METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
@@ -65,7 +65,7 @@ ALL_USED_OBJ[length(ALL_USED_OBJ)+1] = METADATA_OBJ;
 METADATA = METADATA_OBJ@values
 
 # Preprocess metadata
-METADATA$UID = chartr('-+','..',METADATA$UID)
+# METADATA$UID = chartr('-+','..',METADATA$UID)
 METADATA[METADATA == 'N/A'] = NA
 METADATA$Diffname_short[grep('MESO',METADATA$Diffname_short)] = 'MESO'
 
