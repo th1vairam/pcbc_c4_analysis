@@ -165,14 +165,3 @@ postAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```{r fig.width=20, fig.height=10}
 postAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
-
-```{r RESIDUAL_PCA, fig.width=20, fig.height=10, eval=FALSE}
-#### I'M BROKEN!
-# # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
-# result.lm = lm(t(VOOM.ADJUSTED.GENE_EXPRESSION$E) ~ 0 + DM$design)
-# PC_res=list()
-# postAdjustedSigCovars = runPCAandPlotCorrelations(t(result.lm$residuals), DM$design, 
-#                                                   'residual', isKeyPlot=TRUE)
-# eval(PC_res)
-```
-
