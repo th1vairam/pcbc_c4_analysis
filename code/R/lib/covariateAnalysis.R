@@ -367,7 +367,5 @@ runPCAandPlotCorrelations <- function(genesBySamples, samplesByCovariates, dataN
     }
   }
   
-  PC_res <<- c(PC_res, add_PC_res)
-  
-  return(significantCovars)
+  return(list(significantCovars=significantCovars, PC_res=add_PC_res))
 }
