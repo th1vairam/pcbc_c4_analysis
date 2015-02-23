@@ -328,7 +328,7 @@ runPCA <- function(genesBySamples, SCALE_DATA_FOR_PCA = TRUE, MIN_PVE_PCT_PC = 1
   
   samplePCvals <- pca.res$x[, 1:npca, drop=FALSE]
   
-  samplePCvals
+  list(samplePCvals=samplePCvals, pve=pve)
 }
 
 # Function to run principal component analysis and plot correlations
@@ -338,19 +338,29 @@ runPCAandPlotCorrelations <- function(genesBySamples, samplesByCovariates, dataN
   title = paste(ifelse(SCALE_DATA_FOR_PCA, "S", "Un-s"), "caled ", dataName, " ", " data in PCA; PVE >= ", MIN_PVE_PCT_PC, "%; ", CORRELATION_TYPE, " correlations ", sep="")
   writeLines(paste("\nRunning PCA and calculating correlations for:\n", title, sep=""))
   
-  # estimate variance in data by PC:
-  pca.res = prcomp(t(genesBySamples), center=TRUE, scale.=SCALE_DATA_FOR_PCA, retx=TRUE)
+  #   # estimate variance in data by PC:
+  #   pca.res = prcomp(t(genesBySamples), center=TRUE, scale.=SCALE_DATA_FOR_PCA, retx=TRUE)
+  #   
+  #   # examine how much variance is explained by PCs, and consider those with PVE >= (MIN_PVE_PCT_PC %):
+  #   pc.var = pca.res$sdev^2
+  #   pve = 100 * (pc.var / sum(pc.var))  
+  #   npca = max(1,length(which(pve >= MIN_PVE_PCT_PC)))
+  #   
+  #   samplePCvals = pca.res$x[, 1:npca, drop=FALSE]  
   
-  # examine how much variance is explained by PCs, and consider those with PVE >= (MIN_PVE_PCT_PC %):
-  pc.var = pca.res$sdev^2
-  pve = 100 * (pc.var / sum(pc.var))  
-  npca = max(1,length(which(pve >= MIN_PVE_PCT_PC)))
+  pcaRes <- runPCA(genesBySamples=genesBySamples, SCALE_DATA_FOR_PCA=SCALE_DATA_FOR_PCA, 
+                   MIN_PVE_PCT_PC=MIN_PVE_PCT_PC)
   
-  samplePCvals = pca.res$x[, 1:npca, drop=FALSE]  
+  samplePCvals <- pcaRes$samplePCvals
+  pve <- pcaRes$pve
+  
+  npca <- ncol(samplePCvals)
+  
   colnames(samplePCvals) = paste(colnames(samplePCvals), " (", sprintf("%.2f", pve[1:npca]), "%)", sep="")
   
   # Find covariates without any missing data
-  samplesByFullCovariates = samplesByCovariates[, which(apply(samplesByCovariates, 2, function(dat) all(!is.na(dat))))]
+  samplesByFullCovariates = samplesByCovariates[, which(apply(samplesByCovariates, 2, 
+                                                              function(dat) all(!is.na(dat))))]
   EXCLUDE_VARS_FROM_FDR = setdiff(colnames(samplesByCovariates), colnames(samplesByFullCovariates))
   
   add_PC_res = list()
