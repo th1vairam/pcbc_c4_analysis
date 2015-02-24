@@ -12,7 +12,7 @@ library(knitr)
 library(synapseClient)
 library(DESeq2)
 library(vcd)
-source("../R/lib/dummy.R")
+source("../R/lib/qc.R")
 library(corrplot)
 
 synapseLogin()
