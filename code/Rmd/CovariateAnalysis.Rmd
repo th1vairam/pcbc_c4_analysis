@@ -29,7 +29,7 @@ synapseLogin()
 # source utility files from ../R/lib folder
 file.sources = list.files('../R/lib',pattern="*.R")
 file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
-sapply(file.sources,source,.GlobalEnv)
+tmp = sapply(file.sources,source,.GlobalEnv)
 
 options(xtable.type="html")
 
@@ -172,11 +172,11 @@ postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$
                                                   'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
 ```
 
-```{r postAdjustedSigCovars fig.width=20, fig.height=10}
+```{r postAdjustedSigCovars, fig.width=20, fig.height=10}
 postAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```
 
-```{r postAdjustedSigCovars.ALL fig.width=20, fig.height=10}
+```{r postAdjustedSigCovars.ALL, fig.width=20, fig.height=10}
 postAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 
@@ -188,10 +188,10 @@ residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, DM$desig
                                                   'residual (voom-normalized)',isKeyPlot=TRUE)
 ```
 
-```{r residualSigCovars fig.width=20, fig.height=10}
+```{r residualSigCovars, fig.width=20, fig.height=10}
 residualSigCovars[["PC_res"]][[1]]$plotData
 ```
 
-```{r residualSigCovars.ALL fig.width=20, fig.height=10}
+```{r residualSigCovars.ALL, fig.width=20, fig.height=10}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
