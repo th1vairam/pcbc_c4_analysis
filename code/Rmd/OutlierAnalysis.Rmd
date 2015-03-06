@@ -15,7 +15,6 @@ library('RColorBrewer')
 library('ggplot2')
 library('edgeR')
 library('fpc')
-library('mclust')
 
 synapseLogin()
 
@@ -200,14 +199,3 @@ Based on kmeans clustering following observations were made:
 4. SC12-040 has abnormal karyotype (but not marked exclude and passes qc)
 5. SC13-054 did not pass QC
 6. SC13-043DE.419.12.8 is a mislabel
-
-``` {r modelclustering}
-# Using Model Based Clustering
-# emobj <- simple.init((SEXPR), nclass = 5)
-# emobj <- shortemcluster(t(SEXPR), emobj)
-# summary(emobj)
-# 
-# ret <- emcluster(x1, emobj, assign.class = TRUE)
-# summary(ret)
-dev.off()
-```
