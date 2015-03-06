@@ -164,28 +164,25 @@ fit <- cmdscale(d,eig=TRUE, k=2) # k is the number of dim
 ```
 
 ```{r MDSplot, width=20,height=20}
-plotdata <- data.frame(UID=rownames(fit[[1]]), C1=fit[[1]][,1], C2=fit[[1]][,2], cluster=pam.cluster$pamobject$clustering)
-plotdata <- merge(plotdata, METADATA, by="UID")
-plotdata$plotshape <- ifelse(plotdata$Diffname_short %in% c("MESO-5", "MESO-15", "MESO-30", "DE", "EB", "SC", "ECTO"), plotdata$Diffname_short, "Other") 
-plotdata$plotshape <- gsub("-.*", "", plotdata$plotshape)
-plotdata$outlier <- "no"
+plotdata <- data.frame(UID=rownames(fit[[1]]), C1=fit[[1]][,1], C2=fit[[1]][,2], 
+                       cluster=pam.cluster$pamobject$clustering)
 
-#plotdata$labels <- plotdata$UID
+plotdata <- merge(plotdata, METADATA, by="UID")
+
+useForShapes <- c("MESO-5", "MESO-15", "MESO-30", "DE", "EB", "SC", "ECTO")
+plotdata$plotshape <- ifelse(plotdata$Diffname_short %in% useForShapes, 
+                             plotdata$Diffname_short, "Other")
+plotdata$plotshape <- gsub("-.*", "", plotdata$plotshape)
+
 potentialOutliers <- c('SC13-054.182.3.7','SC12-040.420.12.19','SC13-043DE.419.12.8',
                        'SC12-024ECTO.420.12.12', 'SC13-057iECScramble.219.6.22',
                        'SC12-034MESO.219.1.7', 'SC12-039MESO.419.12.27', 'H9.144.7.7')
 
 plotdata$labels <- ifelse(plotdata$UID %in% potentialOutliers, as.character(plotdata$UID),"")
 
-# plotdata$labels <- ifelse(grepl("MESO", plotdata$Diffname_short), as.character(plotdata$UID),"")
-
-# plotdata$labels <- ifelse(plotdata$UID %in% c("SC13-054.182.3.7", "SC12-040.420.12.19"),
-#                           as.character(plotdata$UID),
-#                           "")
-
 p <- ggplot(plotdata, aes(x=C1, y=C2)) + geom_point(aes(color=factor(cluster), 
                                                         size=pass_qc, shape=plotshape))
-#p <- scale_color_continuous(low="red", high="green")
+
 p <- p + scale_size_manual(values = c(14, 7))
 p <- p + scale_color_brewer(palette = "Set1")
 p <- p + scale_shape_manual(values = c(15, 5, 16, 17, 1, 18))
