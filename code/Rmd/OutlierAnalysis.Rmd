@@ -42,21 +42,20 @@ knitr::opts_chunk$set(
 # Input Parameters
 COUNT_ID = 'syn3164570';
 METADATA_ID = 'syn3156503';
-
-print(paste('Synapse id of count matrix used for the analysis is',COUNT_ID,'and the synapse id of meta data table used for the analysis is',METADATA_ID,sep=' '))
 ```
 
-Obtain count matrix and metadata from synapse
+Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`.
+
+Obtain count matrix and metadata from synapse.
+
 ```{r getdata, cache=TRUE}
 ## Get mRNA counts and metadata table from synapse
 # Get count matrix
 COUNT_OBJ = synGet(COUNT_ID);
-ALL_USED_OBJ = list(COUNT_OBJ);
 COUNT = read.table(getFileLocation(COUNT_OBJ),header=T,row.names=1, check.names=FALSE)
 
 # Get metadata
 METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
-ALL_USED_OBJ[length(ALL_USED_OBJ)+1] = METADATA_OBJ;
 METADATA = METADATA_OBJ@values
 ```
 
@@ -133,7 +132,7 @@ Based on hierarichal clustering following observations were made:
 4. SC12−024ECTO.420.12.12:ECTO showed slight deviation from other ECTODERMS
 
 Using kmeans clustering
-``` {r kmeans clustering, cahce=T}
+``` {r kmeansclustering, cahce=T}
 # Determine number of clusters automatically using pamk
 pam.cluster <- pamk(t(SEXPR), krange=2:20)
 
@@ -158,37 +157,55 @@ p
 ```
 
 
-```{r MDS plot, width=20,height=20}
+```{r MDS}
 # Find MDS to plot
 d <- dist(t(SEXPR)) # euclidean distances between the samples
 fit <- cmdscale(d,eig=TRUE, k=2) # k is the number of dim
+```
 
+```{r MDSplot, width=20,height=20}
 plotdata <- data.frame(UID=rownames(fit[[1]]), C1=fit[[1]][,1], C2=fit[[1]][,2], cluster=pam.cluster$pamobject$clustering)
 plotdata <- merge(plotdata, METADATA, by="UID")
 plotdata$plotshape <- ifelse(plotdata$Diffname_short %in% c("MESO-5", "MESO-15", "MESO-30", "DE", "EB", "SC", "ECTO"), plotdata$Diffname_short, "Other") 
 plotdata$plotshape <- gsub("-.*", "", plotdata$plotshape)
 plotdata$outlier <- "no"
 
-plotdata$labels <- ifelse(plotdata$UID %in% c("SC13-054.182.3.7", "SC12-040.420.12.19"),
-                          as.character(plotdata$UID),
-                          "")
+#plotdata$labels <- plotdata$UID
+potentialOutliers <- c('SC13-054.182.3.7','SC12-040.420.12.19','SC13-043DE.419.12.8',
+                       'SC12-024ECTO.420.12.12', 'SC13-057iECScramble.219.6.22',
+                       'SC12-034MESO.219.1.7', 'SC12-039MESO.419.12.27', 'H9.144.7.7')
 
-p <- ggplot(plotdata, aes(x=C1, y=C2)) + geom_point(aes(color=factor(cluster), size=pass_qc, shape=plotshape))
-p <- p + scale_size_manual(values = c(5, 2))
+plotdata$labels <- ifelse(plotdata$UID %in% potentialOutliers, as.character(plotdata$UID),"")
 
-p <- p + geom_text(aes(label=labels), size=3, hjust=0)
+# plotdata$labels <- ifelse(grepl("MESO", plotdata$Diffname_short), as.character(plotdata$UID),"")
 
-p <- p + theme_bw() + theme(legend.position="top")
+# plotdata$labels <- ifelse(plotdata$UID %in% c("SC13-054.182.3.7", "SC12-040.420.12.19"),
+#                           as.character(plotdata$UID),
+#                           "")
+
+p <- ggplot(plotdata, aes(x=C1, y=C2)) + geom_point(aes(color=factor(cluster), 
+                                                        size=pass_qc, shape=plotshape))
+#p <- scale_color_continuous(low="red", high="green")
+p <- p + scale_size_manual(values = c(14, 7))
+p <- p + scale_color_brewer(palette = "Set1")
+p <- p + scale_shape_manual(values = c(15, 5, 16, 17, 1, 18))
+
+p <- p + geom_text(aes(label=labels), size=7, hjust=0)
+
+p <- p + theme(legend.position="top")
 p
 
 ```
 Based on kmeans clustering following observations were made:
 1. MESO-5 tend to cluster with DE samples than MESO-15 and 30
-2. Somatic samples cluste differently
-3. SC13−054.182.3.7:SC, SC12−040.420.12.19:SC were observed to be outliers
+2. Somatic samples cluster differently
+3. SC13−054.182.3.7, SC12−040.420.12.19 were observed to be outliers
+4. SC12-040 has abnormal karyotype (but not marked exclude and passes qc)
+5. SC13-054 did not pass QC
+6. SC13-043DE.419.12.8 is a mislabel
 
-Using Model Based Clustering
-``` {r model clustering}
+``` {r modelclustering}
+# Using Model Based Clustering
 # emobj <- simple.init((SEXPR), nclass = 5)
 # emobj <- shortemcluster(t(SEXPR), emobj)
 # summary(emobj)
