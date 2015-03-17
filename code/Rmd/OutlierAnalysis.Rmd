@@ -4,10 +4,9 @@ author: "Thanneer Perumal and Kenneth Daily"
 date: "03/03/2015"
 output: html_document
 ---
-  
+
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE}
 ## It is assumed your working directory is where this file is
-pdf('OUTLIER ANALYSIS PLOTS.pdf',width=40,height=20)
 # Load required libraries
 library('synapseClient')
 library('WGCNA')
