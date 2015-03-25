@@ -7,7 +7,8 @@ output: html_document
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE}
 ## It is assumed your working directory is where this file is
-
+pdf('COVARIATE ANALYSIS PLOTS.pdf',width=40,height=20)
+# 
 # Load required libraries
 library('synapseClient')
 library('limma')
@@ -51,10 +52,12 @@ FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin'
                      'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination',
                      'Donor_Life_Stage','Originating_Lab','Gender','High_Confidence_Donor_ID')
 ContCovariates = c('numberReads','mappedReads')
-
-print(paste('Factor covariates considered for analysis are',paste(FactorCovariates,collapse=','),', and continuous covariates considered for the analysis are',paste(ContCovariates,collapse=','),sep=' '))
 ```
+Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`.
 
+Factor covariates considered for analysis are `r FactorCovariates`, and continuous covariates considered for the analysis are `r ContCovariates`.
+
+Obtain count matrix and metadata from synapse.
 ```{r getdata, cache=TRUE}
 # Get mRNA counts and metadata table
 
@@ -70,7 +73,11 @@ METADATA = METADATA_OBJ@values
 
 # Preprocess metadata
 METADATA[METADATA == 'N/A'] = NA
-METADATA$Diffname_short[grep('MESO',METADATA$Diffname_short)] = 'MESO'
+METADATA[METADATA == 'unknown'] = NA
+
+# Assign new values for MESO-5, 15 and 30 samples
+METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
+METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
 
 # Arrange count and metadata
 RowsPresent = match(colnames(COUNT), METADATA$UID);
@@ -78,7 +85,14 @@ METADATA = METADATA[RowsPresent,]
 rownames(METADATA) = METADATA$UID
 
 #### Pre processing mRNA expression counts and metadata ####
-# Remove samples that failed QC
+# Remove 133 samples that didn't pass QC and samples classified as outliers
+# ind <- intersect(grep('133',METADATA$UID),which(!METADATA$pass_qc))
+# ind <- c(ind,which(METADATA$UID %in% c('SC13-054.182.3.7','SC12-040.420.12.19','SC13-043DE.419.12.8')))
+# 
+# COUNT <- COUNT[,-(ind)]
+# METADATA <- METADATA[-(ind),]
+
+# # Remove samples that failed QC
 COUNT = COUNT[,METADATA$pass_qc]
 METADATA = METADATA[METADATA$pass_qc,]
 
@@ -86,7 +100,7 @@ METADATA = METADATA[METADATA$pass_qc,]
 COUNT = COUNT[,!METADATA$exclude]
 METADATA = METADATA[!METADATA$exclude,]
 
-# Remove somatic samples and samples with type N/A
+# Remove somatic samples and samples with type NA
 ind = METADATA$Cell_Type == "PSC" & !is.na(METADATA$Cell_Type)
 COUNT = COUNT[,ind]
 METADATA = METADATA[ind,]
@@ -99,18 +113,22 @@ METADATA = METADATA[ind,]
 ```
 
 ### Normalisation
+Determine design matrix for normalisation and differential expression analysis. 
 
-Determine design matrix for normalisation and differential expression analysis. Remove genes that have less than 1 cpm counts in at least 50% of samples.
+Remove genes that have less than 1 cpm counts in at least 50% of all the individual differentiation stages.
 
 ```{r}
-PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT)
-```
+tmp <- tapply(colnames(COUNT),factor(METADATA$Diffname_short),function(cols,COUNT){PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT[,cols])},COUNT)
+ugenes <- c()
+for (i in unique(METADATA$Diffname_short))
+  ugenes <- unique(c(ugenes,tmp[[i]]$filteredExprMatrix$genes[,1]))
 
-```{r CPM_HISTOGRAM}
-print(PROCESSED_COUNTS$plotHist)
+COUNT <- COUNT[ugenes,,drop=F]
+PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT,MIN_GENE_CPM=0,MIN_SAMPLE_PERCENT_WITH_MIN_GENE_CPM=0)
 ```
 
 ### Covariate clustering
+Determine relationship between covariates. 
 
 ```{r COVARIATES_CLUSTERING, fig.width=12, fig.height=10}
 
@@ -168,8 +186,10 @@ DM1 = getDesignMatrix(METADATA[,adjustCovars],FactorCovariates)
 VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=T)
 
 # Find PC of re-adjusted gene expression and significant covariates that are highly correlated with PCs
-postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM$design,
-                                                  'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
+postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM$design,'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
+
+postAdjustCovars = designMatVarsToCovars(getCovariatesMap(DM),postAdjustedSigCovars$significantCovars)
+print(paste('Significant covariates to adjust at FDR 0.1 after fixing covariates are',paste(postAdjustCovars,collapse=','),sep=' '))
 ```
 
 ```{r postAdjustedSigCovars, fig.width=20, fig.height=10}
@@ -194,4 +214,59 @@ residualSigCovars[["PC_res"]][[1]]$plotData
 
 ```{r residualSigCovars.ALL, fig.width=20, fig.height=10}
 residualSigCovars[["PC_res"]][[2]]$plotData
+```
+
+Get differentially expressed genes using limma package after fixing for covariates
+
+```{r differential expression}
+colnames(DM1$design) <- gsub('[[:punct:]]','_',colnames(DM1$design))
+colnames(DM1$design) <- gsub(' ','_',colnames(DM1$design))
+colnames(DM1$design)[1] <- 'Intercept'
+
+# Fit linear model to normalised expression using limma package
+FIT <- lmFit(VOOM.ADJUSTED.GENE_EXPRESSION$E, design = DM1$design)
+    
+# Make contrast to check differential expression between different differentiation stages
+CONT.NAMES <- colnames(DM1$design)[2:6]
+for (i in 2:5){
+  for (j in seq((i+1),6,1)){
+      CONT.NAMES <- c(CONT.NAMES,paste(colnames(DM1$design)[i],colnames(DM1$design)[j],sep='-')) 
+  }
+}
+
+CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
+
+# Refit contrasts
+FIT2 <- contrasts.fit(FIT,CONT)
+
+# Estimate moderated t-statistics
+FIT2 <- eBayes(FIT2)
+
+# Obtain all the differential expession combinations
+DIFF.EXP <- list()
+DIFF.EXP[['FC']] <- matrix(0,dim(VOOM.ADJUSTED.GENE_EXPRESSION$E)[1],length(CONT.NAMES))
+rownames(DIFF.EXP$FC) <- rownames(VOOM.ADJUSTED.GENE_EXPRESSION$E)
+colnames(DIFF.EXP$FC) <- CONT.NAMES
+DIFF.EXP$PValue <- DIFF.EXP$FC
+
+for (i in CONT.NAMES){
+  tmp <- topTable(FIT2, coef=i,number=dim(VOOM.ADJUSTED.GENE_EXPRESSION$E)[1])
+  DIFF.EXP$FC[,i] <- tmp[rownames(DIFF.EXP$FC),'logFC']
+  DIFF.EXP$PValue[,i] <- tmp[rownames(DIFF.EXP$PValue),'adj.P.Val']
+}
+
+# Get number of significantly differentialy expressed genes
+SIG.EXPR <- colSums(DIFF.EXP$PValue<=0.01 & abs(DIFF.EXP$FC)>2)
+names(SIG.EXPR) <- gsub('Diffname_short','',names(SIG.EXPR))
+names(SIG.EXPR)[1:5] <- paste('DE',names(SIG.EXPR)[1:5],sep='-')
+print("# of differentially expressed genes for an adj. P. val. <= 0.01 and abs(logFC) > 2")
+print(SIG.EXPR)
+
+# Get genes that are differentially expressed in each contrasts
+GSETS <- lapply(CONT.NAMES,function(x,DIFF.EXP){
+                  sapply(rownames(DIFF.EXP$FC)[DIFF.EXP$PValue[,x]<=0.01 & abs(DIFF.EXP$FC[,x])>2],
+                         function(x){strsplit(x,'\\.')[[1]][1]})},DIFF.EXP)
+names(GSETS) <- names(SIG.EXPR)
+save(list=c('SIG.EXPR','GSETS'),file='DIFF_EXPR.RData')
+dev.off()
 ```
