@@ -20,6 +20,7 @@ library('gplots')
 library('vcd')
 library('psych')
 library('erer')
+
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
@@ -245,8 +246,8 @@ DIFF.EXP$adj.P.Val <- data.frame(row.names = rownames(VOOM.ADJUSTED.GENE_EXPRESS
 for (i in CONT.NAMES){
   tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(VOOM.ADJUSTED.GENE_EXPRESSION$E)[1])
   colNames <- gsub('Diffname_short','',gsub('Intercept','DE',i))
-  DIFF.EXP$logFC[,paste(colNames,'logFC',sep='-')] <- tmp[rownames(DIFF.EXP$logFC),'logFC']
-  DIFF.EXP$adj.P.Val[,paste(colNames,'adj.P.Val',sep='-')] <- tmp[rownames(DIFF.EXP$adj.P.Val),'adj.P.Val']
+  DIFF.EXP$logFC[,colNames] <- tmp[rownames(DIFF.EXP$logFC),'logFC']
+  DIFF.EXP$adj.P.Val[,colNames] <- tmp[rownames(DIFF.EXP$adj.P.Val),'adj.P.Val']
 }
 tmp <- cbind(DIFF.EXP$logFC,DIFF.EXP$adj.P.Val)
 write.table(DIFF.EXP,file='./DifferentialExpression_DiffnameShort.txt',sep='\t',row.names=T,col.names=T,quote=F)
@@ -257,7 +258,6 @@ colnames(SIG.EXPR) <- gsub('-adj.P.Val','',colnames(SIG.EXPR))
 SIG.GSETS <- list()
 for (i in colnames(SIG.EXPR))
   SIG.GSETS[[i]] <- rownames(SIG.EXPR)[SIG.EXPR[,i]]
-write.list(SIG.GSETS,file='./DifferentialExpression_DiffnameShort_Significant.txt',t.name=names(SIG.GSETS),quote=F)
 
 print(sapply(SIG.GSETS,length))
 ```
@@ -268,7 +268,5 @@ if (SYNAPSE_STORE){
   COVARIATES_CODE <- synStore(COVARIATES_CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Covariate Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')
   DE <- File('./DifferentialExpression_DiffnameShort.txt',name = 'Differential Expression DiffnameShort',parentId = parentId)
   DE <- synStore(DE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Differential Analysis', executed=COVARIATES_CODE)
-  DE_Sig <- File('./DifferentialExpression_DiffnameShort_Significant.txt',name = 'Differential Expression DiffnameShort Significant',parentId = parentId)
-  DE_Sig <- synStore(DE_Sig, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema,DE$properties$id),activityName='Differential Analysis', executed=COVARIATES_CODE)
 }
 ```

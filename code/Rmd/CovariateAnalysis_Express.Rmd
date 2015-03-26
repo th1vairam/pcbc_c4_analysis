@@ -24,7 +24,7 @@ library('erer')
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # devtools::source_gist('2866ef5c0aeb64d265ed')
-# knit2synapse(file = "./CovariateAnalysis_Express.Rmd", owner = 'syn3382512', wikiName = "Covariate Analysis Express",overwrite=T)
+# knit2synapse(file = "./CovariateAnalysis_Express.Rmd", owner = 'syn3382563', wikiName = "Covariate Analysis Express",overwrite=T)
 
 synapseLogin()
 
@@ -257,18 +257,15 @@ colnames(SIG.EXPR) <- gsub('-adj.P.Val','',colnames(SIG.EXPR))
 SIG.GSETS <- list()
 for (i in colnames(SIG.EXPR))
   SIG.GSETS[[i]] <- rownames(SIG.EXPR)[SIG.EXPR[,i]]
-write.list(SIG.GSETS,file='./DifferentialExpression_DiffnameShort_Significant_Express.txt',t.name=names(SIG.GSETS),quote=F)
 
 print(sapply(SIG.GSETS,length))
 ```
 
 ```{r synapsestore}
 if (SYNAPSE_STORE){
-  COVARIATES_CODE <- File('./CovariateAnalysis_Express.Rmd',name = 'Covariate Analysis',parentId = parentId)
-  COVARIATES_CODE <- synStore(COVARIATES_CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Covariate Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis_Express.Rmd')
+  COVARIATES_CODE <- File('./CovariateAnalysis_Express.Rmd',name = 'Covariate Analysis Express',parentId = parentId)
+  COVARIATES_CODE <- synStore(COVARIATES_CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Covariate Analysis from eXpress', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis_Express.Rmd')
   DE <- File('./DifferentialExpression_DiffnameShort_Express.txt',name = 'Differential Expression DiffnameShort Express',parentId = parentId)
-  DE <- synStore(DE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Differential Analysis Express', executed=COVARIATES_CODE)
-  DE_Sig <- File('./DifferentialExpression_DiffnameShort_Significant_Express.txt',name = 'Differential Expression DiffnameShort Significant Express',parentId = parentId)
-  DE_Sig <- synStore(DE_Sig, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema,DE$properties$id),activityName='Differential Analysis Express', executed=COVARIATES_CODE)
+  DE <- synStore(DE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Differential Expression Analysis Express', executed=COVARIATES_CODE)
 }
 ```
