@@ -17,7 +17,7 @@ library('fpc')
 library('dendextend')
 
 # devtools::source_gist('2866ef5c0aeb64d265ed')
-# knit2synapse(file = "./OutlierAnalysis.Rmd", owner = 'syn3276108', wikiName = "Outlier Analysis",overwrite=T)
+# knit2synapse(file = "./OutlierAnalysis_Express.Rmd", owner = 'syn3382231', wikiName = "Outlier Analysis Express",overwrite=T)
 synapseLogin()
 
 # source utility files from ../R/lib folder
@@ -265,8 +265,8 @@ write.table(Outliers,file = './Outliers_mRNA.txt',sep='\t',col.names=F,row.names
 
 if (SYNAPSE_STORE){
   OUTLIER_CODE <- File('./OutlierAnalysis_Express.Rmd',name = 'Outlier Analysis Express',parentId = parentId)
-  OUTLIER_CODE <- synStore(OUTLIER_CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Outlier Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/OutlierAnalysis.Rmd')
-  OUTLIERS <- File('./Outliers_mRNA.txt',name= 'Outliers mRNA',parentId = parentId)
+  OUTLIER_CODE <- synStore(OUTLIER_CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Outlier Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/OutlierAnalysis_Express.Rmd')
+  OUTLIERS <- File('./Outliers_mRNA.txt',name= 'Outliers Express mRNA',parentId = parentId)
   OUTLIERS <- synStore(OUTLIERS, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Outlier Analysis', executed=OUTLIER_CODE)  
 }
 ```
