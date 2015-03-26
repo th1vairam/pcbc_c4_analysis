@@ -44,7 +44,7 @@ COUNT_ID = 'syn3354716';
 METADATA_ID = 'syn3156503';
 
 # Synapse Specific Parameters
-SYNAPSE_STORE = F;
+SYNAPSE_STORE = T;
 parentId = 'syn3276097';
 
 # Specify factor and continuous covarites pool
@@ -196,7 +196,8 @@ Based on hierarichal clustering following observations were made
 
 1. MESO5 tend to cluster with DE samples than MESO15 and 30 which cluster with EB
 2. Somatic samples cluster seperately
-3. SC13−054.182.3.7, SC12−040.420.12.19, SC13-057iECScramble.219.6.22, H9.133.1.11, SC11-013A.133.5+6.10, SC11-009A.133.2.14, SC11-010.A.133.5+6.8, SC11-008A.133.2.13, SC11-012A.133.2.9 were observed to be outliers
+3. As with cufflinks data, SC13−054.182.3.7, SC12−040.420.12.19, SC13-057iECScramble.219.6.22, H9.133.1.11, SC11-013A.133.5+6.10, SC11-009A.133.2.14, SC11-010A.133.5+6.8, SC11-008A.133.2.13, SC11-012A.133.2.9 samples were observed to be outliers
+4. Other than that following 12 samples were identified as outliers SC12-034MESO.219.1.7, SC11-013BEB.144.6.11, SC11-013BEB.149.6.19, SC11-018BEB.144.7.6, SC11-008A.133.2.13, SC11-008BEB.144.6.5,	SC11-010AEB.133.3.19, SC11-017AEB.144.7.2, SC11-017AEB.149.6.20, SC11-017BEB.144.7.4,	SC11-017BEB.149.6.21,	SC11-018AEB.144.7.5, SC11-018AEB.149.6.22, SC11-018BEB.149.6.23, SC13-049DE.219.6.6
 
 Find outliers using kmeans clustering
 
@@ -251,18 +252,19 @@ Based on kmeans clustering following observations were made
  
 1. MESO5 tend to cluster with DE samples than MESO15 and 30 which cluster with EB
 2. Somatic samples cluster seperately
-3. SC13−054.182.3.7, SC12−040.420.12.19, SC13-057iECScramble.219.6.22, H9.133.1.11, SC11-013A.133.5+6.10, SC11-009A.133.2.14, SC11-010A.133.5+6.8, SC11-008A.133.2.13, SC11-012A.133.2.9 were observed to be outliers
-4. SC12-040 has abnormal karyotype (but not marked exclude and passes qc)
-5. SC13-054 did not pass QC
-6. SC13-043DE.419.12.8 is a mislabe
+3. As with cufflinks data, SC13−054.182.3.7, SC12−040.420.12.19, SC13-057iECScramble.219.6.22, H9.133.1.11, SC11-013A.133.5+6.10, SC11-009A.133.2.14, SC11-010A.133.5+6.8, SC11-008A.133.2.13, SC11-012A.133.2.9 samples were observed to be outliers
+4. Other than that following 12 samples were identified as outliers SC12-034MESO.219.1.7, SC11-013BEB.144.6.11, SC11-013BEB.149.6.19, SC11-018BEB.144.7.6, SC11-008A.133.2.13, SC11-008BEB.144.6.5,  SC11-010AEB.133.3.19, SC11-017AEB.144.7.2, SC11-017AEB.149.6.20, SC11-017BEB.144.7.4,	SC11-017BEB.149.6.21,	SC11-018AEB.144.7.5, SC11-018AEB.149.6.22, SC11-018BEB.149.6.23, SC13-049DE.219.6.6
+5. SC12-040 has abnormal karyotype (but not marked exclude and passes qc)
+6. SC13-054 did not pass QC
+7. SC13-043DE.419.12.8 is a mislabe
+8. Check Diffname_short for SC12-034MESO.219.1, it says EB
 
 ```{r storefiles}
-Outliers <- c('SC13-054.182.3.7','SC12-040.420.12.19','SC13-057iECScramble.219.6.22','H9.133.1.11','SC11-013A.133.5+6.10','SC11-009A.133.2.14','SC11-010A.133.5+6.8','SC11-008A.133.2.13','SC11-012A.133.2.9')
+Outliers <- c('SC13−054.182.3.7','SC12−040.420.12.19','SC13-057iECScramble.219.6.22','H9.133.1.11','SC11-013A.133.5+6.10','SC11-009A.133.2.14','SC11-010A.133.5+6.8','SC11-008A.133.2.13', 'SC11-012A.133.2.9','SC12-034MESO.219.1.7','SC11-013BEB.144.6.11','SC11-013BEB.149.6.19','SC11-018BEB.144.7.6','SC11-008A.133.2.13','SC11-008BEB.144.6.5','SC11-010AEB.133.3.19','SC11-017AEB.144.7.2','SC11-017AEB.149.6.20','SC11-017BEB.144.7.4','SC11-017BEB.149.6.21','SC11-018AEB.144.7.5','SC11-018AEB.149.6.22', 'SC11-018BEB.149.6.23','SC13-049DE.219.6.6')
 write.table(Outliers,file = './Outliers_mRNA.txt',sep='\t',col.names=F,row.names=F,quote=F)
 
 if (SYNAPSE_STORE){
-
-  OUTLIER_CODE <- File('./OutlierAnalysis.Rmd',name = 'Outlier Analysis',parentId = parentId)
+  OUTLIER_CODE <- File('./OutlierAnalysis_Express.Rmd',name = 'Outlier Analysis Express',parentId = parentId)
   OUTLIER_CODE <- synStore(OUTLIER_CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Outlier Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/OutlierAnalysis.Rmd')
   OUTLIERS <- File('./Outliers_mRNA.txt',name= 'Outliers mRNA',parentId = parentId)
   OUTLIERS <- synStore(OUTLIERS, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Outlier Analysis', executed=OUTLIER_CODE)  
