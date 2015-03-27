@@ -23,7 +23,8 @@ getAssociationStatistics <- function(COVARIATES,FactorCovariates,ContCovariates,
   rownames(COVARIATES.FACTOR.CORRELATION.PVAL) <- FactorCovariates
     
   # Find association between factor covariates
-  COVARIATES.CONT.CORRELATION = corr.test(COVARIATES[,ContCovariates],use = 'pairwise.complete.obs')
+  tmp <- apply(COVARIATES[,ContCovariates],2,as.numeric)
+  COVARIATES.CONT.CORRELATION = corr.test(tmp,use = 'pairwise.complete.obs')
   COVARIATES.CONT.CORRELATION.ESTIMATE = COVARIATES.CONT.CORRELATION$r
   COVARIATES.CONT.CORRELATION.PVAL = COVARIATES.CONT.CORRELATION$p
   
