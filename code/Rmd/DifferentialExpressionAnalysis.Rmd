@@ -1,0 +1,221 @@
+---
+title: "Differential Expression Analysis"
+author: "Thanneer Perumal"
+date: "04/01/2015"
+output: html_document
+---
+  
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE}
+## It is assumed your working directory is where this file is
+# Load required libraries
+library('synapseClient')
+library('limma')
+library('edgeR')
+
+## Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+# devtools::source_gist('2866ef5c0aeb64d265ed')
+# knit2synapse(file = "./DifferentialExpressionAnalysis.Rmd", owner = '', wikiName = "Differential Expression Analysis",overwrite=T)
+
+synapseLogin()
+
+# source utility files from ../R/lib folder
+file.sources = list.files('../R/lib',pattern="*.R")
+file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
+tmp = sapply(file.sources,source,.GlobalEnv)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE)
+```
+
+```{r setup}
+# Input Parameters
+DESIGN_ID = 'syn3471933';
+EXPR_ID = 'syn3471917';
+WEIGHTS_ID = 'syn3471926';
+METADATA_ID = 'syn3156503';
+
+SYNAPSE_STORE = T;
+parentId = 'syn3471223';
+```
+Synapse id of design, expression, weights and metadata matrix used for the analysis are `r DESIGN_ID, EXPR_ID, WEIGHTS_ID, METADATA_ID`
+
+Obtain data from synapse.
+```{r getdata, cache=TRUE}
+# Get design matrix
+DESIGN_OBJ = synGet(DESIGN_ID);
+ALL_USED_IDs = list(DESIGN_OBJ$properties$id);
+DESIGN = read.table(getFileLocation(DESIGN_OBJ),sep='\t',header=T,row.names=1, check.names=FALSE)
+colnames(DESIGN) <- gsub('[[:punct:]]','_',colnames(DESIGN))
+colnames(DESIGN) <- gsub(' ','_',colnames(DESIGN))
+colnames(DESIGN)[1] <- 'Intercept'
+
+# Get expression matrix
+EXPR_OBJ = synGet(EXPR_ID);
+ALL_USED_IDs = c(ALL_USED_IDs,list(EXPR_OBJ$properties$id));
+EXPR = read.table(getFileLocation(EXPR_OBJ),sep='\t',header=T,row.names=1, check.names=FALSE)
+
+# Get expression matrix
+WEIGHTS_OBJ = synGet(WEIGHTS_ID);
+ALL_USED_IDs = c(ALL_USED_IDs,list(WEIGHTS_OBJ$properties$id));
+WEIGHTS = read.table(getFileLocation(WEIGHTS_OBJ),sep='\t',header=T,row.names=1, check.names=FALSE)
+
+# Get metadata
+METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
+ALL_USED_IDs[length(ALL_USED_IDs)+1] = METADATA_OBJ@schema;
+METADATA = METADATA_OBJ@values
+```
+
+```{r preprocessing}
+# Preprocess metadata
+METADATA[METADATA == 'N/A'] = NA
+METADATA[METADATA == 'unknown'] = NA
+
+# Assign new values for MESO-5, 15 and 30 samples
+METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
+METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
+
+# Assign not applicable values to Reprogramming_Vector_Type of stem cells
+METADATA$Reprogramming_Vector_Type[is.na(METADATA$Reprogramming_Vector_Type)] = 'Not applicable'
+
+# Assign not applicable values to Reprogramming_Gene_Combination of stem cells
+METADATA$Reprogramming_Gene_Combination[is.na(METADATA$Reprogramming_Gene_Combination)] = 'Not applicable'
+
+# Arrange count and metadata
+RowsPresent = match(colnames(EXPR), METADATA$UID);
+METADATA = METADATA[RowsPresent,]
+rownames(METADATA) = METADATA$UID
+```
+
+Get differentially expressed genes using limma package with following co-efficients `r colnames(DESIGN)` in linear model
+
+Differential expression of differentiation stages (Male vs Female)
+```{r diffstate}
+Gender <- c('all','male','female')
+DIFF.EXP.DIFFNAME <- list()
+for(gend in Gender){
+  if(gend == 'all'){
+    ind <- colnames(EXPR) %in% METADATA$UID
+    FIT <- lmFit(EXPR[,ind], design = DESIGN[ind,], weights = WEIGHTS[,ind])
+  } else {
+    ind <- colnames(EXPR) %in% METADATA$UID[METADATA$Gender == gend]
+    FIT <- lmFit(EXPR[,ind], design = DESIGN[ind,-(which(colnames(DESIGN) %in% 'Gendermale'))], weights = WEIGHTS[,ind])
+  }
+                
+  # Make contrast to check differential expression between different differentiation stages
+  CONT.NAMES <- c(colnames(DESIGN)[1],colnames(DESIGN)[grep('Diffname_short',colnames(DESIGN))])
+  CONT.NAMES <- combn(CONT.NAMES,2)
+  CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+  
+  CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
+  
+  # Refit contrasts
+  FIT.DIFFNAME <- contrasts.fit(FIT,CONT)
+  
+  # Estimate moderated t-statistics
+  FIT.DIFFNAME <- eBayes(FIT.DIFFNAME)
+  
+  # Obtain all the differential expession combinations
+  DIFF.EXP.DIFFNAME[[gend]] <- list()
+  DIFF.EXP.DIFFNAME[[gend]]$logFC <- data.frame(row.names = rownames(EXPR))
+  DIFF.EXP.DIFFNAME[[gend]]$adj.P.Val <- data.frame(row.names = rownames(EXPR))
+  
+  for (i in CONT.NAMES){
+    tmp <- topTable(FIT.DIFFNAME, coef=i, number=dim(EXPR)[1])
+    colNames <- gsub('Diffname_short','',gsub('Intercept','DE',i))
+    DIFF.EXP.DIFFNAME[[gend]]$logFC[,paste(colNames,'logFC',sep='-')] <- tmp[rownames(DIFF.EXP.DIFFNAME[[gend]]$logFC),'logFC']
+    DIFF.EXP.DIFFNAME[[gend]]$adj.P.Val[,paste(colNames,'adj.P.Val',sep='-')] <- tmp[rownames(DIFF.EXP.DIFFNAME[[gend]]$adj.P.Val),'adj.P.Val']
+  }
+  
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.01 and abs(logFC) >= 2
+  DIFF.EXP.DIFFNAME[[gend]]$SIG.EXP <- DIFF.EXP.DIFFNAME[[gend]]$adj.P.Val<=0.01 & abs(DIFF.EXP.DIFFNAME[[gend]]$logFC) >= 2
+  colnames(DIFF.EXP.DIFFNAME[[gend]]$SIG.EXP) <- gsub('-adj.P.Val','',colnames(DIFF.EXP.DIFFNAME[[gend]]$SIG.EXP))
+}
+
+# Get number of significant sets
+NUM.SIG.SETS <- matrix(0,ncol=length(Gender),nrow=dim(DIFF.EXP.DIFFNAME[[1]]$SIG.EXP)[2])
+colnames(NUM.SIG.SETS) <- Gender 
+rownames(NUM.SIG.SETS) <- colnames(DIFF.EXP.DIFFNAME[[1]]$SIG.EXP)
+NUM.SIG.SETS <- as.data.frame(NUM.SIG.SETS)
+for(i in colnames(NUM.SIG.SETS)){
+  for (j in rownames(NUM.SIG.SETS)){
+    NUM.SIG.SETS[j,i] <- sum(DIFF.EXP.DIFFNAME[[i]]$SIG.EXP[,j])
+  }
+}
+
+# Get intersection and difference of gene specific to male and female
+for (j in rownames(NUM.SIG.SETS)){
+  NUM.SIG.SETS[j,'common'] <- sum(DIFF.EXP.DIFFNAME[['male']]$SIG.EXP[,j] & DIFF.EXP.DIFFNAME[['female']]$SIG.EXP[,j])
+  NUM.SIG.SETS[j,'male.only'] <- sum(DIFF.EXP.DIFFNAME[['male']]$SIG.EXP[,j] & !DIFF.EXP.DIFFNAME[['female']]$SIG.EXP[,j])
+  NUM.SIG.SETS[j,'female.only'] <- sum(!DIFF.EXP.DIFFNAME[['male']]$SIG.EXP[,j] & DIFF.EXP.DIFFNAME[['female']]$SIG.EXP[,j])
+}
+print(NUM.SIG.SETS)
+```
+
+Differential expression of gene combinations (for each differentiation stages)
+
+```{r gene.combination}
+diff_name <- c("SC","EB")
+DIFF.EXP.GENECOMBO <- list()
+for(diffname in diff_name){
+  ind <- colnames(EXPR) %in% METADATA$UID[METADATA$Diffname_short == diffname]
+  FIT <- lmFit(EXPR[,ind], design = DESIGN[ind,-(grep('Diffname_short',colnames(DESIGN)))], weights = WEIGHTS[,ind])
+                
+  # Make contrast to check differential expression between different differentiation stages
+  CONT.NAMES <- c(colnames(DESIGN)[1],colnames(DESIGN)[grep('Reprogramming_Gene_Combination',colnames(DESIGN))])
+  CONT.NAMES <- setdiff(CONT.NAMES,colnames(FIT$coefficients)[which(colSums(is.na(FIT$coefficients))!=0)])
+  CONT.NAMES <- combn(CONT.NAMES,2)
+  CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+  
+  CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
+  
+  # Refit contrasts
+  FIT.DIFFNAME <- contrasts.fit(FIT,CONT)
+  
+  # Estimate moderated t-statistics
+  FIT.DIFFNAME <- eBayes(FIT.DIFFNAME)
+  
+  # Obtain all the differential expession combinations
+  DIFF.EXP.GENECOMBO[[diffname]] <- list()
+  DIFF.EXP.GENECOMBO[[diffname]]$logFC <- data.frame(row.names = rownames(EXPR))
+  DIFF.EXP.GENECOMBO[[diffname]]$adj.P.Val <- data.frame(row.names = rownames(EXPR))
+  
+  for (i in CONT.NAMES){
+    tmp <- topTable(FIT.DIFFNAME, coef=i, number=dim(EXPR)[1])
+    colNames <- gsub('Reprogramming_Gene_Combination','',gsub('Intercept','NotApplicable',i))
+    DIFF.EXP.GENECOMBO[[diffname]]$logFC[,paste(colNames,'logFC',sep='-')] <- tmp[rownames(DIFF.EXP.GENECOMBO[[diffname]]$logFC),'logFC']
+    DIFF.EXP.GENECOMBO[[diffname]]$adj.P.Val[,paste(colNames,'adj.P.Val',sep='-')] <- tmp[rownames(DIFF.EXP.GENECOMBO[[diffname]]$adj.P.Val),'adj.P.Val']
+  }
+  
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.01 and abs(logFC) >= 2
+  DIFF.EXP.GENECOMBO[[diffname]]$SIG.EXP <- DIFF.EXP.GENECOMBO[[diffname]]$adj.P.Val<=0.05 & abs(DIFF.EXP.GENECOMBO[[diffname]]$logFC) >= 2
+  colnames(DIFF.EXP.GENECOMBO[[diffname]]$SIG.EXP) <- gsub('-adj.P.Val','',colnames(DIFF.EXP.GENECOMBO[[diffname]]$SIG.EXP))
+}
+
+# Get number of significant sets
+NUM.SIG.SETS.GENECOMBO <- matrix(0,ncol=length(diff_name),nrow=dim(DIFF.EXP.GENECOMBO[[2]]$SIG.EXP)[2])
+colnames(NUM.SIG.SETS.GENECOMBO) <- diff_name
+rownames(NUM.SIG.SETS.GENECOMBO) <- colnames(DIFF.EXP.GENECOMBO[[2]]$SIG.EXP)
+NUM.SIG.SETS.GENECOMBO <- as.data.frame(NUM.SIG.SETS.GENECOMBO)
+for(i in colnames(NUM.SIG.SETS.GENECOMBO)){
+  for (j in rownames(NUM.SIG.SETS.GENECOMBO)){
+    NUM.SIG.SETS.GENECOMBO[j,i] <- sum(DIFF.EXP.GENECOMBO[[i]]$SIG.EXP[,j])
+  }
+}
+print(NUM.SIG.SETS.GENECOMBO)
+```
+
+```{r synapse.store}
+if(SYNAPSE_STORE){
+  CODE <- File('./DifferentialExpressionAnalysis.Rmd',name = 'Differential Analysis',parentId = parentId)
+  CODE <- synStore(CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Differential Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')
+}
+```
+
