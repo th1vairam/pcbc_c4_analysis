@@ -215,7 +215,7 @@ print(NUM.SIG.SETS.GENECOMBO)
 ```{r synapse.store}
 if(SYNAPSE_STORE){
   CODE <- File('./DifferentialExpressionAnalysis.Rmd',name = 'Differential Analysis',parentId = parentId)
-  CODE <- synStore(CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Differential Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')
+  CODE <- synStore(CODE, used =ALL_USED_IDs,activityName='Differential Analysis', executed='')
 }
 ```
 
