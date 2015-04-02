@@ -1,7 +1,7 @@
 ---
 title: "Outlier Analysis using eXpress aligned mRNA"
 author: "Thanneer Perumal and Kenneth Daily"
-date: "03/24/2015"
+date: "03/31/2015"
 output: html_document
 ---
   
@@ -39,7 +39,7 @@ knitr::opts_chunk$set(
 
 ```{r Input parameters}
 # Input Parameters
-COUNT_ID = 'syn3354716';
+COUNT_ID = 'syn3446250';
 METADATA_ID = 'syn3156503';
 
 # Synapse Specific Parameters
@@ -50,7 +50,7 @@ parentId = 'syn3276097';
 FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin',
                      'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination',
                      'Donor_Life_Stage','Originating_Lab','Gender','High_Confidence_Donor_ID')
-ContCovariates = c('numberReads','mappedReads')
+ContCovariates = c()
 
 ```
 
@@ -164,7 +164,7 @@ useForShapes <- c("MESO-5", "MESO-15", "MESO-30", "DE", "EB", "SC", "ECTO")
 plotdata$plotshape <- ifelse(plotdata$Diffname_short %in% useForShapes,plotdata$Diffname_short, "Other")
 plotdata$plotshape <- gsub("-", "", plotdata$plotshape)
 
-potentialOutliers <- unique(c('SC13-054.182.3.7','SC12-040.420.12.19','SC13-043DE.419.12.8','SC12-024ECTO.420.12.12', 'SC13-057iECScramble.219.6.22','SC12-034MESO.219.1.7', 'SC12-039MESO.419.12.27', 'H9.144.7.7',METADATA$UID[!METADATA$pass_qc]))
+potentialOutliers <- unique(c('SC13-054.182.3.7','SC12-040.420.12.19','SC12-024ECTO.420.12.12','SC12-034MESO.219.1.7',METADATA$UID[METADATA$Diffname_short=='SC' & METADATA$pass_qc == F], METADATA$UID[METADATA$C4_Karyotype_Result=='abnormal' & !is.na(METADATA$C4_Karyotype_Result)]))
 plotdata$labels <- ifelse(plotdata$UID %in% potentialOutliers, as.character(plotdata$UID),"")
 
 p <- ggplot(plotdata, aes(x=C1, y=C2)) 
@@ -195,8 +195,7 @@ Based on hierarichal clustering following observations were made
 
 1. MESO5 tend to cluster with DE samples than MESO15 and 30 which cluster with EB
 2. Somatic samples cluster seperately
-3. As with cufflinks data, SC13−054.182.3.7, SC12−040.420.12.19, SC13-057iECScramble.219.6.22, H9.133.1.11, SC11-013A.133.5+6.10, SC11-009A.133.2.14, SC11-010A.133.5+6.8, SC11-008A.133.2.13, SC11-012A.133.2.9 samples were observed to be outliers
-4. Other than that following 12 samples were identified as outliers SC12-034MESO.219.1.7, SC11-013BEB.144.6.11, SC11-013BEB.149.6.19, SC11-018BEB.144.7.6, SC11-008A.133.2.13, SC11-008BEB.144.6.5,	SC11-010AEB.133.3.19, SC11-017AEB.144.7.2, SC11-017AEB.149.6.20, SC11-017BEB.144.7.4,	SC11-017BEB.149.6.21,	SC11-018AEB.144.7.5, SC11-018AEB.149.6.22, SC11-018BEB.149.6.23, SC13-049DE.219.6.6
+3. As with cufflinks data, SC13−054.182.3.7, SC12−040.420.12.19, H9.133.1.11, SC11-013A.133.5+6.10, SC11-010A.133.5+6.8, SC11-008A.133.2.13, SC11-012A.133.2.9 samples were observed to be outliers
 
 Find outliers using kmeans clustering
 
@@ -251,20 +250,21 @@ Based on kmeans clustering following observations were made
  
 1. MESO5 tend to cluster with DE samples than MESO15 and 30 which cluster with EB
 2. Somatic samples cluster seperately
-3. As with cufflinks data, SC13−054.182.3.7, SC12−040.420.12.19, SC13-057iECScramble.219.6.22, H9.133.1.11, SC11-013A.133.5+6.10, SC11-009A.133.2.14, SC11-010A.133.5+6.8, SC11-008A.133.2.13, SC11-012A.133.2.9 samples were observed to be outliers
-4. Other than that following 12 samples were identified as outliers SC12-034MESO.219.1.7, SC11-013BEB.144.6.11, SC11-013BEB.149.6.19, SC11-018BEB.144.7.6, SC11-008A.133.2.13, SC11-008BEB.144.6.5,  SC11-010AEB.133.3.19, SC11-017AEB.144.7.2, SC11-017AEB.149.6.20, SC11-017BEB.144.7.4,	SC11-017BEB.149.6.21,	SC11-018AEB.144.7.5, SC11-018AEB.149.6.22, SC11-018BEB.149.6.23, SC13-049DE.219.6.6
-5. SC12-040 has abnormal karyotype (but not marked exclude and passes qc)
-6. SC13-054 did not pass QC
-7. SC13-043DE.419.12.8 is a mislabe
+3. As with cufflinks data, SC13−054.182.3.7, SC12−040.420.12.19, H9.133.1.11, SC11-013A.133.5+6.10, SC11-010A.133.5+6.8, SC11-008A.133.2.13, SC11-012A.133.2.9 samples were observed to be outliers
+
+NOTE:
+1. "SC11-002A.133.1.2"  "SC11-002B.133.1.4"  "SC11-003A.133.1.5"  "SC11-003B.133.1.6"  "SC12-040.420.12.19" were marked as abnormal karyotypes
+2. SC12-040 has abnormal karyotype (but not marked exclude and passes qc)
+3. SC13-054 did not pass QC
 
 ```{r storefiles}
-Outliers <- c('SC13−054.182.3.7','SC12−040.420.12.19','SC13-057iECScramble.219.6.22','H9.133.1.11','SC11-013A.133.5+6.10','SC11-009A.133.2.14','SC11-010A.133.5+6.8','SC11-008A.133.2.13', 'SC11-012A.133.2.9','SC12-034MESO.219.1.7','SC11-013BEB.144.6.11','SC11-013BEB.149.6.19','SC11-018BEB.144.7.6','SC11-008A.133.2.13','SC11-008BEB.144.6.5','SC11-010AEB.133.3.19','SC11-017AEB.144.7.2','SC11-017AEB.149.6.20','SC11-017BEB.144.7.4','SC11-017BEB.149.6.21','SC11-018AEB.144.7.5','SC11-018AEB.149.6.22', 'SC11-018BEB.149.6.23','SC13-049DE.219.6.6')
-write.table(Outliers,file = './Outliers_mRNA.txt',sep='\t',col.names=F,row.names=F,quote=F)
+Outliers <- c('SC13−054.182.3.7','SC12−040.420.12.19','H9.133.1.11','SC11-013A.133.5+6.10','SC11-010A.133.5+6.8','SC11-008A.133.2.13','SC11-012A.133.2.9')
+write.table(Outliers,file = './Outliers_mRNA_Express.txt',sep='\t',col.names=F,row.names=F,quote=F)
 
 if (SYNAPSE_STORE){
-  OUTLIER_CODE <- File('./OutlierAnalysis_Express.Rmd',name = 'Outlier Analysis Express',parentId = parentId)
+  OUTLIER_CODE <- File('./OutlierAnalysis_Express.Rmd',name = 'Outlier Analysis Express data',parentId = parentId)
   OUTLIER_CODE <- synStore(OUTLIER_CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Outlier Analysis for Express', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/OutlierAnalysis_Express.Rmd')
-  OUTLIERS <- File('./Outliers_mRNA.txt',name= 'Outliers Express mRNA',parentId = parentId)
-  OUTLIERS <- synStore(OUTLIERS, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Outlier Analysis for Express', executed=OUTLIER_CODE)  
+  OUTLIERS <- File('./Outliers_mRNA_Express.txt',name= 'Outliers Express mRNA',parentId = parentId)
+  OUTLIERS <- synStore(OUTLIERS, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Outlier Analysis for Express data', executed=OUTLIER_CODE)  
 }
 ```
