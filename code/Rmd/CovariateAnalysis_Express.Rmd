@@ -1,7 +1,7 @@
 ---
 title: "Covariate Analysis using eXpress aligned mRNA"
 author: "Thanneer Perumal"
-date: "03/26/2015"
+date: "03/31/2015"
 output: html_document
 ---
 
@@ -20,6 +20,7 @@ library('gplots')
 library('vcd')
 library('psych')
 library('erer')
+
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
@@ -45,7 +46,7 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 # Input Parameters
-COUNT_ID = 'syn3354716';
+COUNT_ID = 'syn3446250';
 METADATA_ID = 'syn3156503';
 OUTLIERS_ID = 'NULL';
 
@@ -54,9 +55,8 @@ parentId = 'syn3276099';
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin',
-                     'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination',
-                     'Donor_Life_Stage','Originating_Lab','Gender','High_Confidence_Donor_ID')
-ContCovariates = c('numberReads','mappedReads')
+                     'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','High_Confidence_Donor_ID')
+ContCovariates = c()
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. Outliers were extracted from `r OUTLIERS_ID`
 
@@ -84,6 +84,12 @@ METADATA[METADATA == 'unknown'] = NA
 # Assign new values for MESO-5, 15 and 30 samples
 METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
 METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
+
+# Assign not applicable values to Reprogramming_Vector_Type of stem cells
+METADATA$Reprogramming_Vector_Type[is.na(METADATA$Reprogramming_Vector_Type)] = 'Not applicable'
+
+# Assign not applicable values to Reprogramming_Gene_Combination of stem cells
+METADATA$Reprogramming_Gene_Combination[is.na(METADATA$Reprogramming_Gene_Combination)] = 'Not applicable'
 
 # Arrange count and metadata
 RowsPresent = match(colnames(COUNT), METADATA$UID);
@@ -214,58 +220,49 @@ residualSigCovars[["PC_res"]][[1]]$plotData
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 
-Get differentially expressed genes using limma package after fixing for covariates
+Since reprogramming vector type and gene combinations are highly correlated we will use only gene combination for modeling.
 
-```{r differential.expression}
-colnames(DM1$design) <- gsub('[[:punct:]]','_',colnames(DM1$design))
-colnames(DM1$design) <- gsub(' ','_',colnames(DM1$design))
-colnames(DM1$design)[1] <- 'Intercept'
+Readjust for covariates, normalise and perform outlier analysis (as a sanity check)
 
-# Fit linear model to normalised expression using limma package
-FIT <- lmFit(VOOM.ADJUSTED.GENE_EXPRESSION$E, design = DM1$design)
-    
-# Make contrast to check differential expression between different differentiation stages
-CONT.NAMES <- c(colnames(DM1$design)[1],colnames(DM1$design)[grep('Diffname_short',colnames(DM1$design))])
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
-  
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
+```{r new.design, cache=TRUE}
+postAdjustCovars <- setdiff(postAdjustCovars,'Reprogramming_Vector_Type')
+DM1 = getDesignMatrix(METADATA[,postAdjustCovars],FactorCovariates)
+VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=T)
 
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
+# Find principal components of expression to plot
+PC <- prcomp(scale(VOOM.ADJUSTED.GENE_EXPRESSION$E))
 
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
+# Determine number of clusters automatically using pamk
+pam.cluster <- pamk(t(VOOM.ADJUSTED.GENE_EXPRESSION$E), krange=2:10)
 
-# Obtain all the differential expession combinations
-DIFF.EXP <- list()
-DIFF.EXP$logFC <- data.frame(row.names = rownames(VOOM.ADJUSTED.GENE_EXPRESSION$E))
-DIFF.EXP$adj.P.Val <- data.frame(row.names = rownames(VOOM.ADJUSTED.GENE_EXPRESSION$E))
+# Plot first 2 PCs
+plotdata <- data.frame(UID=rownames(PC$rotation), PC1=PC$rotation[,1], PC2=PC$rotation[,2], cluster=pam.cluster$pamobject$clustering)
+plotdata <- merge(plotdata, METADATA, by="UID")
+plotdata$plotshape <- plotdata$Diffname_short
 
-for (i in CONT.NAMES){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(VOOM.ADJUSTED.GENE_EXPRESSION$E)[1])
-  colNames <- gsub('Diffname_short','',gsub('Intercept','DE',i))
-  DIFF.EXP$logFC[,paste(colNames,'logFC',sep='-')] <- tmp[rownames(DIFF.EXP$logFC),'logFC']
-  DIFF.EXP$adj.P.Val[,paste(colNames,'adj.P.Val',sep='-')] <- tmp[rownames(DIFF.EXP$adj.P.Val),'adj.P.Val']
-}
-tmp <- cbind(DIFF.EXP$logFC,DIFF.EXP$adj.P.Val)
-write.table(DIFF.EXP,file='./DifferentialExpression_DiffnameShort_Express.txt',sep='\t',row.names=T,col.names=T,quote=F)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.01 and abs(logFC) >= 2
-SIG.EXPR <- DIFF.EXP$adj.P.Val<=0.01 & abs(DIFF.EXP$logFC) >= 2
-colnames(SIG.EXPR) <- gsub('-adj.P.Val','',colnames(SIG.EXPR))
-SIG.GSETS <- list()
-for (i in colnames(SIG.EXPR))
-  SIG.GSETS[[i]] <- rownames(SIG.EXPR)[SIG.EXPR[,i]]
-
-print(sapply(SIG.GSETS,length))
+p <- ggplot(plotdata, aes(x=PC1, y=PC2))
+p <- p + geom_point(aes(color=factor(cluster), shape=plotshape))
+p <- p + theme_bw() + scale_size_manual(values = c(5, 2)) + theme(legend.position="top") 
+p
 ```
+
+Store covariates, design matrix, and voom adjusted gene expression
 
 ```{r synapsestore}
 if (SYNAPSE_STORE){
   COVARIATES_CODE <- File('./CovariateAnalysis_Express.Rmd',name = 'Covariate Analysis Express',parentId = parentId)
   COVARIATES_CODE <- synStore(COVARIATES_CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Covariate Analysis from eXpress', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis_Express.Rmd')
-  DE <- File('./DifferentialExpression_DiffnameShort_Express.txt',name = 'Differential Expression DiffnameShort Express',parentId = parentId)
-  DE <- synStore(DE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Differential Expression Analysis Express', executed=COVARIATES_CODE)
+  
+  write.table(VOOM.ADJUSTED.GENE_EXPRESSION$E,file = './AdjustedExpression_Express.tsv',sep='\t',row.names=T,col.names=T,quote=F)
+  EXPRESSION <- File('AdjustedExpression_Express.tsv',name = 'Adjusted Expression Express',parentId = parentId)
+  EXPRESSION <- synStore(EXPRESSION, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema,COVARIATES_CODE$properties$id), activityName='Covariate Analysis from eXpress', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis_Express.Rmd')
+  
+  write.table(VOOM.ADJUSTED.GENE_EXPRESSION$weights,file = './AdjustedWeights_Express.tsv',sep='\t',row.names=T,col.names=T,quote=F)
+  WEIGHTS <- File('AdjustedWeights_Express.tsv',name = 'Adjusted Weights Express',parentId = parentId)
+  WEIGHTS <- synStore(WEIGHTS, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema,COVARIATES_CODE$properties$id), activityName='Covariate Analysis from eXpress', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis_Express.Rmd')
+  
+  write.table(VOOM.ADJUSTED.GENE_EXPRESSION$design,file = './AdjustedDesign_Express.tsv',sep='\t',row.names=T,col.names=T,quote=F)
+  WEIGHTS <- File('AdjustedDesign_Express.tsv',name = 'Adjusted Design Express',parentId = parentId)
+  WEIGHTS <- synStore(WEIGHTS, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema,COVARIATES_CODE$properties$id), activityName='Covariate Analysis from eXpress', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis_Express.Rmd')  
 }
 ```
