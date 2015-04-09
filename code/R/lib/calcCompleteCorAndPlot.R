@@ -1,10 +1,16 @@
 # Function to calculate correlation and plot
 calcCompleteCorAndPlot <- function(COMPARE_data, COVAR_data, correlationType, title, 
                                    PLOT_ALL_COVARS=FALSE, EXCLUDE_VARS_FROM_FDR=NULL, MAX_FDR = 0.1) {
+  
   all_cor = corr.test(COMPARE_data, COVAR_data, use='pairwise.complete.obs', method=correlationType, adjust="none")
   all_cor_vals = all_cor$r
   all_cor_p = all_cor$p
   
+  Effects.significantCovars = all_cor$r
+  Effects.significantCovars[1,all_cor$p[1,]>MAX_FDR] = 0
+  Effects.significantCovars = colSums(abs(Effects.significantCovars))
+  Effects.significantCovars = Effects.significantCovars[order(abs(Effects.significantCovars),decreasing=T)]
+    
   cor_mat = melt(all_cor_p, varnames=c("COMPARE", "COVAR"))
   colnames(cor_mat)[colnames(cor_mat) == "value"] = "pvalue"
   
@@ -46,5 +52,5 @@ calcCompleteCorAndPlot <- function(COMPARE_data, COVAR_data, correlationType, ti
   
   plot = plotCorWithCompare(plotCor, title, paste("FDR <= ", MAX_FDR, sep=""), markColumnsAsMissing)
   
-  return(list(plot=plot, significantCovars=as.character(significantCorrelatedCovars)))
+  return(list(plot=plot, significantCovars=as.character(significantCorrelatedCovars), Effects.significantCovars = Effects.significantCovars))
 }

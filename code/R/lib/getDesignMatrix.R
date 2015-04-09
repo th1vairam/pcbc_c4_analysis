@@ -1,5 +1,5 @@
 # Function to optain desing matrix (modified from covairates pipeline of Menachem Former)
-getDesignMatrix <- function(covariatesDataFrame, FACTOR_COVARIATE_NAMES, RELEVELS=list()) {
+getDesignMatrix <- function(covariatesDataFrame, FACTOR_COVARIATE_NAMES, Intercept = T, RELEVELS=list()) {
   ROWNAMES = rownames(covariatesDataFrame)
   COLNAMES = colnames(covariatesDataFrame)
   FACTOR_COVARIATE_NAMES = setdiff(FACTOR_COVARIATE_NAMES, FACTOR_COVARIATE_NAMES[!(FACTOR_COVARIATE_NAMES %in% colnames(covariatesDataFrame))])
@@ -27,7 +27,10 @@ getDesignMatrix <- function(covariatesDataFrame, FACTOR_COVARIATE_NAMES, RELEVEL
     # And, already ensured above that covariatesDataFrame[, FACTOR_COVARIATE_NAMES] satisfies:
     # 1) fac is of type factor.
     # 2) fac is releveled as designated in RELEVELS.
-    contra = lapply(FACTOR_COVARIATE_NAMES, function(column) {fac = covariatesDataFrame[, column]; fac = contrasts(fac);})
+    if (Intercept)
+      contra = lapply(FACTOR_COVARIATE_NAMES, function(column) {fac = covariatesDataFrame[, column]; fac = contrasts(fac);})
+    else
+      contra = lapply(FACTOR_COVARIATE_NAMES, function(column) {fac = covariatesDataFrame[, column]; fac = contrasts(fac,contrasts=F);})
     names(contra) = FACTOR_COVARIATE_NAMES
   }
   
@@ -36,8 +39,11 @@ getDesignMatrix <- function(covariatesDataFrame, FACTOR_COVARIATE_NAMES, RELEVEL
   # Model matrix will now include "NA":
   options(na.action='na.pass')
   
-  # NOTE: this includes an '(Intercept)' column:
-  design = model.matrix(~ ., data=covariatesDataFrame, contrasts.arg=contra)
+  if(Intercept)
+    design = model.matrix(~ ., data=covariatesDataFrame, contrasts.arg=contra)
+  else
+    design = model.matrix(~ 0 + ., data=covariatesDataFrame, contrasts.arg=contra)
+      
   rownames(design) = rownames(covariatesDataFrame)
   
   options(na.action=current.na.action)

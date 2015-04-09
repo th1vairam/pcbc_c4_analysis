@@ -12,7 +12,7 @@ getAssociationStatistics <- function(COVARIATES,FactorCovariates,ContCovariates,
   }
   
   # Find association between factor covariates
-  if (length(FactorCovariates) != 0){
+  if (length(FactorCovariates) != 0 & length(FactorCovariates) != 1){
     COVARIATES.FACTOR.CORRELATION = apply(expand.grid(FactorCovariates,FactorCovariates),1,getFactorAssociationStatistics,COVARIATES[,FactorCovariates])
     COVARIATES.FACTOR.CORRELATION.ESTIMATE <- matrix(COVARIATES.FACTOR.CORRELATION['Estimate',],nrow=length(FactorCovariates),ncol=length(FactorCovariates))
     COVARIATES.FACTOR.CORRELATION.PVAL <- matrix(COVARIATES.FACTOR.CORRELATION['Pval',],nrow=length(FactorCovariates),ncol=length(FactorCovariates))
@@ -22,17 +22,33 @@ getAssociationStatistics <- function(COVARIATES,FactorCovariates,ContCovariates,
     
     colnames(COVARIATES.FACTOR.CORRELATION.PVAL) <- FactorCovariates
     rownames(COVARIATES.FACTOR.CORRELATION.PVAL) <- FactorCovariates
-  } else{
+  } else if (length(FactorCovariates) == 1){
+    COVARIATES.FACTOR.CORRELATION.ESTIMATE <- as.data.frame(1)
+    colnames(COVARIATES.FACTOR.CORRELATION.ESTIMATE) <- FactorCovariates
+    rownames(COVARIATES.FACTOR.CORRELATION.ESTIMATE) <- FactorCovariates
+        
+    COVARIATES.FACTOR.CORRELATION.PVAL <- as.data.frame(0)    
+    colnames(COVARIATES.FACTOR.CORRELATION.PVAL) <- FactorCovariates
+    rownames(COVARIATES.FACTOR.CORRELATION.PVAL) <- FactorCovariates
+  } else {
     COVARIATES.FACTOR.CORRELATION.ESTIMATE <- NULL
     COVARIATES.FACTOR.CORRELATION.PVAL <- NULL
   }
     
   # Find correlation between continuous covariates
-  if (length(ContCovariates) != 0){
-    tmp <- apply(COVARIATES[,ContCovariates],2,as.numeric)
+  if (length(ContCovariates) > 1){
+    tmp <- apply(COVARIATES[,ContCovariates,drop=F],2,as.numeric)
     COVARIATES.CONT.CORRELATION = corr.test(tmp,use = 'pairwise.complete.obs')
     COVARIATES.CONT.CORRELATION.ESTIMATE = COVARIATES.CONT.CORRELATION$r
     COVARIATES.CONT.CORRELATION.PVAL = COVARIATES.CONT.CORRELATION$p
+  } else if (length(ContCovariates) == 1){
+    COVARIATES.CONT.CORRELATION.ESTIMATE <- as.data.frame(1)
+    colnames(COVARIATES.CONT.CORRELATION.ESTIMATE) <- ContCovariates
+    rownames(COVARIATES.CONT.CORRELATION.ESTIMATE) <- ContCovariates
+    
+    COVARIATES.CONT.CORRELATION.PVAL <- as.data.frame(0)    
+    colnames(COVARIATES.CONT.CORRELATION.PVAL) <- ContCovariates
+    rownames(COVARIATES.CONT.CORRELATION.PVAL) <- ContCovariates
   } else {
     COVARIATES.CONT.CORRELATION.ESTIMATE <- NULL
     COVARIATES.CONT.CORRELATION.PVAL <- NULL
@@ -50,7 +66,7 @@ getAssociationStatistics <- function(COVARIATES,FactorCovariates,ContCovariates,
   }
   
   # Find association between factor and continuous covariates
-  if (length(FactorCovariates) != 0  & length(ContCovariates) != 0){
+  if (length(FactorCovariates) > 1){
     COVARIATES.FACTORCONT.CORRELATION = apply(expand.grid(FactorCovariates,ContCovariates),1,getFactorContAssociationStatistics,COVARIATES[,c(FactorCovariates,ContCovariates)])
     COVARIATES.FACTORCONT.CORRELATION.ESTIMATE <- matrix(COVARIATES.FACTORCONT.CORRELATION['Estimate',],nrow=length(FactorCovariates),ncol=length(ContCovariates))
     COVARIATES.FACTORCONT.CORRELATION.PVAL <- matrix(COVARIATES.FACTORCONT.CORRELATION['Pval',],nrow=length(FactorCovariates),ncol=length(ContCovariates))
@@ -86,7 +102,7 @@ getAssociationStatistics <- function(COVARIATES,FactorCovariates,ContCovariates,
   # plot heatmap
   tmp <- COVARIATES.CORRELATION.ESTIMATE
   tmp[COVARIATES.CORRELATION.PVAL>PVAL] <- 0
-  p <- ggheatmap(abs(tmp),hm.colours=brewer.pal(9,'Reds'))
+  p <- ggheatmap(as.matrix(abs(tmp)),hm.colours=brewer.pal(9,'Reds'))
   
   return(list(ESTIMATE = COVARIATES.CORRELATION.ESTIMATE, PVAL = COVARIATES.CORRELATION.PVAL, plot=p))  
 }

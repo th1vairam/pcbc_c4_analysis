@@ -1,7 +1,7 @@
 ---
 title: "Covariate Analysis"
 author: "Thanneer Perumal"
-date: "03/31/2015"
+date: "`r date()`"
 output: html_document
 ---
 
@@ -20,6 +20,7 @@ library('gplots')
 library('vcd')
 library('psych')
 library('erer')
+library('fpc')
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
@@ -54,9 +55,8 @@ SYNAPSE_STORE = T;
 parentId = 'syn3276099';
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
-FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin',
-                     'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','High_Confidence_Donor_ID')
-ContCovariates = c()
+FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity')
+ContCovariates = c("numberReads","mappedReads")
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. Outliers were extracted from `r OUTLIERS_ID`
 
@@ -66,7 +66,7 @@ Obtain count matrix and metadata from synapse.
 ```{r getdata, cache=TRUE}
 # Get count matrix
 COUNT_OBJ = synGet(COUNT_ID);
-ALL_USED_IDs = list(COUNT_OBJ$properties$id);
+ALL_USED_IDs = COUNT_OBJ$properties$id;
 COUNT = read.table(getFileLocation(COUNT_OBJ),sep='\t',header=T,row.names=1, check.names=FALSE)
 
 # Get metadata
@@ -78,18 +78,11 @@ METADATA = METADATA_OBJ@values
 Preprocess counts matrix and metadata 
 ```{r preprocessing}
 # Preprocess metadata
-METADATA[METADATA == 'N/A'] = NA
-METADATA[METADATA == 'unknown'] = NA
+METADATA[METADATA == 'N/A'] = 'Not Applicable'
 
 # Assign new values for MESO-5, 15 and 30 samples
 METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
 METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
-
-# Assign not applicable values to Reprogramming_Vector_Type of stem cells
-METADATA$Reprogramming_Vector_Type[is.na(METADATA$Reprogramming_Vector_Type)] = 'Not applicable'
-
-# Assign not applicable values to Reprogramming_Gene_Combination of stem cells
-METADATA$Reprogramming_Gene_Combination[is.na(METADATA$Reprogramming_Gene_Combination)] = 'Not applicable'
 
 # Arrange count and metadata
 RowsPresent = match(colnames(COUNT), METADATA$UID);
@@ -159,7 +152,7 @@ Initial normalisation usign voom (with NULL design)
 VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, plot=T)
 
 # Find PC of gene expression and significant covariates that are highly correlated with PCs
-DM = getDesignMatrix(METADATA[,c(FactorCovariates,ContCovariates)],FactorCovariates)
+DM = getDesignMatrix(METADATA[,c(FactorCovariates,ContCovariates)],FactorCovariates,Intercept = F)
 ```
 
 Correlation between pca of unadjusted mRNA expression and covariates is used to find significant covariates
@@ -181,35 +174,50 @@ preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 
-Re-normalise with COVARIATES design matrix.
+Since lot of covariates are confounded, re-normalising COVARIATES with a recursive design matrix.
+
+```{r recurssive.adjusted.voom.normalisation}
+postAdjustCovars = designMatVarsToCovars(getCovariatesMap(DM),names(preAdjustedSigCovars$Effects.significantCovars)[1])
+residualSigCovars = preAdjustedSigCovars 
+while (length(residualSigCovars$significantCovars) != 0){
+  print(paste('Using following covariates in the model',postAdjustCovars,sep=':'))
+  
+  # Post adjusted design matrix
+  DM1 = getDesignMatrix(METADATA[,postAdjustCovars,drop=F],FactorCovariates,Intercept = F)
+  
+  VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=T)
+  
+  # Residuals after normalisation
+  RESIDUAL.GENE_EXPRESSION = calcResiduals(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM1$design)
+  
+  # Residual covariates to choose from
+  DM1 = getDesignMatrix(METADATA[,setdiff(c(FactorCovariates,ContCovariates),postAdjustCovars)],FactorCovariates,Intercept = F)
+    
+  # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
+  residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, DM1$design,'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
+  
+  # Add postadjusted covariates (if any)
+  postAdjustCovars = unique(c(postAdjustCovars,designMatVarsToCovars(getCovariatesMap(DM1),names(residualSigCovars$Effects.significantCovars)[1])))
+}
+```
+
+Significant covariates to adjust at FDR 0.1 after considering confounding effects are `r postAdjustCovars`
 
 ```{r adjusted.voom.normalisation}
-DM1 = getDesignMatrix(METADATA[,adjustCovars],FactorCovariates)
-VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=T)
+# Post adjusted design matrix
+DM1 = getDesignMatrix(METADATA[,postAdjustCovars,drop=F],FactorCovariates,Intercept = F)
 
-# Find PC of re-adjusted gene expression and significant covariates that are highly correlated with PCs
-postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM$design,'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
-
-postAdjustCovars = designMatVarsToCovars(getCovariatesMap(DM),postAdjustedSigCovars$significantCovars)
-```
-
-Significant covariates to adjust at FDR 0.1 after fixing covariates are `r postAdjustCovars`
-
-```{r postAdjustedSigCovars, fig.width=20, fig.height=10}
-postAdjustedSigCovars[["PC_res"]][[1]]$plotData
-```
-
-```{r postAdjustedSigCovars.ALL, fig.width=20, fig.height=10}
-postAdjustedSigCovars[["PC_res"]][[2]]$plotData
+VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=T)  
 ```
 
 Sanity check: Residualise significant covariates using a linear model and find correlation between PCA of residuals with covariates
 
 ```{r calculate.residuals}
+# Residuals after normalisation
 RESIDUAL.GENE_EXPRESSION = calcResiduals(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM1$design)
 
-# Find PC of re-adjusted gene expression and significant covariates that are highly correlated with PCs
-residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, DM$design,'residual (voom-normalized)',isKeyPlot=TRUE)
+# Find PC of residual gene expression and significant covariates that are highly correlated with PCs
+residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, DM$design,'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
 ```
 
 ```{r residualSigCovars, fig.width=20, fig.height=10}
@@ -220,15 +228,9 @@ residualSigCovars[["PC_res"]][[1]]$plotData
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 
-Since reprogramming vector type and gene combinations are highly correlated we will use only gene combination for modeling.
-
 Readjust for covariates, normalise and perform outlier analysis (as a sanity check)
 
 ```{r new.design, cache=TRUE}
-postAdjustCovars <- setdiff(postAdjustCovars,'Reprogramming_Vector_Type')
-DM1 = getDesignMatrix(METADATA[,postAdjustCovars],FactorCovariates)
-VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=T)
-
 # Find principal components of expression to plot
 PC <- prcomp(scale(VOOM.ADJUSTED.GENE_EXPRESSION$E))
 
@@ -249,20 +251,24 @@ p
 Store covariates, design matrix, and voom adjusted gene expression
 
 ```{r synapsestore,echo=FALSE}
-if (SYNAPSE_STORE){
+if (SYNAPSE_STORE){  
+  # Code
   CODE <- File('./CovariateAnalysis.Rmd',name = 'Covariate Analysis',parentId = parentId)
-  CODE <- synStore(CODE, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema),activityName='Covariate Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')
+  CODE <- synStore(CODE, used = ALL_USED_IDs,activityName='Covariate Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')
   
+  # Expression Data
   write.table(VOOM.ADJUSTED.GENE_EXPRESSION$E,file = './AdjustedExpression.tsv',sep='\t',row.names=T,col.names=T,quote=F)
-  EXPRESSION <- File('AdjustedExpression.tsv',name = 'Adjusted Expression',parentId = parentId)
-  EXPRESSION <- synStore(EXPRESSION, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema,CODE$properties$id), activityName='Covariate Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')
+  EXPRESSION <- File('./AdjustedExpression.tsv',name = 'Adjusted Expression',parentId = parentId)
+  EXPRESSION <- synStore(EXPRESSION, used = ALL_USED_IDs, activityName='Covariate Analysis', executed=CODE$properties$id)  
   
+  # Adjustment Weights 
   write.table(VOOM.ADJUSTED.GENE_EXPRESSION$weights,file = './AdjustedWeights.tsv',sep='\t',row.names=T,col.names=T,quote=F)
   WEIGHTS <- File('AdjustedWeights.tsv',name = 'Adjusted Weights',parentId = parentId)
-  WEIGHTS <- synStore(WEIGHTS, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema,CODE$properties$id), activityName='Covariate Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')
+  WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName='Covariate Analysis', executed=CODE$properties$id)
   
+  # Design Matrix
   write.table(VOOM.ADJUSTED.GENE_EXPRESSION$design,file = './AdjustedDesign.tsv',sep='\t',row.names=T,col.names=T,quote=F)
-  WEIGHTS <- File('AdjustedDesign.tsv',name = 'Adjusted Design',parentId = parentId)
-  WEIGHTS <- synStore(WEIGHTS, used = c(COUNT_OBJ$properties$id,METADATA_OBJ@schema,CODE$properties$id), activityName='Covariate Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')  
+  DESIGN <- File('AdjustedDesign.tsv',name = 'Adjusted Design',parentId = parentId)
+  DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName='Covariate Analysis', executed=CODE$properties$id)
 }
 ```

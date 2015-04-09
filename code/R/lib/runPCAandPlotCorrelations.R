@@ -33,8 +33,9 @@ runPCAandPlotCorrelations <- function(genesBySamples, samplesByCovariates, dataN
     add_PC_res[[length(add_PC_res)+1]] = list(plotData=corrRes$plot, isKeyPlot=(isKeyPlot && !PLOT_ALL_COVARS))
     if (!PLOT_ALL_COVARS) {
       significantCovars = corrRes$significantCovars
+      Effects.significantCovars = corrRes$Effects.significantCovars
     }
   }
   
-  return(list(significantCovars=significantCovars, PC_res=add_PC_res))
+  return(list(significantCovars=significantCovars, PC_res=add_PC_res, Effects.significantCovars = Effects.significantCovars))
 }
