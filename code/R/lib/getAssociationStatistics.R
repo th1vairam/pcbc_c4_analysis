@@ -66,7 +66,7 @@ getAssociationStatistics <- function(COVARIATES,FactorCovariates,ContCovariates,
   }
   
   # Find association between factor and continuous covariates
-  if (length(FactorCovariates) > 1){
+  if (length(FactorCovariates) > 1 & length(ContCovariates) > 1){
     COVARIATES.FACTORCONT.CORRELATION = apply(expand.grid(FactorCovariates,ContCovariates),1,getFactorContAssociationStatistics,COVARIATES[,c(FactorCovariates,ContCovariates)])
     COVARIATES.FACTORCONT.CORRELATION.ESTIMATE <- matrix(COVARIATES.FACTORCONT.CORRELATION['Estimate',],nrow=length(FactorCovariates),ncol=length(ContCovariates))
     COVARIATES.FACTORCONT.CORRELATION.PVAL <- matrix(COVARIATES.FACTORCONT.CORRELATION['Pval',],nrow=length(FactorCovariates),ncol=length(ContCovariates))

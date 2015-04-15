@@ -55,8 +55,8 @@ SYNAPSE_STORE = T;
 parentId = 'syn3276099';
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
-FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity')
-ContCovariates = c("numberReads","mappedReads")
+FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity','Cell_Line_Type')
+ContCovariates = c()
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. Outliers were extracted from `r OUTLIERS_ID`
 
@@ -131,12 +131,6 @@ COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 
 # Convert factor to numeric matrix 
 COVARIATES[,FactorCovariates] = apply(COVARIATES[,FactorCovariates],2,function(cols){cols=as.numeric(unclass(factor(cols)))})
-
-heatmap.2(as.matrix(COVARIATES), col = brewer.pal(11,'Spectral'), scale='column',
-          Rowv = F, cex.lab = 1.5, cex.axis = 1.5, dendrogram = 'column',
-          labRow=rep(as.character(' '),dim(COVARIATES)[1]),
-          cex.main = 1.5, mar=c(18,10), xlab = "Covariates", ylab = "Samples", 
-          main = "Clustering of covariates", keysize=1)
 ```
 
 ### Covariate correlation
@@ -144,6 +138,17 @@ heatmap.2(as.matrix(COVARIATES), col = brewer.pal(11,'Spectral'), scale='column'
 ```{r covariates.correlation, fig.width=12, fig.height=10}
 COVARIATES.CORRELATION = getAssociationStatistics(COVARIATES,FactorCovariates,ContCovariates,PVAL=1)
 ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
+```
+Some relationship between covariates
+
+```{r covariates.relation}
+ggMosaicPlot(factor(METADATA$Originating_Lab),factor(METADATA$Donor_ID))
+
+ggMosaicPlot(factor(METADATA$Cell_Type_of_Origin),factor(METADATA$Tissue_of_Origin))
+
+ggMosaicPlot(factor(METADATA$Donor_Life_Stage),factor(METADATA$Tissue_of_Origin))
+
+ggMosaicPlot(factor(METADATA$Reprogramming_Gene_Combination),factor(METADATA$Reprogramming_Vector_Type))
 ```
 
 Initial normalisation usign voom (with NULL design)
@@ -180,7 +185,7 @@ Since lot of covariates are confounded, re-normalising COVARIATES with a recursi
 postAdjustCovars = designMatVarsToCovars(getCovariatesMap(DM),names(preAdjustedSigCovars$Effects.significantCovars)[1])
 residualSigCovars = preAdjustedSigCovars 
 while (length(residualSigCovars$significantCovars) != 0){
-  print(paste('Using following covariates in the model',postAdjustCovars,sep=':'))
+  print(paste('Using following covariates in the model',paste(postAdjustCovars,collapse=','),sep=':'))
   
   # Post adjusted design matrix
   DM1 = getDesignMatrix(METADATA[,postAdjustCovars,drop=F],FactorCovariates,Intercept = F)
@@ -188,7 +193,7 @@ while (length(residualSigCovars$significantCovars) != 0){
   VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=T)
   
   # Residuals after normalisation
-  RESIDUAL.GENE_EXPRESSION = calcResiduals(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM1$design)
+  RESIDUAL.GENE_EXPRESSION = calcResiduals(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM1$design,sampleWeights = VOOM.ADJUSTED.GENE_EXPRESSION$weights)
   
   # Residual covariates to choose from
   DM1 = getDesignMatrix(METADATA[,setdiff(c(FactorCovariates,ContCovariates),postAdjustCovars)],FactorCovariates,Intercept = F)
@@ -240,10 +245,9 @@ pam.cluster <- pamk(t(VOOM.ADJUSTED.GENE_EXPRESSION$E), krange=2:10)
 # Plot first 2 PCs
 plotdata <- data.frame(UID=rownames(PC$rotation), PC1=PC$rotation[,1], PC2=PC$rotation[,2], cluster=pam.cluster$pamobject$clustering)
 plotdata <- merge(plotdata, METADATA, by="UID")
-plotdata$plotshape <- plotdata$Diffname_short
 
 p <- ggplot(plotdata, aes(x=PC1, y=PC2))
-p <- p + geom_point(aes(color=factor(cluster), shape=plotshape))
+p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
 p <- p + theme_bw() + scale_size_manual(values = c(5, 2)) + theme(legend.position="top") 
 p
 ```
