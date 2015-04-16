@@ -6,7 +6,7 @@ runPCAandPlotCorrelations <- function(genesBySamples, samplesByCovariates, dataN
                                       ALSO_PLOT_ALL_COVARS_VS_PCA = TRUE, MAX_NUM_LEVELS_PER_COVAR = 10) {
   title = paste(ifelse(SCALE_DATA_FOR_PCA, "S", "Un-s"), "caled ", dataName, " ", " data in PCA; PVE >= ", MIN_PVE_PCT_PC, "%; ", CORRELATION_TYPE, " correlations ", sep="")
   writeLines(paste("\nRunning PCA and calculating correlations for:\n", title, sep=""))
-  
+ 
   pcaRes <- runPCA(genesBySamples=genesBySamples, SCALE_DATA_FOR_PCA=SCALE_DATA_FOR_PCA, 
                    MIN_PVE_PCT_PC=MIN_PVE_PCT_PC)
   

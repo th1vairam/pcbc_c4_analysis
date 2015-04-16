@@ -25,8 +25,8 @@ library('fpc')
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
-# devtools::source_gist('2866ef5c0aeb64d265ed')
-# knit2synapse(file = "./CovariateAnalysis.Rmd", owner = 'syn3382512', wikiName = "Covariate Analysis",overwrite=T)
+# source('/mnt/Github/Knit2Synapse/knit2synapse.R')
+# knit2synapse(file = "./CovariateAnalysis.Rmd", owner = 'syn3382512', wikiName = "Covariate Analysis",overwrite=F)
 
 synapseLogin()
 
@@ -219,10 +219,10 @@ Sanity check: Residualise significant covariates using a linear model and find c
 
 ```{r calculate.residuals}
 # Residuals after normalisation
-RESIDUAL.GENE_EXPRESSION = calcResiduals(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM1$design)
+RESIDUAL.GENE_EXPRESSION = calcResiduals(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM1$design, sampleWeights = VOOM.ADJUSTED.GENE_EXPRESSION$weights)
 
 # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
-residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, DM$design,'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
+residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, DM$design,'residual matrix of all adjusted design(voom-normalized)',isKeyPlot=TRUE)
 ```
 
 ```{r residualSigCovars, fig.width=20, fig.height=10}

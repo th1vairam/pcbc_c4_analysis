@@ -1,7 +1,7 @@
 ---
 title: "Differential Expression Analysis"
 author: "Thanneer Perumal"
-date: "04/08/2015"
+date: "`r date()`"
 output: html_document
 ---
   
@@ -14,12 +14,13 @@ library('edgeR')
 library('goseq')
 library('stringr')
 library('knitr')
+library('plyr')
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # devtools::source_gist('2866ef5c0aeb64d265ed')
-# knit2synapse(file = "./DifferentialExpressionAnalysis.Rmd", owner = 'syn3475606', wikiName = "Differential Expression Analysis",overwrite=T)
+# knit2synapse(file = "./DifferentialExpressionAnalysis.Rmd", owner = 'syn3537209', wikiName = "Differential Expression Analysis",overwrite=T)
 
 synapseLogin()
 
@@ -44,7 +45,7 @@ DESIGN_ID = 'syn3471933';
 EXPR_ID = 'syn3471917';
 WEIGHTS_ID = 'syn3471926';
 
-SYNAPSE_STORE = F;
+SYNAPSE_STORE = T;
 parentId = 'syn3471223';
 ```
 Synapse id of design, expression, weights and metadata matrix used for the analysis are `r DESIGN_ID`,`r EXPR_ID`,`r WEIGHTS_ID`
@@ -70,7 +71,7 @@ WEIGHTS = read.table(getFileLocation(WEIGHTS_OBJ),sep='\t',header=T,row.names=1,
 
 Get differentially expressed genes using limma package with following co-efficients `r colnames(DESIGN)` in linear model
 
-Differential expression of differentiation stages (Male vs Female)
+Differential expression of differentiation stages (Male&Female vs Male only vs Female only analysis)
 ```{r diffstate, cache=TRUE}
 Gender <- c('all','male','female')
 DIFF.EXP.DIFFNAME <- list()
@@ -179,7 +180,22 @@ Store files in synapse
  
 ```{r synapse.store}
 if(SYNAPSE_STORE){
-  CODE <- File('./DifferentialExpressionAnalysis.Rmd',name = 'Differential Analysis',parentId = parentId)
-  CODE <- synStore(CODE, used =ALL_USED_IDs,activityName='Differential Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/5e919abd2165a84bbbf101c49d95e524dce684e7/code/Rmd/DifferentialExpressionAnalysis.Rmd')
+  CODE <- File('./DifferentialExpressionAnalysis.Rmd',name = 'Differential Expression Analysis',parentId = parentId)
+  CODE <- synStore(CODE, used =ALL_USED_IDs,activityName='Differential Expression Analysis', executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/diff_exp/code/Rmd/DifferentialExpressionAnalysis.Rmd')
+  
+  for (i in names(DIFF.EXP.DIFFNAME)){
+    colnames(DIFF.EXP.DIFFNAME[[i]]$logFC) <- paste(colnames(DIFF.EXP.DIFFNAME[[i]]$logFC),'_logFC',sep='')
+    DIFF.EXP.DIFFNAME[[i]]$logFC$Genes <- str_replace_all(rownames(DIFF.EXP.DIFFNAME[[i]]$logFC),'\\..*','')
+    
+    colnames(DIFF.EXP.DIFFNAME[[i]]$adj.P.Val) <- paste(colnames(DIFF.EXP.DIFFNAME[[i]]$adj.P.Val),'_adjPval',sep='')
+    DIFF.EXP.DIFFNAME[[i]]$adj.P.Val$Genes <- str_replace_all(rownames(DIFF.EXP.DIFFNAME[[i]]$adj.P.Val),'\\..*','')
+    
+    tmp <- join_all(DIFF.EXP.DIFFNAME[[i]][c('logFC','adj.P.Val')],by='Genes',match='all')
+    tmp <- tmp[,sort(colnames(tmp))]; tmp <- tmp[,c('Genes',setdiff(colnames(tmp),'Genes'))]
+    
+    write.table(tmp,file=paste('./DifferentialExpressionResults_',i,'.tsv',sep=''),sep='\t',quote=F,row.names=F)
+    RESULT <- File(paste('./DifferentialExpressionResults_',i,'.tsv',sep=''),name = paste('Differential Expression Results',i,sep=' '),parentId = parentId)
+    RESULT <- synStore(RESULT, used = ALL_USED_IDs, activityName='Covariate Analysis', executed=CODE$properties$id)
+  }  
 }
 ```

@@ -1,5 +1,5 @@
 ---
-title: "Covariate Analysis for eXpress aligned data"
+title: "Covariate Analysis of iPSC lines"
 author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
@@ -26,7 +26,7 @@ library('fpc')
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/Knit2Synapse/knit2synapse.R')
-# knit2synapse(file = "./CovariateAnalysis_Express.Rmd", owner = 'syn3382563', wikiName = "Covariate Analysis Express",overwrite=F)
+# knit2synapse(file = "./CovariateAnalysisIpsc.Rmd", owner = 'syn3576534', wikiName = "Covariate Analysis iPSC",overwrite=F)
 
 synapseLogin()
 
@@ -47,7 +47,7 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 # Input Parameters
-COUNT_ID = 'syn3446250';
+COUNT_ID = 'syn3164570';
 METADATA_ID = 'syn3156503';
 OUTLIERS_ID = 'NULL';
 
@@ -67,7 +67,7 @@ Obtain count matrix and metadata from synapse.
 # Get count matrix
 COUNT_OBJ = synGet(COUNT_ID);
 ALL_USED_IDs = COUNT_OBJ$properties$id;
-COUNT = read.table(getFileLocation(COUNT_OBJ),sep=',',header=T,row.names=1, check.names=FALSE)
+COUNT = read.table(getFileLocation(COUNT_OBJ),sep='\t',header=T,row.names=1, check.names=FALSE)
 
 # Get metadata
 METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
@@ -101,6 +101,9 @@ ind <- which(!METADATA$pass_qc | METADATA$exclude)
 # Remove samples with abnormal karyotypes
 ind = unique(c(ind, which(METADATA$C4_Karyotype_Result == "abnormal" | is.na(METADATA$C4_Karyotype_Result))))
 
+# Remove all non-iPSC lines
+ind = unique(c(ind,which(METADATA$Cell_Line_Type == "ESC"))) 
+
 REMOVED_UID <- METADATA$UID[ind]
 
 COUNT <- COUNT[,-(ind)]
@@ -126,6 +129,9 @@ PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT,MIN_GENE_CPM=0,MIN_SAMPLE
 Determine relationship between covariates. 
 
 ```{r covariates.clustering, fig.width=12, fig.height=10}
+# Drop univarying covariates
+FactorCovariates <- setdiff(FactorCovariates,names(which(apply(METADATA[,FactorCovariates],2,function(x){length(levels(factor(x)))}) == 1)))
+
 # Find inter relation between factor covariates
 COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 
@@ -248,7 +254,7 @@ plotdata <- merge(plotdata, METADATA, by="UID")
 
 p <- ggplot(plotdata, aes(x=PC1, y=PC2))
 p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
-p <- p + theme_bw() + scale_size_manual(values = c(5, 2)) + theme(legend.position="top") 
+p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + theme(legend.position="top") 
 p
 ```
 
@@ -256,25 +262,25 @@ Store covariates, design matrix, and voom adjusted gene expression
 
 ```{r synapsestore,echo=FALSE}
 if (SYNAPSE_STORE){  
-  ActivityName <- 'Covariate Analysis of eXpress aligned data'
+  ActivityName <- 'Covariate Analysis of iPSC lines'
   
   # Code
-  CODE <- File('./CovariateAnalysis_Express.Rmd',name = 'Covariate Analysis Express',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')
+  CODE <- File('./CovariateAnalysisIpsc.Rmd',name = 'Covariate Analysis iPSC',parentId = parentId)
+  CODE <- synStore(CODE, used = ALL_USED_IDs,activityName=ActivityName, executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/cov_anal/code/Rmd/CovariateAnalysis.Rmd')
   
   # Expression Data
-  write.table(VOOM.ADJUSTED.GENE_EXPRESSION$E,file = './AdjustedExpression_Express.tsv',sep='\t',row.names=T,col.names=T,quote=F)
-  EXPRESSION <- File('./AdjustedExpression_Express.tsv',name = 'Adjusted Expression Express',parentId = parentId)
-  EXPRESSION <- synStore(EXPRESSION, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
+  write.table(VOOM.ADJUSTED.GENE_EXPRESSION$E,file = './AdjustedExpressionIpsc.tsv',sep='\t',row.names=T,col.names=T,quote=F)
+  EXPRESSION <- File('./AdjustedExpressionIpsc.tsv',name = 'Adjusted Expression iPSC',parentId = parentId)
+  EXPRESSION <- synStore(EXPRESSION, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE$properties$id)  
   
   # Adjustment Weights 
-  write.table(VOOM.ADJUSTED.GENE_EXPRESSION$weights,file = './AdjustedWeights_Express.tsv',sep='\t',row.names=T,col.names=T,quote=F)
-  WEIGHTS <- File('AdjustedWeights_Express.tsv',name = 'Adjusted Weights Express',parentId = parentId)
-  WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
+  write.table(VOOM.ADJUSTED.GENE_EXPRESSION$weights,file = './AdjustedWeightsIpsc.tsv',sep='\t',row.names=T,col.names=T,quote=F)
+  WEIGHTS <- File('AdjustedWeightsIpsc.tsv',name = 'Adjusted Weights iPSC',parentId = parentId)
+  WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE$properties$id)
   
   # Design Matrix
-  write.table(VOOM.ADJUSTED.GENE_EXPRESSION$design,file = './AdjustedDesign_Express.tsv',sep='\t',row.names=T,col.names=T,quote=F)
-  DESIGN <- File('AdjustedDesign_Express.tsv',name = 'Adjusted Design Express',parentId = parentId)
-  DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
+  write.table(VOOM.ADJUSTED.GENE_EXPRESSION$design,file = './AdjustedDesignIpsc.tsv',sep='\t',row.names=T,col.names=T,quote=F)
+  DESIGN <- File('AdjustedDesignIpsc.tsv',name = 'Adjusted Design iPSC',parentId = parentId)
+  DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE$properties$id)
 }
 ```

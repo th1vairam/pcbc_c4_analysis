@@ -2,6 +2,8 @@
 calcCompleteCorAndPlot <- function(COMPARE_data, COVAR_data, correlationType, title, 
                                    PLOT_ALL_COVARS=FALSE, EXCLUDE_VARS_FROM_FDR=NULL, MAX_FDR = 0.1) {
   
+  require(plyr)
+  
   all_cor = corr.test(COMPARE_data, COVAR_data, use='pairwise.complete.obs', method=correlationType, adjust="none")
   all_cor_vals = all_cor$r
   all_cor_p = all_cor$p
@@ -45,12 +47,16 @@ calcCompleteCorAndPlot <- function(COMPARE_data, COVAR_data, correlationType, ti
   
   for (markCor in c("markSignificantCorrelations", "markPotentialSignificantCorrelations")) {
     useMarkCor = get(markCor)[plotRows]
-    if (markCor != "markPotentialSignificantCorrelations" || length(which(useMarkCor)) > 0) {
+    if (length(which(useMarkCor)) > 0) {
       plotCor[, markCor] = useMarkCor[ setdiff(1:length(useMarkCor), as.numeric(attr(plotCor, "na.action"))) ]
     }
   }
   
-  plot = plotCorWithCompare(plotCor, title, paste("FDR <= ", MAX_FDR, sep=""), markColumnsAsMissing)
+  if (!empty(plotCor)){
+    plot = plotCorWithCompare(plotCor, title, paste("FDR <= ", MAX_FDR, sep=""), markColumnsAsMissing)
+  } else{
+    plot = NULL
+  }
   
   return(list(plot=plot, significantCovars=as.character(significantCorrelatedCovars), Effects.significantCovars = Effects.significantCovars))
 }
