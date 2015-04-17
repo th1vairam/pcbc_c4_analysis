@@ -105,7 +105,8 @@ metadata_filtered <-
   filter(UID %in% colnames(COUNT)) %>%
   filter(Cell_Type == "PSC") %>%
   filter(!is.na(Cell_Type)) %>%
-  filter(pass_qc | !exclude) %>%
+  filter(pass_qc) %>%
+  filter(!exclude) %>%
   filter(C4_Karyotype_Result != "abnormal" | !is.na(C4_Karyotype_Result))
 
 REMOVED_UID <- setdiff(METADATA$UID, metadata_filtered$UID)
