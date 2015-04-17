@@ -77,7 +77,8 @@ ALL_USED_IDs[length(ALL_USED_IDs)+1] = METADATA_OBJ@schema
 METADATA = METADATA_OBJ@values
 ```
 
-Preprocess counts matrix and metadata 
+Preprocess counts matrix and metadata.
+We separate MESO samples into early (5 and 15 day) and late (30 day).
 ```{r preprocessing}
 # Preprocess metadata
 METADATA[METADATA == 'N/A'] = 'Not Applicable'
@@ -92,10 +93,12 @@ METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' |
 # METADATA = METADATA[RowsPresent,]
 rownames(METADATA) = METADATA$UID
 
+```
+Remove somatic samples and samples with type NA.
+Remove samples that failed QC and samples classified as exclude.
+Remove samples with abnormal karyotypes.
+```{r filtering, echo=TRUE}
 #### Pre processing mRNA expression counts and metadata ####
-# Remove somatic samples and samples with type NA
-# Remove samples that failed QC and samples classified as bad_lines
-# Remove samples with abnormal karyotypes
 metadata_filtered <- 
   METADATA %>%
   filter(Diffname_short != "") %>%
@@ -106,12 +109,13 @@ metadata_filtered <-
   filter(C4_Karyotype_Result != "abnormal" | !is.na(C4_Karyotype_Result))
 
 REMOVED_UID <- setdiff(METADATA$UID, metadata_filtered$UID)
-
 METADATA <- metadata_filtered
 COUNT <- COUNT[, METADATA$UID]
-
 ```
-Following samples `r length(REMOVED_UID)` were removed `r REMOVED_UID` 
+
+The following `r length(REMOVED_UID)` samples were removed:
+
+`r REMOVED_UID` 
 
 ### Normalisation
 Determine design matrix for normalisation and differential expression analysis. 
