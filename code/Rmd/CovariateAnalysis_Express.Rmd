@@ -21,6 +21,8 @@ library('vcd')
 library('psych')
 library('erer')
 library('fpc')
+library(data.table)
+library(dplyr)
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
@@ -67,7 +69,7 @@ Obtain count matrix and metadata from synapse.
 # Get count matrix
 COUNT_OBJ = synGet(COUNT_ID);
 ALL_USED_IDs = COUNT_OBJ$properties$id;
-COUNT = read.table(getFileLocation(COUNT_OBJ),sep=',',header=T,row.names=1, check.names=FALSE)
+COUNT = fread(getFileLocation(COUNT_OBJ), data.table=FALSE)
 
 # Get metadata
 METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
@@ -82,29 +84,32 @@ METADATA[METADATA == 'N/A'] = 'Not Applicable'
 
 # Assign new values for MESO-5, 15 and 30 samples
 METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
-METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
+METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | 
+                          METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
 
-# Arrange count and metadata
-RowsPresent = match(colnames(COUNT), METADATA$UID);
-METADATA = METADATA[RowsPresent,]
+# # Arrange count and metadata
+# RowsPresent = match(colnames(COUNT), METADATA$UID);
+# METADATA = METADATA[RowsPresent,]
 rownames(METADATA) = METADATA$UID
 
 #### Pre processing mRNA expression counts and metadata ####
 # Remove somatic samples and samples with type NA
-ind = METADATA$Cell_Type == "PSC" & !is.na(METADATA$Cell_Type)
-COUNT = COUNT[,ind]
-METADATA = METADATA[ind,]
-
 # Remove samples that failed QC and samples classified as bad_lines
-ind <- which(!METADATA$pass_qc | METADATA$exclude)
-
 # Remove samples with abnormal karyotypes
-ind = unique(c(ind, which(METADATA$C4_Karyotype_Result == "abnormal" | is.na(METADATA$C4_Karyotype_Result))))
+metadata_filtered <- 
+  METADATA %>%
+  filter(Diffname_short != "") %>%
+  filter(UID %in% colnames(COUNT)) %>%
+  filter(Cell_Type == "PSC") %>%
+  filter(!is.na(Cell_Type)) %>%
+  filter(pass_qc | !exclude) %>%
+  filter(C4_Karyotype_Result != "abnormal" | !is.na(C4_Karyotype_Result))
 
-REMOVED_UID <- METADATA$UID[ind]
+REMOVED_UID <- setdiff(METADATA$UID, metadata_filtered$UID)
 
-COUNT <- COUNT[,-(ind)]
-METADATA <- METADATA[-(ind),]
+METADATA <- metadata_filtered
+COUNT <- COUNT[, METADATA$UID]
+
 ```
 Following samples `r length(REMOVED_UID)` were removed `r REMOVED_UID` 
 
@@ -115,8 +120,9 @@ Remove genes that have less than 1 cpm counts in at least 50% of each of the ind
 ```{r cpmnormalisation}
 tmp <- tapply(colnames(COUNT),factor(METADATA$Diffname_short),function(cols,COUNT){PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT[,cols])},COUNT)
 ugenes <- c()
-for (i in unique(METADATA$Diffname_short))
+for (i in unique(METADATA$Diffname_short)) {
   ugenes <- unique(c(ugenes,tmp[[i]]$filteredExprMatrix$genes[,1]))
+}
 
 COUNT <- COUNT[ugenes,,drop=F]
 PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT,MIN_GENE_CPM=0,MIN_SAMPLE_PERCENT_WITH_MIN_GENE_CPM=0)
@@ -182,7 +188,8 @@ preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 Since lot of covariates are confounded, re-normalising COVARIATES with a recursive design matrix.
 
 ```{r recurssive.adjusted.voom.normalisation}
-postAdjustCovars = designMatVarsToCovars(getCovariatesMap(DM),names(preAdjustedSigCovars$Effects.significantCovars)[1])
+postAdjustCovars = designMatVarsToCovars(getCovariatesMap(DM),
+                                         names(preAdjustedSigCovars$Effects.significantCovars)[1])
 residualSigCovars = preAdjustedSigCovars 
 while (length(residualSigCovars$significantCovars) != 0){
   print(paste('Using following covariates in the model',paste(postAdjustCovars,collapse=','),sep=':'))
@@ -254,7 +261,7 @@ p
 
 Store covariates, design matrix, and voom adjusted gene expression
 
-```{r synapsestore,echo=FALSE}
+```{r synapsestore,echo=FALSE,eval=FALSE,include=FALSE}
 if (SYNAPSE_STORE){  
   ActivityName <- 'Covariate Analysis of eXpress aligned data'
   
