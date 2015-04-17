@@ -199,13 +199,12 @@ preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 
-Since lot of covariates are confounded, re-normalising COVARIATES with a recursive design matrix.
+Since many covariates are confounded, re-normalising COVARIATES with a iterative design matrix.
 
-```{r recurssive.adjusted.voom.normalisation}
+```{r iterative.adjusted.voom.normalisation}
 postAdjustCovars = designMatVarsToCovars(getCovariatesMap(DM),
                                          names(preAdjustedSigCovars$Effects.significantCovars)[1])
 residualSigCovars = preAdjustedSigCovars 
-while (length(residualSigCovars$significantCovars) != 0){
   print(paste('Using following covariates in the model',paste(postAdjustCovars,collapse=','),sep=':'))
   
   # Post adjusted design matrix
