@@ -185,7 +185,8 @@ Correlation between pca of unadjusted mRNA expression and covariates is used to 
 preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DM$design,'NULL design(voom-normalized)', isKeyPlot=TRUE)
 
 # Find significant covariates
-adjustCovars = designMatVarsToCovars(getCovariatesMap(DM),preAdjustedSigCovars$significantCovars)
+adjustCovars = designMatVarsToCovars(getCovariatesMap(DM),
+                                     preAdjustedSigCovars$significantCovars)
 ```
 
 Significant covariates to adjust at FDR 0.1 are `r adjustCovars`
