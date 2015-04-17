@@ -209,17 +209,23 @@ while (length(residualSigCovars$significantCovars) != 0){
   print(paste('Using following covariates in the model',paste(postAdjustCovars,collapse=','),sep=':'))
   
   # Post adjusted design matrix
-  DM1 = getDesignMatrix(METADATA[,postAdjustCovars,drop=F],FactorCovariates,Intercept = F)
+  DM1 = getDesignMatrix(METADATA[,postAdjustCovars,drop=F],
+                        FactorCovariates,Intercept = F)
   
-  VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=T)
+  VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, 
+                                       design=DM1$design, plot=T)
   
   # Residuals after normalisation
   RESIDUAL.GENE_EXPRESSION = calcResiduals(VOOM.ADJUSTED.GENE_EXPRESSION$E, 
                                            DM1$design,sampleWeights=VOOM.ADJUSTED.GENE_EXPRESSION$weights)
   
   # Residual covariates to choose from
-  DM1 = getDesignMatrix(METADATA[,setdiff(c(FactorCovariates,ContCovariates),postAdjustCovars)],
-                        FactorCovariates,Intercept = F)
+  residCovars <- setdiff(c(FactorCovariates,ContCovariates),
+                         postAdjustCovars)
+
+  DM1 = getDesignMatrix(METADATA[, residCovars],
+                        FactorCovariates,
+                        Intercept = F)
     
   # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
   residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, 
@@ -238,7 +244,9 @@ Significant covariates to adjust at FDR 0.1 after considering confounding effect
 
 ```{r adjusted.voom.normalisation}
 # Post adjusted design matrix
-DM1 = getDesignMatrix(METADATA[,postAdjustCovars,drop=F],FactorCovariates,Intercept = F)
+DM1 = getDesignMatrix(METADATA[,postAdjustCovars,drop=F],
+                      FactorCovariates,
+                      Intercept = F)
 
 VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix,
                                      design=DM1$design, plot=T)  
