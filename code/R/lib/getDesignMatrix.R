@@ -1,7 +1,10 @@
 # Function to optain desing matrix (modified from covairates pipeline of Menachem Former)
-getDesignMatrix <- function(covariatesDataFrame, FACTOR_COVARIATE_NAMES, Intercept = T, RELEVELS=list()) {
+getDesignMatrix <- function(covariatesDataFrame, Intercept = T, RELEVELS=list()) {
+  
   ROWNAMES = rownames(covariatesDataFrame)
   COLNAMES = colnames(covariatesDataFrame)
+  
+  FACTOR_COVARIATE_NAMES <- names(covariatesDataFrame)[sapply(covariatesDataFrame,is.factor)]
   FACTOR_COVARIATE_NAMES = setdiff(FACTOR_COVARIATE_NAMES, FACTOR_COVARIATE_NAMES[!(FACTOR_COVARIATE_NAMES %in% colnames(covariatesDataFrame))])
   NUMERIC_COVARIATE_NAMES = setdiff(COLNAMES, FACTOR_COVARIATE_NAMES)
   
