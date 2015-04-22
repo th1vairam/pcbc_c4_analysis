@@ -1,5 +1,5 @@
 ---
-title: "Covariate Analysis for eXpress aligned data (only for iPSC lines)"
+title: "Covariate Analysis for eXpress aligned data (only for iPSc lines)"
 author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
@@ -28,7 +28,7 @@ library('dplyr')
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/Knit2Synapse/knit2synapse.R')
-# knit2synapse(file = "./CovariateAnalysis_Express_iPSCLines.Rmd", owner = '', wikiName = "Covariate Analysis Express iPSCLines",overwrite=T)
+# knit2synapse(file = "./CovariateAnalysis_Express_iPScLines.Rmd", owner = 'syn3631186', wikiName = "Covariate Analysis Express iPScLines",overwrite=T)
 
 synapseLogin()
 
@@ -318,16 +318,16 @@ if (SYNAPSE_STORE){
   ActivityName <- 'Covariate Analysis of eXpress aligned data for iPSc lines'
   
   # Code
-  CODE <- File('./CovariateAnalysis_Express_iPSCLines.Rmd',name = 'Covariate Analysis Express iPSCLines',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = '')
+  CODE <- File('./CovariateAnalysis_Express_iPScLines.Rmd',name = 'Covariate Analysis Express iPScLines',parentId = parentId)
+  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/d62425e7d7535094c083e6665ad387b35d6f4203/code/Rmd/CovariateAnalysis_Express_iPScLines.Rmd')
   
   # Expression Data
   EXP <- as.data.frame(VOOM.ADJUSTED.GENE_EXPRESSION$E)
   EXP$Genes <- row.names(EXP)
   EXP <- EXP[,c(dim(EXP)[2],1:(dim(EXP)[2]-1))]
   
-  write.table(EXP,file = './AdjustedExpression_Express_iPSCLines.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  EXPRESSION <- File('./AdjustedExpression_Express_iPSCLines.tsv',name = 'Adjusted Expression Express iPSCLines',parentId = parentId)
+  write.table(EXP,file = './AdjustedExpression_Express_iPScLines.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  EXPRESSION <- File('./AdjustedExpression_Express_iPScLines.tsv',name = 'Adjusted Expression Express iPScLines',parentId = parentId)
   EXPRESSION <- synStore(EXPRESSION, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
   
   # Adjustment Weights 
@@ -336,8 +336,8 @@ if (SYNAPSE_STORE){
   WEIGHTS <- WEIGHTS[,c(dim(WEIGHTS)[2],1:(dim(WEIGHTS)[2]-1))]
   colnames(WEIGHTS) <- colnames(EXP)
   
-  write.table(WEIGHTS,file = './AdjustedWeights_Express_iPSCLines.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  WEIGHTS <- File('AdjustedWeights_Express_iPSCLines.tsv',name = 'Adjusted Weights Express iPSCLines',parentId = parentId)
+  write.table(WEIGHTS,file = './AdjustedWeights_Express_iPScLines.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  WEIGHTS <- File('AdjustedWeights_Express_iPScLines.tsv',name = 'Adjusted Weights Express iPScLines',parentId = parentId)
   WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
   
   # Covariates Matrix
@@ -345,8 +345,8 @@ if (SYNAPSE_STORE){
   COVARIATES$UID <- row.names(COVARIATES)
   COVARIATES <- COVARIATES[,c(dim(COVARIATES)[2],1:(dim(COVARIATES)[2]-1))]
   
-  write.table(COVARIATES,file = './Covariates_Express_iPSCLines.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  COVARIATES <- File('Covariates_Express_iPSCLines.tsv',name = 'Covariates Express iPSCLines',parentId = parentId)
+  write.table(COVARIATES,file = './Covariates_Express_iPScLines.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  COVARIATES <- File('Covariates_Express_iPScLines.tsv',name = 'Covariates Express iPScLines',parentId = parentId)
   COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
   
   # Design Matrix
@@ -354,8 +354,8 @@ if (SYNAPSE_STORE){
   DESIGN$UID <- row.names(DESIGN)
   DESIGN <- DESIGN[,c(dim(DESIGN)[2],1:(dim(DESIGN)[2]-1))]
   
-  write.table(DESIGN,file = './AdjustedDesign_Express_iPSCLines.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  DESIGN <- File('AdjustedDesign_Express_iPSCLines.tsv',name = 'Adjusted Design Express iPSCLines',parentId = parentId)
+  write.table(DESIGN,file = './AdjustedDesign_Express_iPScLines.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  DESIGN <- File('AdjustedDesign_Express_iPScLines.tsv',name = 'Adjusted Design Express iPScLines',parentId = parentId)
   DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
 }
 ```
