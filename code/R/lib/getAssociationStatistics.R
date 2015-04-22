@@ -1,16 +1,13 @@
-getAssociationStatistics <- function(COVARIATES,FactorCovariates,ContCovariates,PVAL=0.05){
+getAssociationStatistics <- function(COVARIATES, PVAL=0.05){
+
+  # Get factor and continuous covariates
+  FactorCovariates <- names(COVARIATES)[sapply(COVARIATES,is.factor)]
+  ContCovariates <- setdiff(names(COVARIATES),FactorCovariates)
   
-  getFactorAssociationStatistics <- function(factorNames,COVARIATES, na.action='remove'){
-    if (na.action == "remove")
-      COVARIATES = na.omit(COVARIATES[,factorNames])
-    fac1 = as.factor(COVARIATES[,1])
-    fac2 = as.factor(COVARIATES[,2])
-    
-    stats = assocstats(xtabs(~fac1+fac2))
-    
-    return(c(Estimate=stats$cramer,Pval=stats$chisq_tests['Pearson','P(> X^2)']))
-  }
-  
+  # Convert factor covariates to numeric vector
+  COVARIATES[,FactorCovariates] <- lapply(COVARIATES[,FactorCovariates],
+                                          function(x){x <- unclass(x)})
+
   # Find association between factor covariates
   if (length(FactorCovariates) != 0 & length(FactorCovariates) != 1){
     COVARIATES.FACTOR.CORRELATION = apply(expand.grid(FactorCovariates,FactorCovariates),1,getFactorAssociationStatistics,COVARIATES[,FactorCovariates])
@@ -53,20 +50,9 @@ getAssociationStatistics <- function(COVARIATES,FactorCovariates,ContCovariates,
     COVARIATES.CONT.CORRELATION.ESTIMATE <- NULL
     COVARIATES.CONT.CORRELATION.PVAL <- NULL
   }
-  
-  # Find ICC between factor and continuous covariates
-  getFactorContAssociationStatistics <- function(factorContNames,COVARIATES, na.action='remove'){
-    if (na.action == "remove")
-      COVARIATES = na.omit(COVARIATES[,factorContNames])
     
-    stats = ICC(COVARIATES)
-    
-    return(c(Estimate = stats$results['Single_raters_absolute','ICC'],
-             Pval = stats$results['Single_raters_absolute','p']))
-  }
-  
-  # Find association between factor and continuous covariates
-  if (length(FactorCovariates) > 1 & length(ContCovariates) > 1){
+  # Find interclass correlation between factor and continuous covariates
+  if (length(FactorCovariates) > 0 & length(ContCovariates) > 0){
     COVARIATES.FACTORCONT.CORRELATION = apply(expand.grid(FactorCovariates,ContCovariates),1,getFactorContAssociationStatistics,COVARIATES[,c(FactorCovariates,ContCovariates)])
     COVARIATES.FACTORCONT.CORRELATION.ESTIMATE <- matrix(COVARIATES.FACTORCONT.CORRELATION['Estimate',],nrow=length(FactorCovariates),ncol=length(ContCovariates))
     COVARIATES.FACTORCONT.CORRELATION.PVAL <- matrix(COVARIATES.FACTORCONT.CORRELATION['Pval',],nrow=length(FactorCovariates),ncol=length(ContCovariates))
