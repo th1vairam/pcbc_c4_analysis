@@ -28,7 +28,7 @@ library('dplyr')
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/Knit2Synapse/knit2synapse.R')
-# knit2synapse(file = "./", owner = '', wikiName = "",overwrite=T)
+# knit2synapse(file = "./DiffExpAnal_Express_EB.Rmd", owner = 'syn3642859', wikiName = "Differential Expression Analysis Express EB",overwrite=F)
 
 synapseLogin()
 
@@ -55,8 +55,8 @@ COUNT_ID = 'syn3446250'
 METADATA_ID = 'syn3156503'
 OUTLIERS_ID = 'NULL'
 
-SYNAPSE_STORE = F
-parentId = 'syn3276099'
+SYNAPSE_STORE = T
+parentId = 'syn3471223'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity','Cell_Line_Type')
@@ -323,16 +323,16 @@ p
 ```
 
 #### Custom design for differential expression
-* Design only with Cell Line Type and technical covariates (run, lane, index), and
-* Design with Cell Line Type, Donor ID and technical covariates (run, lane, index)
+* Design only with Cell Line Type and technical covariates (lane), and
+* Design with Cell Line Type, Donor ID and technical covariates (lane)
 ```{r custom.design, echo=FALSE}
 DIFF.EXP <- list()
 GNames <- rownames(VOOM.ADJUSTED.GENE_EXPRESSION$E)
 for (design in c('withoutDonorID','withDonorID')){
-  if(design == 'withoutDonorID'){
-    DESIGN <- getDesignMatrix(COVARIATES[,c('Cell_Line_Type','run','lane','index')], Intercept = F)
+  if(design == 'withoutDonorID'){    
+    DESIGN <- getDesignMatrix(COVARIATES[,c('Cell_Line_Type','lane')], Intercept = F)
   } else {
-    DESIGN <- getDesignMatrix(COVARIATES[,c('Cell_Line_Type','Donor_ID','run','lane','index')], Intercept = F)
+    DESIGN <- getDesignMatrix(COVARIATES[,c('Cell_Line_Type','Donor_ID','lane')], Intercept = F)
   }
   colnames(DESIGN$design) = gsub("[[:punct:]]", "_",colnames(DESIGN$design))
   
@@ -341,8 +341,12 @@ for (design in c('withoutDonorID','withDonorID')){
   print('Degenerate columns in the new design are:')
   print(linColumnFinder(DESIGN$design))
   
+  # Adjust model with new design
+  VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design = DESIGN$design, plot=F) 
+  
   # Fitting linear model
   FIT <- lmFit(VOOM.ADJUSTED.GENE_EXPRESSION$E, design = DESIGN$design, weights = VOOM.ADJUSTED.GENE_EXPRESSION$weights)
+  DIFF.EXP[[design]]$FIT <- FIT
   
   # Make contrast to check differential expression between different differentiation stages
   CONT.NAMES <- colnames(DESIGN$design)[grep('Cell_Line_Type',colnames(DESIGN$design))]
@@ -356,6 +360,7 @@ for (design in c('withoutDonorID','withDonorID')){
   
   # Estimate moderated t-statistics
   FIT.CONTRAST <- eBayes(FIT.CONTRAST)
+  DIFF.EXP[[design]]$FIT.CONTRAST <- FIT.CONTRAST
   
   # Obtain all the differential expession combinations
   DIFF.EXP[[design]]$logFC <- data.frame(row.names = GNames)
@@ -371,40 +376,66 @@ for (design in c('withoutDonorID','withDonorID')){
   DIFF.EXP[[design]]$SIG.EXP <- DIFF.EXP[[design]]$adj.P.Val<=0.05 & abs(DIFF.EXP[[design]]$logFC) >= 2
   DIFF.EXP[[design]]$NUM.SIG.EXP <- colSums(DIFF.EXP[[design]]$SIG.EXP)
 }
+
+# Fold change 
+FC <- merge(rownameToFirstColumn(DIFF.EXP$withoutDonorID$logFC,'GeneNames'),
+            rownameToFirstColumn(DIFF.EXP$withDonorID$logFC,'GeneNames'),
+            by='GeneNames')
+colnames(FC) <- c("GeneNames","ESC-iPSC.withoutDonor","ESC-iPSC.withDonor")
+
+# Fold change 
+PVAL <- merge(rownameToFirstColumn(DIFF.EXP$withoutDonorID$adj.P.Val,'GeneNames'),
+              rownameToFirstColumn(DIFF.EXP$withDonorID$adj.P.Val,'GeneNames'),
+              by='GeneNames')
+colnames(PVAL) <- c("GeneNames","ESC-iPSC.withoutDonor","ESC-iPSC.withDonor")
+hist(PVAL[,2],main="adj.P.val distribution for ESC-iPSC withoutDonor", xlab="PVAL")
+hist(PVAL[,3],main="adj.P.val distribution for ESC-iPSC withDonor", xlab="PVAL")
+
+tmp <- merge(filter(PVAL[,c(1,3)],PVAL[,3]<=0.05),filter(FC[,c(1,3)],PVAL[,3]<=0.05),by='GeneNames')
+colnames(tmp) <- c('GeneNames','ESC-iPSC.withDonor.pval','ESC-iPSC.withDonor.FC')
+kable(tmp)
 ```
-No genes significantly expressed between iPSc and hESc
+Eight genes are significantly differentially expressed between iPSc and hESc
+
+Principal components with selected 8 genes
+```{r pca}
+# Find principal components of expression to plot
+tmp <- filter(PVAL,PVAL[,3]<=0.05)
+PC <- prcomp(scale(VOOM.ADJUSTED.GENE_EXPRESSION$E[tmp$GeneNames,]))
+
+# Determine number of clusters automatically using pamk
+pam.cluster <- pamk(t(VOOM.ADJUSTED.GENE_EXPRESSION$E), krange=2:10)
+
+# Plot first 2 PCs
+plotdata <- data.frame(UID=rownames(PC$rotation), 
+                       PC1=PC$rotation[,1], 
+                       PC2=PC$rotation[,2], 
+                       cluster=pam.cluster$pamobject$clustering)
+
+plotdata <- merge(plotdata, METADATA, by="UID")
+
+p <- ggplot(plotdata, aes(x=PC1, y=PC2))
+p <- p + geom_point(aes(color=Cell_Type_of_Origin, shape=Cell_Line_Type, size=Gender))
+p <- p + theme_bw() + scale_size_manual(values = c(4, 3)) + theme(legend.position="top") 
+p
+```
 
 Store covariates, design matrix, and voom adjusted gene expression
 
-```{r synapsestore, echo=FALSE, include=FALSE,eval=FALSE}
+```{r synapsestore, echo=FALSE, include=FALSE,eval=TRUE}
 if (SYNAPSE_STORE){  
   ActivityName <- 'Differential Expression Analysis of eXpress aligned data EB only'
   
   # Code
   CODE <- File('./DiffExpAnal_Express_EB.Rmd',name = 'Differential Expression Analysis Express EB',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = '')
-  
-  # Expression Data
-  EXP <- as.data.frame(VOOM.ADJUSTED.GENE_EXPRESSION$E)
-  EXP$Genes <- row.names(EXP)
-  EXP <- EXP[,c(dim(EXP)[2],1:(dim(EXP)[2]-1))]
-  
-  FC <- merge(rownameToFirstColumn(DIFF.EXP$withoutDonorID$logFC,'GeneNames'),
-              rownameToFirstColumn(DIFF.EXP$withDonorID$logFC,'GeneNames'),
-              by='GeneNames')
-  colnames(FC) <- c("GeneNames","ESC-iPSC.withoutDonor" "ESC-iPSC.withDonor")
-  
+  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/797bcdb641a4918deeb98b11cfa947aad74c7021/code/Rmd/DiffExpAnal_Express_EB.Rmd')
+    
   write.table(FC,file='./CellLineType_FoldChange_Express_EB.tsv',sep='\t',row.names=F,quote=F)
   FC <- File('./CellLineType_FoldChange_Express_EB.tsv',name = 'Differential Expression Analysis Express logFC EB',parentId = parentId)
-  FC <- synStore(FC, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
-  
-  PVAL <- merge(rownameToFirstColumn(DIFF.EXP$withoutDonorID$adj.P.Val,'GeneNames'),
-                rownameToFirstColumn(DIFF.EXP$withDonorID$adj.P.Val,'GeneNames'),
-                by='GeneNames')
-  colnames(PVAL) <- c("GeneNames","ESC-iPSC.withoutDonor","ESC-iPSC.withDonor")
+  FC <- synStore(FC, used = ALL_USED_IDs, activityName = ActivityName, executed=CODE$properties$id)
   
   write.table(PVAL,file='./CellLineType_Pvalue_Express_EB.tsv',sep='\t',row.names=F,quote=F)
   PVAL <- File('./CellLineType_Pvalue_Express_EB.tsv',name = 'Differential Expression Analysis Express pvalue EB',parentId = parentId)
-  PVAL <- synStore(PVAL, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
+  PVAL <- synStore(PVAL, used = ALL_USED_IDs, activityName = ActivityName, executed=CODE$properties$id)
 }
 ```
