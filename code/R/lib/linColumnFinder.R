@@ -7,10 +7,11 @@ linColumnFinder <- function(mat){
     print("Matrix is of full rank")
     return(invisible(seq(ncol(mat))))
   }
-  
+
   m <- ncol(mat)
   # cols keeps track of which columns are linearly independent
   cols <- 1
+  All.message <- c()
   for(i in seq(2, m)){
     ids <- c(cols, i)
     mymat <- mat[, ids]
@@ -23,8 +24,8 @@ linColumnFinder <- function(mat){
       nz <- !(abs(coef(o)) <= .Machine$double.eps^0.5)
       tmp <- colnames(mat)[cols[nz]]
       vals <- paste(coef(o)[nz], tmp, sep = "*", collapse = " + ")
-      message <- paste0(start, vals)
-      print(message)
+      message <- paste0(start, vals)      
+      All.message <- c(All.message,message)
     } else {
       # If the matrix subset was of full rank
       # then the newest column in linearly independent
@@ -32,5 +33,5 @@ linColumnFinder <- function(mat){
       cols <- ids
     }
   }
-  return(invisible(cols))
+  return(list(indepCols = cols, relations = All.message))
 }
