@@ -207,6 +207,56 @@ CELL.LINE.TYPE$NUM.SIG.EXP <- colSums(CELL.LINE.TYPE$SIG.EXP)
 save(CELL.LINE.TYPE,file='DifferentialExpressionCellLineType.RData')
 ```
 
+Reprogramming vector type
+
+```{r reprogramming.vector, cache=TRUE}
+tmp <- linColumnFinder(getDesignMatrix(dplyr::select(COVARIATES,one_of('Diffname_short','Donor_ID','Reprogramming_Vector_Type')),Intercept = F)$design)
+print('Some reprogramming vector types are linear combination of donors')
+print(tmp$relations)
+
+NEW.DESIGN <- getDesignMatrix(dplyr::select(COVARIATES,one_of('Diffname_short','Reprogramming_Vector_Type')), Intercept = F)
+DESIGN <- NEW.DESIGN$design[,-(grep('Diffname_shortDE',colnames(NEW.DESIGN$design)))]
+colnames(DESIGN) <- gsub(" ","",colnames(DESIGN))
+
+sigCovars <- runPCAandPlotCorrelations(RESIDUAL.EXPR,getDesignMat2Fact(getDesignMatrix(COVARIATES,Intercept=F)$design, FactorCovariates), 'residual expression')
+print(sigCovars$PC_res[[2]]$plotData)
+
+FIT <- lmFit(RESIDUAL.EXPR, design = DESIGN, weights = as.matrix(WEIGHTS))
+
+# Make contrast to check differential expression between different differentiation stages
+CONT.NAMES <- colnames(DESIGN)[grep('Reprogramming_Vector_Type',colnames(DESIGN))]
+CONT.NAMES <- combn(CONT.NAMES,2)
+CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+
+CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
+
+# Refit contrasts
+FIT.CONTRAST <- contrasts.fit(FIT,CONT)
+
+# Estimate moderated t-statistics
+FIT.CONTRAST <- eBayes(FIT.CONTRAST)
+
+# Obtain all the differential expession combinations
+DIFF.EXP.REPROGRAMMING.VECTOR <- list()
+DIFF.EXP.REPROGRAMMING.VECTOR$logFC <- data.frame(row.names = rownames(EXPR))
+DIFF.EXP.REPROGRAMMING.VECTOR$adj.P.Val <- data.frame(row.names = rownames(EXPR)) 
+
+# Get differential expression
+for (i in CONT.NAMES){
+  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(RESIDUAL.EXPR)[1])
+  DIFF.EXP.REPROGRAMMING.VECTOR$logFC[,str_replace_all(i,"Reprogramming_Vector_Type","")] <- tmp[rownames(DIFF.EXP.REPROGRAMMING.VECTOR$logFC),'logFC']
+  DIFF.EXP.REPROGRAMMING.VECTOR$adj.P.Val[,str_replace_all(i,"Reprogramming_Vector_Type","")] <- tmp[rownames(DIFF.EXP.REPROGRAMMING.VECTOR$adj.P.Val),'adj.P.Val']
+}
+
+# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.001 and abs(logFC) >= 2
+DIFF.EXP.REPROGRAMMING.VECTOR$SIG.EXP <- DIFF.EXP.REPROGRAMMING.VECTOR$adj.P.Val<=0.05 & abs(DIFF.EXP.REPROGRAMMING.VECTOR$logFC) >= 0   
+DIFF.EXP.REPROGRAMMING.VECTOR$NUM.SIG.EXP <- colSums(DIFF.EXP.REPROGRAMMING.VECTOR$SIG.EXP)
+save(DIFF.EXP.REPROGRAMMING.VECTOR,file='DifferentialExpressionReprogrammingVectorType.RData')
+
+tmp <- as.data.frame(DIFF.EXP.REPROGRAMMING.VECTOR$NUM.SIG.EXP)
+kable(tmp)
+```
+
 Pvalue and fold change of some important genes
 ```{r print.imp.genes}
 FC <- merge(rownameToFirstColumn(DIFFNAME$all$logFC,'GeneNames'),rownameToFirstColumn(CELL.LINE.TYPE$logFC,'GeneNames'),by='GeneNames')
