@@ -1,11 +1,10 @@
 # Modified from http://stackoverflow.com/questions/13088770/how-to-write-linearly-dependent-column-in-a-matrix-in-terms-of-linearly-independ
 # Function to find linearly dependednt columns of a matrix
 linColumnFinder <- function(mat){
-  
+
   # If the matrix is full rank then we're done
   if(qr(mat)$rank == ncol(mat)){
-    print("Matrix is of full rank")
-    return(invisible(seq(ncol(mat))))
+    return(list(indepCols = seq(1,ncol(mat),1), relations = "Matrix is of full rank"))
   }
 
   m <- ncol(mat)
