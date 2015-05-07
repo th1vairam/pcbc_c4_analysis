@@ -159,9 +159,7 @@ VOOM.GENE_EXPRESSION <- voom(PROCESSED_COUNTS$filteredExprMatrix,
 
 ```{r limmafit}
 # Fitting linear model
-fit <- lmFit(VOOM.GENE_EXPRESSION.NULL$E,
-             design = model.for.fit,
-             weights=VOOM.GENE_EXPRESSION$weights)
+fit <- lmFit(VOOM.GENE_EXPRESSION)
 
 # Make contrast to check differential expression between different differentiation stages
 contrastNames <- grep('Cell_Line_Type', colnames(model.for.fit), value=TRUE)
@@ -179,7 +177,7 @@ fit2 <- eBayes(fit2)
 p.thresh <- 0.05
 
 topGenes <- topTable(fit2, coef="Cell_Line_TypeESC-Cell_Line_TypeiPSC", 
-                     adjust.method = "BH", p=p.thresh)
+                     adjust.method = "BH", p=p.thresh, n=1e6)
 ```
 
 Top genes with adjusted p-value less than `r p.thresh`:
