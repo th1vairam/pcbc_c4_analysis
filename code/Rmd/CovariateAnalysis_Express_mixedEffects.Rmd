@@ -32,8 +32,8 @@ library('stringr')
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
-# source('/mnt/Github/Knit2Synapse/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./CovariateAnalysis_Express_mixedEffects.Rmd", name = "./CovariateAnalysis_Express_mixedEffects.Rmd"",overwrite=F)
+# source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
+# knitFile2Synapse(file = "./CovariateAnalysis_Express_mixedEffects.Rmd", name = 'Covariate Analysis Express Mixed Effects', owner = 'syn3943944', overwrite=F)
 
 synapseLogin()
 
@@ -233,19 +233,21 @@ preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 
+### Normalisation (iterative)
 Since many covariates are confounded, re-normalising COVARIATES with an iterative design matrix. Here Donor_ID is chosen as random effect
 
 ```{r iterative.adjusted.voom.normalisation}
 postAdjustCovars = list()
 postAdjustCovars$random = 'Donor_ID'
-
+ 
 covariatesEffects = designMat2CovEffects(getCovariatesMap(DM),preAdjustedSigCovars$Effects.significantCovars)
 covariatesEffects = covariatesEffects[setdiff(names(covariatesEffects),postAdjustCovars$random)]
 
 postAdjustCovars$fixed = names(which.max(covariatesEffects))
 residualSigCovars = preAdjustedSigCovars
 
-while(length(residualSigCovars$significantCovars)!=0){
+loopCount = 0 
+while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
   print(paste('Using following covariates in the model',
               paste(paste(postAdjustCovars$fixed,collapse=','),'as fixed effects and', paste(postAdjustCovars$random,collapse=','),'as random effects'),
               sep=':'))
@@ -273,7 +275,7 @@ while(length(residualSigCovars$significantCovars)!=0){
   
   # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
   residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, 
-                                                select(DESIGN,-starts_with('Donor_ID')),
+                                                dplyr::select(DESIGN,-starts_with('Donor_ID')),
                                                 'all adjusted design(voom-normalized)',
                                                 isKeyPlot=TRUE)
   
@@ -282,10 +284,12 @@ while(length(residualSigCovars$significantCovars)!=0){
   covariatesEffects = covariatesEffects[setdiff(names(covariatesEffects),postAdjustCovars$random)]
   
   postAdjustCovars$fixed = c(postAdjustCovars$fixed,names(which.max(covariatesEffects)))
+  loopCount = loopCount + 1
 }
+tmp <- paste('Using following covariates in the final model', paste(paste(postAdjustCovars$fixed,collapse=','),'as fixed effects and', paste(postAdjustCovars$random,collapse=','),'as random effects'))
 ```
 
-Significant covariates to adjust at FDR 0.1 after considering confounding effects are `r postAdjustCovars`
+`r tmp`
 
 Degenerate variables are: 
 ```{r adjusted.voom.normalisation}
@@ -318,7 +322,7 @@ RESIDUAL.GENE_EXPRESSION = residuals.MArrayLM(VOOM.ADJUSTED.FIT,VOOM.ADJUSTED.GE
 
 # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
 residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, 
-                                              select(DESIGN,-starts_with('Donor_ID')),
+                                              dplyr::select(DESIGN,-starts_with('Donor_ID')),
                                               'residual matrix of all adjusted design(voom-normalized)',
                                               isKeyPlot=TRUE)
 ```
@@ -331,9 +335,10 @@ residualSigCovars[["PC_res"]][[1]]$plotData
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 
-Reperform normalisation with custom design matrix (manually)
+### Normalisation (custom/manual design)
+Reperform normalisation with custom design matrix (manually with Diffname short, run, Gender, Donor Life Stage, and Reprogramming Vector Type as fixed effects and Donor ID as random effects)
 
-```{r reperform.normalisation}
+```{r reperform.normalisation, cache=TRUE}
 # Post adjusted design matrix
 DM1 = getDesignMatrix(COVARIATES[,c("Diffname_short","run","Gender","Donor_Life_Stage","Reprogramming_Vector_Type"),drop=F],Intercept = F)
 DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols]
@@ -355,11 +360,18 @@ RESIDUAL.GENE_EXPRESSION = residuals.MArrayLM(VOOM.ADJUSTED.FIT,VOOM.ADJUSTED.GE
 
 # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
 residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION,
-                                              select(DESIGN,-starts_with('Donor_ID')),
+                                              dplyr::select(DESIGN,-starts_with('Donor_ID')),
                                               'all adjusted design(voom-normalized)',
                                               isKeyPlot=TRUE)
 ```
 
+```{r residualSigCovars.manual, fig.width=15, fig.height=8}
+residualSigCovars[["PC_res"]][[1]]$plotData
+```
+
+```{r residualSigCovars.manual.ALL, fig.width=15, fig.height=8}
+residualSigCovars[["PC_res"]][[2]]$plotData
+```
 
 Readjust for covariates, normalise and perform outlier analysis (as a sanity check)
 
@@ -391,35 +403,35 @@ Store covariates, design matrix, and voom adjusted gene expression
 
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
 if (SYNAPSE_STORE){  
-  ActivityName <- 'Covariate Analysis of eXpress aligned data'
+  ActivityName <- 'Covariate Analysis of eXpress aligned data with mixed effects modeling'
   
   # Code
-  CODE <- File('./CovariateAnalysis_Express.Rmd',name = 'Covariate Analysis Express',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/dce3b0acd964442c59816af7d878f575ae798875/code/Rmd/CovariateAnalysis_Express.Rmd')
+  CODE <- File('./CovariateAnalysis_Express_mixedEffects.Rmd',name = 'Covariate Analysis Express Mixed Effects',parentId = parentId)
+  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/ff1fb3494634e2fff5681cbad58ad636c2244788/code/Rmd/CovariateAnalysis_Express_mixedEffects.Rmd')
   
   # Expression Data
   EXP <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')  
-  write.table(EXP,file = './AdjustedExpression_Express.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  EXPRESSION <- File('./AdjustedExpression_Express.tsv',name = 'Adjusted Expression Express',parentId = parentId)
+  write.table(EXP,file = './AdjustedExpression_Express_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  EXPRESSION <- File('./AdjustedExpression_Express_MixedEffects.tsv',name = 'Adjusted Expression Express Mixed Effects',parentId = parentId)
   EXPRESSION <- synStore(EXPRESSION, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
   
   # Adjustment Weights 
   WEIGHTS <- cbind(EXP$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
   colnames(WEIGHTS) <- colnames(EXP)  
-  write.table(WEIGHTS,file = './AdjustedWeights_Express.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  WEIGHTS <- File('AdjustedWeights_Express.tsv',name = 'Adjusted Weights Express',parentId = parentId)
+  write.table(WEIGHTS,file = './AdjustedWeights_Express_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  WEIGHTS <- File('AdjustedWeights_Express_MixedEffects.tsv',name = 'Adjusted Weights Express Mixed Effects',parentId = parentId)
   WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
   
   # Covariates Matrix
   COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
-  write.table(COVARIATES,file = './Covariates_Express.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  COVARIATES <- File('Covariates_Express.tsv',name = 'Covariates Express',parentId = parentId)
+  write.table(COVARIATES,file = './Covariates_Express_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  COVARIATES <- File('Covariates_Express_MixedEffects.tsv',name = 'Covariates Express Mixed Effects',parentId = parentId)
   COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
   
   # Design Matrix
   DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design,'UID')
-  write.table(DESIGN,file = './AdjustedDesign_Express.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  DESIGN <- File('AdjustedDesign_Express.tsv',name = 'Adjusted Design Express',parentId = parentId)
+  write.table(DESIGN,file = './AdjustedDesign_Express_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  DESIGN <- File('AdjustedDesign_Express_MixedEffects.tsv',name = 'Adjusted Design Express Mixed Effects',parentId = parentId)
   DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
 }
 ```
