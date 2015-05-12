@@ -58,7 +58,6 @@ knitr::opts_chunk$set(
 # Input Parameters
 COUNT_ID = 'syn3446250'
 METADATA_ID = 'syn3156503'
-OUTLIERS_ID = 'NULL'
 
 SYNAPSE_STORE = T
 parentId = 'syn3276099'
@@ -67,7 +66,7 @@ parentId = 'syn3276099'
 FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity','Cell_Line_Type','PassageAtHarvest')
 ContCovariates = NULL
 ```
-Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. Outliers were extracted from `r OUTLIERS_ID`
+Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. 
 
 Factor covariates considered for analysis are `r FactorCovariates`, and continuous covariates considered for the analysis are `r ContCovariates`.
 
@@ -163,17 +162,6 @@ Covariate correlation
 ```{r covariates.correlation, fig.width=10, fig.height=10}
 COVARIATES.CORRELATION = getAssociationStatistics(COVARIATES, PVAL = 1)
 ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
-```
-Some relationship between covariates
-
-```{r covariates.relation}
-ggMosaicPlot(factor(METADATA$Originating_Lab),factor(METADATA$Donor_ID))
-
-ggMosaicPlot(factor(METADATA$Cell_Type_of_Origin),factor(METADATA$Tissue_of_Origin))
-
-ggMosaicPlot(factor(METADATA$Donor_Life_Stage),factor(METADATA$Tissue_of_Origin))
-
-ggMosaicPlot(factor(METADATA$Reprogramming_Gene_Combination),factor(METADATA$Reprogramming_Vector_Type))
 ```
 
 ### Normalisation (with NULL)
