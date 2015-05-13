@@ -460,7 +460,7 @@ save(ENRICH,file='DifferentialExpressionEnrichment.RData')
 
 Store files in synapse
  
-```{r synapse.store, include=FALSE, eval=TRUE}
+```{r synapse.store, include = FALSE, eval=TRUE}
 if(SYNAPSE_STORE){
   activityName='Differential Expression Analysis of eXpress aligned data with mixed effects model'
   
@@ -480,3 +480,8 @@ if(SYNAPSE_STORE){
   ENRICH1 <- synStore(ENRICH1, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
 }
 ```
+|  *Results*           |  *SynapseID*                |
+|  -------             |   ---------                 |
+|  Log fold change     |  `r FC$properties$id`       |
+|  Adjusted pvalues    |  `r PVAL$properties$id`     |
+|  Enrichment results  |  `r ENRICH1$properties$id`  |
