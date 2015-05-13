@@ -33,7 +33,7 @@ library('knitr')
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd", owner = 'syn3801315', wikiName = "Differential Expression Analysis Express Mixed Effects iPScVsHEsc",overwrite=F)
+# knitFile2Synapse(file = "./DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd", owner = 'syn4104894', wikiName = "Differential Expression Analysis Express Mixed Effects iPScVsHEsc",overwrite=F)
 
 synapseLogin()
 
@@ -152,9 +152,10 @@ COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
 ```
 
-#### Normalisation with Cell_Line_Type
+#### Modeling with Cell_Line_Type as fixed effect and Donor_ID as random
 ```{r cell.line.type.factorisation, cache=TRUE}
 getDifferentialExpression <- function(COVARIATES,COUNTS){
+  Name <- paste('cell_line_type modeled',unique(COVARIATES$Diffname_short))
   
   ind <- which(sapply(COVARIATES,function(x){length(unique(x))})!=1)
   COVARIATES <- COVARIATES[,ind]
@@ -211,11 +212,17 @@ getDifferentialExpression <- function(COVARIATES,COUNTS){
   DESIGN <- DESIGN$design
   colnames(DESIGN) <- gsub('[[:punct:]]','_',colnames(DESIGN))
   colnames(DESIGN) <- gsub(' ','_',colnames(DESIGN))
-  
-  if (CELL.LINE.TYPE$NUM.SIG.EXP !=0 )
-    CELL.LINE.TYPE$sigCovars <- runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,],COVARIATES,paste0('cell_line_type modeled_',unique(COVARIATES$Cell_Line_Type)))
+  EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES)]
+  if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
+    CELL.LINE.TYPE$sigCovars.all <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
   else
-    CELL.LINE.TYPE$sigCovars <- NULL
+    CELL.LINE.TYPE$sigCovars.all <- NULL
+  
+  EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES[COVARIATES$Cell_Line_Type == 'iPSC',])]
+  if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
+    CELL.LINE.TYPE$sigCovars.iPSC <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
+  else
+    CELL.LINE.TYPE$sigCovars.iPSC <- NULL
 
   return(CELL.LINE.TYPE)
 }
@@ -237,19 +244,23 @@ colnames(tmp) <- 'Num. of sig. expressed genes'
 kable(tmp)
 ```
 
-Correlation between covariates 
+Correlation between PCs of expression from differentialy expressed genes and covariates 
 ```{r significant.covariates, cache=TRUE, fig.height=10, fig.width=15}
-sapply(RESULTS,function(x){print(x$sigCovars$PC_res[[2]]$plotData)})
+tmp <- sapply(RESULTS,function(x){print(x$sigCovars.all$PC_res[[2]]$plotData)})
+```
+
+Correlation between PCs of expression from differentialy expressed genes and covariates for only iPSC lines 
+```{r significant.covariates, cache=TRUE, fig.height=10, fig.width=15}
+tmp <- sapply(RESULTS,function(x){print(x$sigCovars.iPSC$PC_res[[2]]$plotData)})
 ```
 
 Store results to synapse
-
 ```{r synapsestore, echo=FALSE, include=FALSE,eval=TRUE}
 if (SYNAPSE_STORE){  
   ActivityName <- 'Differential Expression Analysis of eXpress aligned data at each differentiation stages with mixed effect modeling'
   
   # Code
   CODE <- File('./DiffExpAnal_Express_atEachDiffState.Rmd',name = 'Differential Expression Analysis Express Mixed Effects iPScVshESc',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = '')  
+  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/24f7f51c014ef9f2db7b63910d7f86771b194b79/code/Rmd/DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd')  
 }
 ```
