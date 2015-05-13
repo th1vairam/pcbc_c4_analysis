@@ -245,12 +245,12 @@ kable(tmp)
 ```
 
 Correlation between PCs of expression from differentialy expressed genes and covariates 
-```{r significant.covariates, cache=TRUE, fig.height=10, fig.width=15}
+```{r significant.covariates.all, cache=TRUE, fig.height=10, fig.width=15}
 tmp <- sapply(RESULTS,function(x){print(x$sigCovars.all$PC_res[[2]]$plotData)})
 ```
 
 Correlation between PCs of expression from differentialy expressed genes and covariates for only iPSC lines 
-```{r significant.covariates, cache=TRUE, fig.height=10, fig.width=15}
+```{r significant.covariates.iPSC, cache=TRUE, fig.height=10, fig.width=15}
 tmp <- sapply(RESULTS,function(x){print(x$sigCovars.iPSC$PC_res[[2]]$plotData)})
 ```
 
@@ -261,6 +261,6 @@ if (SYNAPSE_STORE){
   
   # Code
   CODE <- File('./DiffExpAnal_Express_atEachDiffState.Rmd',name = 'Differential Expression Analysis Express Mixed Effects iPScVshESc',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/24f7f51c014ef9f2db7b63910d7f86771b194b79/code/Rmd/DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd')  
+  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/1b5514b44978f8cd721c408ac2ab5cf6355927fe/code/Rmd/DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd')  
 }
 ```
