@@ -423,3 +423,9 @@ if (SYNAPSE_STORE){
   DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
 }
 ```
+|  *Results*      |  *SynapseID*                  |
+|  -------        |   ---------                   |
+|  Expression     |  `r EXPRESSION$properties$id` |
+|  sample weights |  `r WEIGHTS$properties$id`    |
+|  Covariates     |  `r COVARIATES$properties$id` |
+|  Design Matrix  |  `r DESIGN$properties$id`     |
