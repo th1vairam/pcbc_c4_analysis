@@ -33,7 +33,7 @@ library('stringr')
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./CovariateAnalysis_Express.Rmd", owner='syn3382563',overwrite=T)
+# knitFile2Synapse(file = "./CovariateAnalysis_Express.Rmd", name = 'Covariate Analysis Express',owner='syn3382563',overwrite=F)
 
 synapseLogin()
 
@@ -333,8 +333,8 @@ if (SYNAPSE_STORE){
   ActivityName <- 'Covariate Analysis of eXpress aligned data'
   
   # Code
-  CODE <- File('./CovariateAnalysis_Express.Rmd',name = 'Covariate Analysis Express',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/dce3b0acd964442c59816af7d878f575ae798875/code/Rmd/CovariateAnalysis_Express.Rmd')
+  CODE <- File(path = './CovariateAnalysis_Express.Rmd', name = 'Covariate Analysis Express', parentId = parentId, synapseStore=T)
+  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/ff1fb3494634e2fff5681cbad58ad636c2244788/code/Rmd/CovariateAnalysis.Rmd')
   
   # Expression Data
   EXP <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')  
