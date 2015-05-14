@@ -296,7 +296,7 @@ if (SYNAPSE_STORE){
   ActivityName <- 'Differential Expression Analysis of eXpress aligned data at each differentiation stages with mixed effect modeling'
   
   # Code
-  CODE <- File('./DiffExpAnal_Express_atEachDiffState.Rmd',name = 'Differential Expression Analysis Express Mixed Effects iPScVshESc',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/1b5514b44978f8cd721c408ac2ab5cf6355927fe/code/Rmd/DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd')  
+  CODE <- File('./DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd',name = 'KD Differential Expression Analysis Express Mixed Effects iPScVshESc',parentId = parentId)
+  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/kdaily/pcbc_c4_analysis/blob/252e172da541c3778dc15c32696864640d6d6326/code/Rmd/DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd')  
 }
 ```
