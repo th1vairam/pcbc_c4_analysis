@@ -155,7 +155,7 @@ COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
 #### Modeling with Cell_Line_Type as fixed effect and Donor_ID as random
 ```{r cell.line.type.factorisation, cache=TRUE}
 getDifferentialExpression <- function(COVARIATES,COUNTS){
-  Name <- paste('Diffname_short modeled',unique(COVARIATES$Diffname_short))
+  Name <- paste('Diffname_short modeled', unique(COVARIATES$Diffname_short))
   print(Name)
   
   ind <- which(sapply(COVARIATES,function(x){length(unique(x))})!=1)
@@ -170,14 +170,18 @@ getDifferentialExpression <- function(COVARIATES,COUNTS){
     
   # Estimate correlation of random effects
   VOOM.ADJUSTED.GENE_EXPRESSION = voom(COUNTS, design=DESIGN$design, plot=F)
-  correlation <- duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DESIGN$design, block=COVARIATES$Donor_ID)
+  correlation <- duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION$E, 
+                                      design=DESIGN$design, 
+                                      block=COVARIATES$Donor_ID)
   
   # Re-calculate voom weights with correlation of random effects
   VOOM.ADJUSTED.GENE_EXPRESSION = voom(COUNTS, design=DESIGN$design, plot=F,
                                        block=COVARIATES$Donor_ID, correlation = correlation$cor)
   
   # Fit linear model with cell line type
-  FIT = lmFit(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DESIGN$design, weights = VOOM.ADJUSTED.GENE_EXPRESSION$weights,
+  FIT = lmFit(VOOM.ADJUSTED.GENE_EXPRESSION$E, 
+              design=DESIGN$design, 
+              weights = VOOM.ADJUSTED.GENE_EXPRESSION$weights,
               block=COVARIATES$Donor_ID, correlation = correlation$cor)
   
   # Make contrast to check differential expression between cell line types
