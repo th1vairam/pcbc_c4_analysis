@@ -24,6 +24,7 @@ library('data.table')
 library('dplyr')
 library('stringr')
 library('knitr')
+library('goseq')
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
@@ -98,7 +99,7 @@ RESIDUAL.EXPR <- calcResiduals(EXPR, DESIGN, varsToAddBackIn=c("Diffname_shortDE
 
 Get differentially expressed genes using limma package with following co-efficients `r colnames(DESIGN)` in linear model
 
-Degenerate columns in the new design are `r linColumnFinder(DESIGN)`
+Degenerate columns in the new design are `r linColumnFinder(DESIGN)$relations`
 
 #### Differential expression 
 
@@ -301,7 +302,7 @@ save(DIFFNAME,file='DifferentialExpressionDiffName_Enrichment.RData')
 
 Store files in synapse
  
-```{r synapse.store, include=FALSE}
+```{r synapse.store, include=FALSE, eval=FALSE}
 if(SYNAPSE_STORE){
   activityName='Differential Expression Analysis of eXpress aligned data'
   
