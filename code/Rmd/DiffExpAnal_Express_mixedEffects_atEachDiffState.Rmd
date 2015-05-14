@@ -155,7 +155,8 @@ COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
 #### Modeling with Cell_Line_Type as fixed effect and Donor_ID as random
 ```{r cell.line.type.factorisation, cache=TRUE}
 getDifferentialExpression <- function(COVARIATES,COUNTS){
-  Name <- paste('cell_line_type modeled',unique(COVARIATES$Diffname_short))
+  Name <- paste('Diffname_short modeled',unique(COVARIATES$Diffname_short))
+  print(Name)
   
   ind <- which(sapply(COVARIATES,function(x){length(unique(x))})!=1)
   COVARIATES <- COVARIATES[,ind]
@@ -199,30 +200,32 @@ getDifferentialExpression <- function(COVARIATES,COUNTS){
   CELL.LINE.TYPE$adj.P.Val <- data.frame(row.names = rownames(VOOM.ADJUSTED.GENE_EXPRESSION$E))
   
   for (i in colnames(CONT)){
-    tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(VOOM.ADJUSTED.GENE_EXPRESSION$E)[1])    
+    tmp <- topTable(FIT.CONTRAST, coef=i, number=1e8)    
     CELL.LINE.TYPE$logFC[,i] <- tmp[rownames(CELL.LINE.TYPE$logFC),'logFC']
     CELL.LINE.TYPE$adj.P.Val[,i] <- tmp[rownames(CELL.LINE.TYPE$adj.P.Val),'adj.P.Val']
   }
+
+  CELL.LINE.TYPE$samples <- colnames(VOOM.ADJUSTED.GENE_EXPRESSION$E)
 
   # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and abs(logFC) >= 1
   CELL.LINE.TYPE$SIG.EXP <- CELL.LINE.TYPE$adj.P.Val<=0.05 & abs(CELL.LINE.TYPE$logFC) >= 0   
   CELL.LINE.TYPE$NUM.SIG.EXP <- colSums(CELL.LINE.TYPE$SIG.EXP)
   
-  DESIGN <- getDesignMatrix(COVARIATES,Intercept = F)
-  DESIGN <- DESIGN$design
-  colnames(DESIGN) <- gsub('[[:punct:]]','_',colnames(DESIGN))
-  colnames(DESIGN) <- gsub(' ','_',colnames(DESIGN))
-  EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES)]
-  if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
-    CELL.LINE.TYPE$sigCovars.all <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
-  else
-    CELL.LINE.TYPE$sigCovars.all <- NULL
-  
-  EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES[COVARIATES$Cell_Line_Type == 'iPSC',])]
-  if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
-    CELL.LINE.TYPE$sigCovars.iPSC <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
-  else
-    CELL.LINE.TYPE$sigCovars.iPSC <- NULL
+#   DESIGN <- getDesignMatrix(COVARIATES,Intercept = F)
+#   DESIGN <- DESIGN$design
+#   colnames(DESIGN) <- gsub('[[:punct:]]','_',colnames(DESIGN))
+#   colnames(DESIGN) <- gsub(' ','_',colnames(DESIGN))
+#   EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES)]
+#   if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
+#     CELL.LINE.TYPE$sigCovars.all <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
+#   else
+#     CELL.LINE.TYPE$sigCovars.all <- NULL
+#   
+#   EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES[COVARIATES$Cell_Line_Type == 'iPSC',])]
+#   if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
+#     CELL.LINE.TYPE$sigCovars.iPSC <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
+#   else
+#     CELL.LINE.TYPE$sigCovars.iPSC <- NULL
 
   return(CELL.LINE.TYPE)
 }
