@@ -209,27 +209,27 @@ getDifferentialExpression <- function(COVARIATES,COUNTS){
     CELL.LINE.TYPE$adj.P.Val[,i] <- tmp[rownames(CELL.LINE.TYPE$adj.P.Val),'adj.P.Val']
   }
 
-  CELL.LINE.TYPE$samples <- colnames(VOOM.ADJUSTED.GENE_EXPRESSION$E)
-
   # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and abs(logFC) >= 1
   CELL.LINE.TYPE$SIG.EXP <- CELL.LINE.TYPE$adj.P.Val<=0.05 & abs(CELL.LINE.TYPE$logFC) >= 0   
   CELL.LINE.TYPE$NUM.SIG.EXP <- colSums(CELL.LINE.TYPE$SIG.EXP)
+
+  CELL.LINE.TYPE$voomSig <- VOOM.ADJUSTED.GENE_EXPRESSION[CELL.LINE.TYPE$SIG.EXP, ]
+
+  DESIGN <- getDesignMatrix(COVARIATES,Intercept = F)
+  DESIGN <- DESIGN$design
+  colnames(DESIGN) <- gsub('[[:punct:]]','_',colnames(DESIGN))
+  colnames(DESIGN) <- gsub(' ','_',colnames(DESIGN))
+  EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES)]
+  if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
+    CELL.LINE.TYPE$sigCovars.all <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
+  else
+    CELL.LINE.TYPE$sigCovars.all <- NULL
   
-#   DESIGN <- getDesignMatrix(COVARIATES,Intercept = F)
-#   DESIGN <- DESIGN$design
-#   colnames(DESIGN) <- gsub('[[:punct:]]','_',colnames(DESIGN))
-#   colnames(DESIGN) <- gsub(' ','_',colnames(DESIGN))
-#   EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES)]
-#   if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
-#     CELL.LINE.TYPE$sigCovars.all <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
-#   else
-#     CELL.LINE.TYPE$sigCovars.all <- NULL
-#   
-#   EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES[COVARIATES$Cell_Line_Type == 'iPSC',])]
-#   if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
-#     CELL.LINE.TYPE$sigCovars.iPSC <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
-#   else
-#     CELL.LINE.TYPE$sigCovars.iPSC <- NULL
+  EXPR <- VOOM.ADJUSTED.GENE_EXPRESSION$E[CELL.LINE.TYPE$SIG.EXP,rownames(COVARIATES[COVARIATES$Cell_Line_Type == 'iPSC',])]
+  if (CELL.LINE.TYPE$NUM.SIG.EXP !=0)
+    CELL.LINE.TYPE$sigCovars.iPSC <- runPCAandPlotCorrelations(EXPR,COVARIATES,Name)
+  else
+    CELL.LINE.TYPE$sigCovars.iPSC <- NULL
 
   return(CELL.LINE.TYPE)
 }
@@ -244,25 +244,54 @@ for (COV in names(NEW.COVARIATES)){
 }
 ```
 
-Number of significantly expressed genes at an FDR <= 0.05 
+Number of significantly expressed genes at an FDR <= 0.05:
 ```{r significant.genes}
 tmp <- as.data.frame(sapply(RESULTS,function(x){return(x$NUM.SIG.EXP)}))
-colnames(tmp) <- 'Num. of sig. expressed genes'
+colnames(tmp) <- 'n'
 kable(tmp)
 ```
 
-Correlation between PCs of expression from differentialy expressed genes and covariates 
-```{r significant.covariates.all, cache=TRUE, fig.height=10, fig.width=15}
-tmp <- sapply(RESULTS,function(x){print(x$sigCovars.all$PC_res[[2]]$plotData)})
+PCA Plot for DE iPSC lines using genes differentially expressed between DE hESC and iPSC:
+
+```{r pca}
+# Find principal components of expression to plot
+foo <- RESULTS[['DE']]$voom[RESULTS[['DE']]$SIG.EXP, ]
+
+ipscsamples <- METADATA %>%
+  filter(UID %in% colnames(foo)) %>%
+  filter(Cell_Line_Type == "iPSC")
+
+PC <- prcomp(foo[, ipscsamples$UID])
+
+# Plot first 2 PCs
+plotdata <- data.frame(UID=rownames(PC$rotation), 
+                       PC1=PC$rotation[,1], 
+                       PC2=PC$rotation[,2])
+
+plotdata <- merge(plotdata, METADATA, by="UID")
+
+p <- ggplot(plotdata, aes(x=PC1, y=PC2))
+p <- p + geom_point(aes(color=Gender, shape=Reprogramming_Vector_Type), size=5)
+p <- p + scale_size_manual(values = c(4, 3))
+p <- p + scale_color_manual(values=c("red", "blue"))
+p <- p + theme_bw() + theme(legend.position="top") 
+
+p
 ```
 
-Correlation between PCs of expression from differentialy expressed genes and covariates for only iPSC lines 
-```{r significant.covariates.iPSC, cache=TRUE, fig.height=10, fig.width=15}
-tmp <- sapply(RESULTS,function(x){print(x$sigCovars.iPSC$PC_res[[2]]$plotData)})
+Correlation between PCs of expression from differentially expressed genes and covariates for only DE iPSC lines
+```{r}
+print(RESULTS[['DE']]$sigCovars.iPSC$PC_res[[2]]$plotData)
+```
+
+
+Correlation between PCs of expression from differentialy expressed genes and covariates  for only DE lines
+```{r significant.covariates.all, cache=TRUE, fig.height=10, fig.width=15}
+print(RESULTS[['DE']]$sigCovars.all$PC_res[[2]]$plotData)
 ```
 
 Store results to synapse
-```{r synapsestore, echo=FALSE, include=FALSE,eval=TRUE}
+```{r synapsestore, echo=FALSE, include=FALSE, eval=FALSE}
 if (SYNAPSE_STORE){  
   ActivityName <- 'Differential Expression Analysis of eXpress aligned data at each differentiation stages with mixed effect modeling'
   
