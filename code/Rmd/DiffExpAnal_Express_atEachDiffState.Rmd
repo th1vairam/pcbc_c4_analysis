@@ -1,0 +1,187 @@
+---
+title: "Differential expression analysis for eXpress aligned data for iPSc vs hESc at each diff state"
+author: "Thanneer Perumal"
+date: "`r date()`"
+output: html_document
+---
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load required libraries
+library('synapseClient')
+library('limma')
+library('edgeR')
+library('RColorBrewer')
+library('ctv')
+library('ggplot2')
+library('psych')
+library('reshape2')
+library('gplots')
+library('vcd')
+library('erer')
+library('fpc')
+library('data.table')
+library('dplyr')
+library('stringr')
+library('knitr')
+
+## Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+# source('/mnt/Github/Knit2Synapse/knit2synapse.R')
+# knit2synapse(file = "./DiffExpAnal_Express_EB.Rmd", owner = 'syn3642859', wikiName = "Differential Expression Analysis Express EB",overwrite=F)
+
+synapseLogin()
+
+# source utility files from ../R/lib folder
+file.sources = list.files('../R/lib',pattern="*.R")
+file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
+tmp = sapply(file.sources,source,.GlobalEnv)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE)
+```
+
+#### Download data
+
+```{r setup, include=FALSE}
+# Input Parameters
+DESIGN_ID = 'syn3471253';
+EXPR_ID = 'syn3471238';
+WEIGHTS_ID = 'syn3471245';
+COVARIATES_ID = 'syn3628878';
+
+SYNAPSE_STORE = T
+parentId = 'syn3471223'
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity','Cell_Line_Type')
+ContCovariates = NULL
+```
+Synapse id of design, expression, weights and covariates matrix used for the analysis are `r DESIGN_ID`,`r EXPR_ID`,`r WEIGHTS_ID`, and `r COVARIATES_ID`
+
+Factor covariates considered for analysis are `r FactorCovariates`, and continuous covariates considered for the analysis are `r ContCovariates`.
+
+```{r getdata, cache=TRUE, include=FALSE}
+# Get design matrix
+DESIGN_OBJ = synGet(DESIGN_ID);
+ALL_USED_IDs = c(DESIGN_OBJ$properties$id);
+DESIGN = read.table(getFileLocation(DESIGN_OBJ),sep='\t',header=T,row.names=1, check.names=FALSE)
+colnames(DESIGN) = gsub("[[:punct:]]", "_",colnames(DESIGN))
+
+# Get expression matrix
+EXPR_OBJ = synGet(EXPR_ID);
+ALL_USED_IDs = c(ALL_USED_IDs,EXPR_OBJ$properties$id);
+EXPR = read.table(getFileLocation(EXPR_OBJ),sep='\t',header=T,row.names=1, check.names=FALSE)
+
+# Get weighting matrix
+WEIGHTS_OBJ = synGet(WEIGHTS_ID);
+ALL_USED_IDs = c(ALL_USED_IDs,WEIGHTS_OBJ$properties$id);
+WEIGHTS = read.table(getFileLocation(WEIGHTS_OBJ),sep='\t',header=T,row.names=1, check.names=FALSE)
+
+# Get weighting matrix
+COVARIATES_OBJ = synGet(COVARIATES_ID);
+ALL_USED_IDs = c(ALL_USED_IDs,COVARIATES_OBJ$properties$id);
+COVARIATES = read.table(getFileLocation(COVARIATES_OBJ),sep='\t',header=T,row.names=1, check.names=FALSE)
+```
+
+### Calculate residuals
+Remove run749, Donor IDD078, index27 from design matrix and residualise run, index and Donor ID information
+```{r calculate.residual, echo=FALSE, include=FALSE}
+DESIGN <- dplyr::select(DESIGN, -one_of('run749','Donor_IDD078','index27'))
+RESIDUAL.EXPR <- calcResiduals(EXPR, DESIGN, varsToAddBackIn=c("Diffname_shortDE","Diffname_shortEB","Diffname_shortECTO","Diffname_shortMESO_EARLY", "Diffname_shortMESO_LATE", "Diffname_shortSC"), sampleWeights=as.matrix(WEIGHTS))
+```
+
+### Covariate clustering at each diff state
+```{r covariates.clustering}
+NEW.COVARIATES <- split(COVARIATES,COVARIATES$Diffname_short,drop=T)
+
+getSignificantCovariates <- function(COVARIATES,EXPR,FactorCovariates,ContCovariates){
+  diffstate <- as.character(unique(COVARIATES$Diffname_short))
+  
+  # Convert factor covariates to factors
+  COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
+  
+  # Drop covariates with unilevel
+  dropCovariates <- names(which(sapply(lapply(COVARIATES,levels),length) == 1))
+  FactorCovariates <- setdiff(FactorCovariates,dropCovariates)
+  ContCovariates <- setdiff(ContCovariates,dropCovariates)
+  COVARIATES <- COVARIATES[,c(FactorCovariates,ContCovariates)]
+  
+  print(paste('Covariates correlation for',diffstate))
+  # Get covariates correlation
+  COVARIATES.CORRELATION = getAssociationStatistics(COVARIATES, PVAL = 1)  
+  ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
+  
+  print(paste('Correlation of covariates with PC of residual expression for',diffstate))
+  # Run correlation between covariates and expression
+  DM <- getDesignMatrix(COVARIATES, Intercept = F)
+  sigCovars = runPCAandPlotCorrelations(EXPR[,rownames(COVARIATES)],
+                                        getDesignMat2Fact(DM$design,FactorCovariates),
+                                        'design(voom-normalized)', 
+                                        isKeyPlot=TRUE)
+  
+  # Significance plot
+  sigCovars[["PC_res"]][[1]]$plotData
+  sigCovars[["PC_res"]][[2]]$plotData
+  
+  # Effect size
+  tmp <- (as.data.frame(sort(designMat2CovEffects(getCovariatesMap(DM),sigCovars$Effects.significantCovars),decreasing=T)))
+  colnames(tmp) <- 'EffectSize'
+  kable(tmp)  
+  
+  # Perform differential expression for cell line type
+  DESIGN <- getDesignMatrix(COVARIATES[,c('Cell_Line_Type'),drop=F], Intercept = F)
+  
+  print(paste('Getting differentially expressed genes using limma package with following co-efficients',paste(colnames(DESIGN$design),collapse=','),'in linear model',sep=' '))
+  
+  print('Degenerate columns in the new design are:')
+  print(linColumnFinder(DESIGN$design))
+      
+  # Fitting linear model
+  FIT <- lmFit(EXPR[,rownames(COVARIATES)], design = DESIGN$design, weights = WEIGHTS[,rownames(COVARIATES)])
+    
+  # Make contrast to check differential expression between different differentiation stages
+  CONT.NAMES <- colnames(DESIGN$design)[grep('Cell_Line_Type',colnames(DESIGN$design))]
+  CONT.NAMES <- combn(CONT.NAMES,2)
+  CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+  
+  CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
+  
+  # Refit contrasts
+  FIT.CONTRAST <- contrasts.fit(FIT,CONT)
+  
+  # Estimate moderated t-statistics
+  FIT.CONTRAST <- eBayes(FIT.CONTRAST)
+  
+  DIFF.EXP <- topTable(FIT.CONTRAST, coef=CONT.NAMES, number=10^6)
+  
+  return(list(COVARIATES = COVARIATES, COVARIATES.CORRELATION = COVARIATES.CORRELATION, sigCovars=sigCovars, DIFF.EXP = DIFF.EXP, FIT = FIT))
+}
+RESULTS <- lapply(NEW.COVARIATES,getSignificantCovariates,RESIDUAL.EXPR,FactorCovariates,ContCovariates)
+
+print('Total number of genes differentially expressed between iPSc and hESc in each differentiation stages are')
+print(sapply(RESULTS, function(x){sum(x$DIFF.EXP$adj.P.Val<=0.05)}))
+```
+
+Store results to synapse
+
+```{r synapsestore, echo=FALSE, include=FALSE,eval=TRUE}
+if (SYNAPSE_STORE){  
+  ActivityName <- 'Differential Expression Analysis of eXpress aligned data at each differentiation stages'
+  
+  # Code
+  CODE <- File('./DiffExpAnal_Express_atEachDiffState.Rmd',name = 'Differential Expression Analysis Express iPScVshESc',parentId = parentId)
+  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = '')  
+}
+```

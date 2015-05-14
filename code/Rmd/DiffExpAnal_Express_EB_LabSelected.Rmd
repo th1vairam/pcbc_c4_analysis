@@ -1,5 +1,5 @@
 ---
-title: "Covariate Analysis for eXpress aligned data"
+title: "Differential expression analysis for eXpress aligned data (EB's only)"
 author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
@@ -7,33 +7,28 @@ output: html_document
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
 ## It is assumed your working directory is where this file is
-
-# Clear R console screen output
-cat("\014")  
-
 # Load required libraries
 library('synapseClient')
-library('RColorBrewer')
-library('ggplot2')
-library('gplots')
 library('limma')
 library('edgeR')
+library('RColorBrewer')
 library('ctv')
+library('ggplot2')
 library('psych')
 library('reshape2')
+library('gplots')
 library('vcd')
+library('psych')
 library('erer')
 library('fpc')
 library('data.table')
 library('dplyr')
-library('knitr')
-library('stringr')
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
-# source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./CovariateAnalysis_Express.Rmd", owner='syn3382563',overwrite=T)
+# source('/mnt/Github/Knit2Synapse/knit2synapse.R')
+# knit2synapse(file = "./", owner = '', wikiName = "",overwrite=T)
 
 synapseLogin()
 
@@ -60,11 +55,11 @@ COUNT_ID = 'syn3446250'
 METADATA_ID = 'syn3156503'
 OUTLIERS_ID = 'NULL'
 
-SYNAPSE_STORE = T
+SYNAPSE_STORE = F
 parentId = 'syn3276099'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
-FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity','Cell_Line_Type','PassageAtHarvest')
+FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity','Cell_Line_Type')
 ContCovariates = NULL
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. Outliers were extracted from `r OUTLIERS_ID`
@@ -91,9 +86,6 @@ We separate MESO samples into early (5 day) and late (15 and 30 day).
 # Preprocess metadata
 METADATA[METADATA == 'N/A'] = 'Not Applicable'
 
-# Preprocess passage at harvest information
-METADATA$PassageAtHarvest[is.na(METADATA$PassageAtHarvest)] = 'Not Available' 
-
 # Assign new values for MESO-5, 15 and 30 samples
 METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
 METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | 
@@ -106,11 +98,13 @@ rownames(METADATA) = METADATA$UID
 * Remove somatic samples and samples with type NA.
 * Remove samples that failed QC and samples classified as exclude.
 * Remove samples with abnormal karyotypes.
+* Select only EB state
 ```{r filtering, echo=TRUE}
 #### Pre processing mRNA expression counts and metadata ####
 metadata_filtered <- 
   METADATA %>%
-  filter(Diffname_short != "") %>%
+  filter(Diffname_short == "EB") %>%
+  filter(Originating_Lab %in% c('Gadue, French, & Weiss','Not Applicable','Torok-Storb','Zambidis')) %>%
   filter(UID %in% colnames(COUNT)) %>%
   filter(Cell_Type == "PSC") %>%
   filter(!is.na(Cell_Type)) %>%
@@ -156,24 +150,35 @@ COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 
 # Convert factor covariates to factors
 COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
+
+# Drop covariates with unilevel
+dropCovariates <- names(which(sapply(lapply(COVARIATES,levels),length) == 1))
+FactorCovariates <- setdiff(FactorCovariates,dropCovariates)
+ContCovariates <- setdiff(ContCovariates,dropCovariates)
+COVARIATES <- COVARIATES[,c(FactorCovariates,ContCovariates)]
+```
+
+```{r covariates.relation}
+ggMosaicPlot(factor(COVARIATES$Donor_ID),factor(COVARIATES$Originating_Lab))
+
+ggMosaicPlot(factor(COVARIATES$Cell_Type_of_Origin),factor(COVARIATES$Tissue_of_Origin))
+
+ggMosaicPlot(factor(COVARIATES$Donor_Life_Stage),factor(COVARIATES$Tissue_of_Origin))
+
+ggMosaicPlot(factor(COVARIATES$Reprogramming_Gene_Combination),factor(COVARIATES$Reprogramming_Vector_Type))
+
+ggMosaicPlot(factor(COVARIATES$Donor_ID),factor(COVARIATES$Cell_Line_Type))
+
+ggMosaicPlot(factor(COVARIATES$Reprogramming_Gene_Combination),factor(COVARIATES$Cell_Line_Type))
+
+ggMosaicPlot(factor(COVARIATES$Reprogramming_Vector_Type),factor(COVARIATES$Cell_Line_Type))
 ```
 
 Covariate correlation
 
-```{r covariates.correlation, fig.width=10, fig.height=10}
+```{r covariates.correlation, fig.width=12, fig.height=10}
 COVARIATES.CORRELATION = getAssociationStatistics(COVARIATES, PVAL = 1)
 ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
-```
-Some relationship between covariates
-
-```{r covariates.relation}
-ggMosaicPlot(factor(METADATA$Originating_Lab),factor(METADATA$Donor_ID))
-
-ggMosaicPlot(factor(METADATA$Cell_Type_of_Origin),factor(METADATA$Tissue_of_Origin))
-
-ggMosaicPlot(factor(METADATA$Donor_Life_Stage),factor(METADATA$Tissue_of_Origin))
-
-ggMosaicPlot(factor(METADATA$Reprogramming_Gene_Combination),factor(METADATA$Reprogramming_Vector_Type))
 ```
 
 Initial normalisation usign voom (with NULL design)
@@ -187,9 +192,9 @@ DM = getDesignMatrix(COVARIATES, Intercept = F)
 
 Clustering of initial normalised data (with NULL design)
 
-```{r decompse.normalise.data, cache=TRUE, fig.height=10, fig.width=10}
+```{r decompse.normalise.data, cache=TRUE, fig.height=20, fig.width=20}
 # Find principal components of expression to plot
-PC <- prcomp(VOOM.GENE_EXPRESSION$E)
+PC <- prcomp(scale(VOOM.GENE_EXPRESSION$E))
 
 # Determine number of clusters automatically using pamk
 pam.cluster <- pamk(t(VOOM.GENE_EXPRESSION$E), krange=2:10)
@@ -199,42 +204,39 @@ plotdata <- data.frame(UID=rownames(PC$rotation),
                        PC1=PC$rotation[,1], 
                        PC2=PC$rotation[,2], 
                        cluster=pam.cluster$pamobject$clustering)
-plotdata <- mutate(plotdata, labels = ifelse(UID %in% c('SC12-040.420.12.19'),as.character(UID),"")) 
 
 plotdata <- merge(plotdata, METADATA, by="UID")
 
 p <- ggplot(plotdata, aes(x=PC1, y=PC2))
-p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
-p <- p + theme_bw() + scale_size_manual(values = c(5, 2)) + theme(legend.position="top") 
-p <- p + geom_text(aes(label= labels), size=4, hjust=0)
+p <- p + geom_point(aes(color=Cell_Type_of_Origin, shape=Gender, size=Cell_Line_Type))
+p <- p + theme_bw() + scale_size_manual(values = c(5, 3)) + theme(legend.position="top") 
 p
 ```
-Potential outlier in mRNA data is SC12-040.420.12.19
 
 ### Normalisation
 Correlation between pca of unadjusted mRNA expression and covariates is used to find significant covariates
 
 ```{r preAdjusted.covariates}
-preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, getDesignMat2Fact(DM$design,FactorCovariates),'NULL design(voom-normalized)', isKeyPlot=TRUE)
+preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, COVARIATES,'NULL design(voom-normalized)', isKeyPlot=TRUE)
 
 # Find significant covariates
-adjustCovars = designMatVarsToCovars(getCovariatesMap(DM),preAdjustedSigCovars$significantCovars)
+adjustCovars = preAdjustedSigCovars$significantCovars
 ```
 
 Significant covariates to adjust at FDR 0.1 are `r adjustCovars`
 
-```{r preAdjustedSigCovars.NULL, fig.width=15, fig.height=8}
+```{r preAdjustedSigCovars.NULL, fig.width=20, fig.height=10}
 preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```
 
-```{r preAdjustedSigCovars.NULL.ALL, fig.width=15, fig.height=8}
+```{r preAdjustedSigCovars.NULL.ALL, fig.width=20, fig.height=10}
 preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 
 Since many covariates are confounded, re-normalising COVARIATES with a iterative design matrix.
 
 ```{r iterative.adjusted.voom.normalisation}
-postAdjustCovars = names(which.max(designMat2CovEffects(getCovariatesMap(DM),preAdjustedSigCovars$Effects.significantCovars)))
+postAdjustCovars = names(which.max(preAdjustedSigCovars$Effects.significantCovars))
 residualSigCovars = preAdjustedSigCovars
 while(length(residualSigCovars$significantCovars)!=0){
   print(paste('Using following covariates in the model',paste(postAdjustCovars,collapse=','),sep=':'))
@@ -242,7 +244,8 @@ while(length(residualSigCovars$significantCovars)!=0){
   # Post adjusted design matrix
   DM1 = getDesignMatrix(COVARIATES[,postAdjustCovars,drop=F],Intercept = F)
   
-  VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=F)
+  VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, 
+                                       design=DM1$design, plot=F)
   
   # Residuals after normalisation
   RESIDUAL.GENE_EXPRESSION = calcResiduals(VOOM.ADJUSTED.GENE_EXPRESSION$E, 
@@ -254,24 +257,21 @@ while(length(residualSigCovars$significantCovars)!=0){
   
   # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
   residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, 
-                                                getDesignMat2Fact(DM$design,FactorCovariates),
+                                                COVARIATES[,residCovars],
                                                 'all adjusted design(voom-normalized)',
                                                 isKeyPlot=TRUE)
   
   # Add postadjusted covariates (if any)
   postAdjustCovars = unique(c(postAdjustCovars,
-                              names(which.max(designMat2CovEffects(getCovariatesMap(DM),residualSigCovars$Effects.significantCovars)))))
+                              names(which.max(residualSigCovars$Effects.significantCovars))))
 }
 ```
 
 Significant covariates to adjust at FDR 0.1 after considering confounding effects are `r postAdjustCovars`
 
-Degenerate variables are: 
 ```{r adjusted.voom.normalisation}
 # Post adjusted design matrix
 DM1 = getDesignMatrix(COVARIATES[,postAdjustCovars,drop=F], Intercept = F)
-tmp <- linColumnFinder(DM1$design)
-print(tmp$relations)
 
 VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix,
                                      design=DM1$design, plot=T)  
@@ -287,24 +287,24 @@ RESIDUAL.GENE_EXPRESSION = calcResiduals(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM1$de
 
 # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
 residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, 
-                                              getDesignMat2Fact(DM$design,FactorCovariates),
+                                              COVARIATES,
                                               'residual matrix of all adjusted design(voom-normalized)',
                                               isKeyPlot=TRUE)
 ```
 
-```{r residualSigCovars, fig.width=15, fig.height=8}
+```{r residualSigCovars, fig.width=20, fig.height=10}
 residualSigCovars[["PC_res"]][[1]]$plotData
 ```
 
-```{r residualSigCovars.ALL, fig.width=15, fig.height=8}
+```{r residualSigCovars.ALL, fig.width=20, fig.height=10}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 
 Readjust for covariates, normalise and perform outlier analysis (as a sanity check)
 
-```{r new.design, cache=TRUE, fig.height=10, fig.width=10}
+```{r new.design, cache=TRUE, fig.height=15, fig.width=15}
 # Find principal components of expression to plot
-PC <- prcomp(VOOM.ADJUSTED.GENE_EXPRESSION$E)
+PC <- prcomp(scale(VOOM.ADJUSTED.GENE_EXPRESSION$E))
 
 # Determine number of clusters automatically using pamk
 pam.cluster <- pamk(t(VOOM.ADJUSTED.GENE_EXPRESSION$E), krange=2:10)
@@ -315,20 +315,17 @@ plotdata <- data.frame(UID=rownames(PC$rotation),
                        PC2=PC$rotation[,2], 
                        cluster=pam.cluster$pamobject$clustering)
 
-plotdata <- mutate(plotdata, labels = ifelse(UID %in% c('SC12-040.420.12.19'),as.character(UID),"")) 
-
 plotdata <- merge(plotdata, METADATA, by="UID")
 
 p <- ggplot(plotdata, aes(x=PC1, y=PC2))
-p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
-p <- p + theme_bw() + scale_size_manual(values = c(5, 2)) + theme(legend.position="top") 
-p <- p + geom_text(aes(label= labels), size=4, hjust=0)
+p <- p + geom_point(aes(color=Cell_Type_of_Origin, shape=Cell_Line_Type, size=Gender))
+p <- p + theme_bw() + scale_size_manual(values = c(4, 3)) + theme(legend.position="top") 
 p
 ```
 
 Store covariates, design matrix, and voom adjusted gene expression
 
-```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+```{r synapsestore, echo=FALSE, include=FALSE,eval=FALSE}
 if (SYNAPSE_STORE){  
   ActivityName <- 'Covariate Analysis of eXpress aligned data'
   
@@ -337,26 +334,38 @@ if (SYNAPSE_STORE){
   CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/th1vairam/pcbc_c4_analysis/blob/dce3b0acd964442c59816af7d878f575ae798875/code/Rmd/CovariateAnalysis_Express.Rmd')
   
   # Expression Data
-  EXP <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')  
+  EXP <- as.data.frame(VOOM.ADJUSTED.GENE_EXPRESSION$E)
+  EXP$Genes <- row.names(EXP)
+  EXP <- EXP[,c(dim(EXP)[2],1:(dim(EXP)[2]-1))]
+  
   write.table(EXP,file = './AdjustedExpression_Express.tsv',sep='\t',row.names=F,col.names=T,quote=F)
   EXPRESSION <- File('./AdjustedExpression_Express.tsv',name = 'Adjusted Expression Express',parentId = parentId)
   EXPRESSION <- synStore(EXPRESSION, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
   
   # Adjustment Weights 
-  WEIGHTS <- cbind(EXP$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
-  colnames(WEIGHTS) <- colnames(EXP)  
+  WEIGHTS <- as.data.frame(VOOM.ADJUSTED.GENE_EXPRESSION$weights)
+  WEIGHTS$Genes <- row.names(EXP)
+  WEIGHTS <- WEIGHTS[,c(dim(WEIGHTS)[2],1:(dim(WEIGHTS)[2]-1))]
+  colnames(WEIGHTS) <- colnames(EXP)
+  
   write.table(WEIGHTS,file = './AdjustedWeights_Express.tsv',sep='\t',row.names=F,col.names=T,quote=F)
   WEIGHTS <- File('AdjustedWeights_Express.tsv',name = 'Adjusted Weights Express',parentId = parentId)
   WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
   
   # Covariates Matrix
-  COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
+  COVARIATES <- as.data.frame(COVARIATES)
+  COVARIATES$UID <- row.names(COVARIATES)
+  COVARIATES <- COVARIATES[,c(dim(COVARIATES)[2],1:(dim(COVARIATES)[2]-1))]
+  
   write.table(COVARIATES,file = './Covariates_Express.tsv',sep='\t',row.names=F,col.names=T,quote=F)
   COVARIATES <- File('Covariates_Express.tsv',name = 'Covariates Express',parentId = parentId)
   COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
   
   # Design Matrix
-  DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design,'UID')
+  DESIGN <- as.data.frame(VOOM.ADJUSTED.GENE_EXPRESSION$design)
+  DESIGN$UID <- row.names(DESIGN)
+  DESIGN <- DESIGN[,c(dim(DESIGN)[2],1:(dim(DESIGN)[2]-1))]
+  
   write.table(DESIGN,file = './AdjustedDesign_Express.tsv',sep='\t',row.names=F,col.names=T,quote=F)
   DESIGN <- File('AdjustedDesign_Express.tsv',name = 'Adjusted Design Express',parentId = parentId)
   DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
