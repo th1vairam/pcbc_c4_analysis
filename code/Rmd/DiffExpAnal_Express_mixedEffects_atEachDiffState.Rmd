@@ -29,11 +29,14 @@ library('dplyr')
 library('stringr')
 library('knitr')
 
+## Needs the dev branch
+library(rGithubClient)
+
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd", owner = 'syn4104894', wikiName = "Differential Expression Analysis Express Mixed Effects iPScVsHEsc",overwrite=F)
+knitFile2Synapse(file = "./DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd", owner = 'syn4122792', wikiName = "Differential Expression Analysis Express Mixed Effects iPScVsHEsc",overwrite=F)
 
 synapseLogin()
 
@@ -255,7 +258,7 @@ PCA Plot for DE iPSC lines using genes differentially expressed between DE hESC 
 
 ```{r pca}
 # Find principal components of expression to plot
-foo <- RESULTS[['DE']]$voom[RESULTS[['DE']]$SIG.EXP, ]
+foo <- RESULTS[['DE']]$voom$E
 
 ipscsamples <- METADATA %>%
   filter(UID %in% colnames(foo)) %>%
@@ -295,8 +298,20 @@ Store results to synapse
 if (SYNAPSE_STORE){  
   ActivityName <- 'Differential Expression Analysis of eXpress aligned data at each differentiation stages with mixed effect modeling'
   
+  thisFileName <- 'DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd'
+  
   # Code
-  CODE <- File('./DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd',name = 'KD Differential Expression Analysis Express Mixed Effects iPScVshESc',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = 'https://github.com/kdaily/pcbc_c4_analysis/blob/252e172da541c3778dc15c32696864640d6d6326/code/Rmd/DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd')  
+  thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                      ref="branch", refName='diff_exp')
+
+  thisFile <- getPermlink(repository = thisRepo,
+                          repositoryPath=paste0('code/Rmd/', thisFileName))
+  
+  CODE <- File(paste0('./', thisFileName), 
+               name = 'Differential Expression Analysis Express Mixed Effects iPScVshESc',
+               parentId = parentId)
+
+  CODE <- synStore(CODE, activityName = ActivityName, 
+                   used = ALL_USED_IDs, executed = thisFile)
 }
 ```
