@@ -2,7 +2,7 @@
 calcCompleteCorAndPlot <- function(COMPARE_data, COVAR_data, correlationType, title, 
                                    WEIGHTS = NULL, PLOT_ALL_COVARS=FALSE, EXCLUDE_VARS_FROM_FDR=NULL, MAX_FDR = 0.1) {
   
-  require(plyr)
+  # require(plyr)
   
   # Get factor and continuous covariates
   FactorCovariates <- names(COVAR_data)[sapply(COVAR_data,is.factor)]
@@ -103,7 +103,7 @@ calcCompleteCorAndPlot <- function(COMPARE_data, COVAR_data, correlationType, ti
     }
   }
   
-  if (!empty(plotCor)){
+  if (!plyr::empty(plotCor)){
     plot = plotCorWithCompare(plotCor, title, paste("FDR <= ", MAX_FDR, sep=""), markColumnsAsMissing)
   } else{
     plot = NULL
