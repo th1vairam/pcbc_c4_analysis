@@ -5,11 +5,11 @@ calcCompleteCorAndPlot <- function(COMPARE_data, COVAR_data, correlationType, ti
   # require(plyr)
   
   # Get factor and continuous covariates
-  FactorCovariates <- names(COVAR_data)[sapply(COVAR_data,is.factor)]
-  ContCovariates <- setdiff(names(COVAR_data),FactorCovariates)
+  FactorCovariates <- colnames(COVAR_data)[sapply(COVAR_data,is.factor)]
+  ContCovariates <- setdiff(colnames(COVAR_data),FactorCovariates)
   
   # Convert factor covariates to numeric vector
-  COVAR_data[,FactorCovariates] <- lapply(COVAR_data[,FactorCovariates],
+  COVAR_data[,FactorCovariates] <- apply(COVAR_data[,FactorCovariates],2,
                                           function(x){x <- unclass(x)})
     
   # Calculate correlation between compare_data and factor covariates
