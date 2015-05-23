@@ -25,6 +25,10 @@ library('dplyr')
 library('stringr')
 library('knitr')
 library('goseq')
+library('plyr')
+
+## Needs the dev branch
+library(rGithubClient)
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
@@ -446,7 +450,7 @@ for (Diffname in levels(COVARIATES$Diffname_short)){
   print(GENDER.VAR[[Diffname]]$plot)
 }
 ```
-No significant differnece between male vs female stem cells at each of the differentiation stages
+No significant differnece between male vs female stem cells at each of the differentiation stages in terms of their variance
 
 Perform enrichment analysis for differentiation
 ```{r enrichment.analysis, include=FALSE}
@@ -518,8 +522,19 @@ Store files in synapse
 if(SYNAPSE_STORE){
   activityName='Differential Expression Analysis of eXpress aligned data with mixed effects model'
   
+  thisFileName <- 'DiffExpAnal_Express_mixedEffects.Rmd'
+  
+  # Github link
+  thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                      ref="branch", 
+                      refName='diff_exp')
+
+  thisFile <- getPermlink(repository = thisRepo,
+                          repositoryPath=paste0('code/Rmd/', thisFileName))
+  
+  
   CODE <- File('./DiffExpAnal_Express_mixedEffects.Rmd',name = 'Differential Expression Analysis Express Mixed Effects',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs,activityName = activityName, executed='https://github.com/th1vairam/pcbc_c4_analysis/blob/diff_exp/code/Rmd/DiffExpAnal_Express_mixedEffects.Rmd')
+  CODE <- synStore(CODE, used = ALL_USED_IDs,activityName = activityName, executed=thisFile)
       
   write.table(FC,file='./DiffnameShort_FoldChange_Express_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
   FC <- File('./DiffnameShort_FoldChange_Express_mixedEffects.tsv',name = 'Differential Expression Analysis Express Mixed Effects logFC',parentId = parentId)
