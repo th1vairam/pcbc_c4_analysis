@@ -36,7 +36,7 @@ library(rGithubClient)
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd", owner = '', wikiName = "Differential Expression Analysis Express Mixed Effects At Each DiffState",overwrite=F)
+# knitFile2Synapse(file = "./DiffExpAnal_Express_mixedEffects_atEachDiffState.Rmd", owner = 'syn4223183', wikiName = "Differential Expression Analysis Express Mixed Effects At Each DiffState",overwrite=F)
 
 synapseLogin()
 
@@ -240,7 +240,7 @@ getDifferentialExpression <- function(COVARIATES,COUNTS){
 
 Perform differential expression except MESO_LATE due to unavailability of enough Donor replications (at least 2-3 donors need triplicate samples)
 Number of significantly expressed genes at an FDR <= 0.05
-```{r diff.exp.diffstate, chace=T}
+```{r diff.exp.diffstate, cache=TRUE}
 COV <- split(COVARIATES,COVARIATES$Diffname_short)
 DIFF.EXP <- lapply(COV[-(5)],getDifferentialExpression,COUNT)
 
