@@ -30,6 +30,10 @@ library('knitr')
 library('stringr')
 library('minfi')
 
+
+## Needs the dev branch
+library(rGithubClient)
+
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
@@ -173,9 +177,6 @@ Clustering of initial normalised data (with NULL design)
 # Find principal components of expression to plot
 PC <- prcomp(EXP)
 
-# Determine number of clusters automatically using pamk
-pam.cluster <- pamk(t(EXP), krange=2:10)
-
 # Plot first 2 PCs
 plotdata <- data.frame(UID=rownames(PC$rotation), 
                        PC1=PC$rotation[,1], 
@@ -196,6 +197,7 @@ Correlation between pca of unadjusted expression and covariates is used to find 
 ```{r preAdjusted.covariates, cache=TRUE}
 # Find correlation between PC's of gene expression with covariates
 DESIGN = getDesignMatrix(COVARIATES, Intercept = F)
+colnames(DESIGN$design) = sapply(colnames(DESIGN$design),function(x){substr(x,1,30)})
 preAdjustedSigCovars = runPCAandPlotCorrelations(EXP, DESIGN$design,'NULL design', isKeyPlot=TRUE)
 
 # Find significant covariates
