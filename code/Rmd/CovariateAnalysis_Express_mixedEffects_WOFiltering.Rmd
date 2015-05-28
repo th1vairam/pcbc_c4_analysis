@@ -33,7 +33,7 @@ library('stringr')
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./CovariateAnalysis_Express_mixedEffects_WOFiltering.Rmd", name = 'Covariate Analysis Express Mixed Effects WOFiltering', parentId =  'syn3276099', overwrite=F)
+# knitFile2Synapse(file = "./CovariateAnalysis_Express_mixedEffects_WOFiltering.Rmd", name = 'Covariate Analysis Express Mixed Effects WOFiltering', owner = 'syn4229391', overwrite=F)
 
 synapseLogin()
 
