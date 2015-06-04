@@ -64,7 +64,7 @@ SYNAPSE_STORE = T
 parentId = 'syn3276099'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
-FactorCovariates = c('Diffname_short','run','lane','index','Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity','Cell_Line_Type','PassageAtHarvest','Cell_Type_of_Origin_Level2')
+FactorCovariates = c('Diffname_short', 'run', 'lane', 'index', 'PassageAtThaw', 'PassageAtHarvest', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type_Level2')
 ContCovariates = NULL
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. 
@@ -96,15 +96,6 @@ METADATA <- METADATA %>%
 
 # Set rownames
 rownames(METADATA) = METADATA$UID
-
-# Preprocess passage at harvest information
-# METADATA$PassageAtHarvest[is.na(METADATA$PassageAtHarvest)] = 'Not Available' 
-
-# # Assign new values for MESO-5, 15 and 30 samples
-# METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
-# METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | 
-#                           METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
-
 ```
 ### Preprocess data
 * Remove somatic samples and samples with not type.
@@ -200,6 +191,7 @@ Correlation between pca of unadjusted mRNA expression and covariates is used to 
 ```{r preAdjusted.covariates}
 # Find correlation between PC's of gene expression with covariates
 DESIGN = getDesignMat2Fact(DM$design,FactorCovariates)
+colnames(DESIGN) = substr(colnames(DESIGN),1,50)
 preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DESIGN,'NULL design(voom-normalized)', isKeyPlot=TRUE)
 
 # Find significant covariates
@@ -311,10 +303,11 @@ residualSigCovars[["PC_res"]][[1]]$plotData
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Normalisation (custom/manual design)
-Reperform normalisation with custom design matrix (manually with Diffname short, Gender, Cell Type of Origin Level2, Reprogramming Gene Combination, Reprogramming Vector Type, Disease, run as fixed effects and Donor ID as random effects)
+Reperform normalisation with custom design matrix (manually with Diffname short, Gender, Reprogramming Vector Type Level2
+Cell Type of Origin Level2, Donor Life Stage, lane, run as fixed effects and Donor ID as random effects)
 ```{r reperform.normalisation}
 # Post adjusted design matrix
-DM1 = getDesignMatrix(COVARIATES[,c("Diffname_short", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Gene_Combination", "Reprogramming_Vector_Type", "Disease", "run"), drop=F],Intercept = F)
+DM1 = getDesignMatrix(COVARIATES[,c("Diffname_short", "Gender", "Reprogramming_Vector_Type_Level2", "Cell_Type_of_Origin_Level2", "Donor_Life_Stage", "Disease", "run"), drop=F],Intercept = F)
 DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols]
     
 # Estimate correlation of random effects
