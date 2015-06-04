@@ -5,29 +5,28 @@ date: "`r date()`"
 output: html_document
 ---
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
-# It is assumed your working directory is where this file is
+## It is assumed your working directory is where this file is
 
 # Clear R console screen output
-cat("\014")
+cat("\014")  
 
 # Load required libraries
 library('synapseClient')
+library('RColorBrewer')
+library('ggplot2')
+library('gplots')
 library('limma')
 library('edgeR')
-library('RColorBrewer')
 library('ctv')
-library('ggplot2')
 library('psych')
 library('reshape2')
-library('gplots')
 library('vcd')
 library('erer')
 library('fpc')
 library('data.table')
 library('dplyr')
-library('stringr')
 library('knitr')
-library('plyr')
+library('stringr')
 
 ## Needs the dev branch
 library(rGithubClient)
@@ -52,7 +51,8 @@ knitr::opts_chunk$set(
   warning=FALSE,
   message=FALSE,
   error = FALSE,
-  tidy = FALSE)
+  tidy = FALSE,
+  cache = TRUE)
 ```
 ### Download data
 ```{r setup, include=FALSE}
@@ -64,7 +64,7 @@ SYNAPSE_STORE = T
 parentId = 'syn3471223'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
-FactorCovariates = c('Diffname_short','run','lane','index','Cell_Type_of_Origin', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Vector_Type','Reprogramming_Gene_Combination', 'Donor_Life_Stage','Originating_Lab','Gender','Donor_ID','Disease','Race','Ethnicity','Cell_Line_Type','PassageAtHarvest')
+FactorCovariates = c("Diffname_short", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Gene_Combination", "Reprogramming_Vector_Type", "Disease", "run", "Donor_ID")
 ContCovariates = NULL
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. 
@@ -85,23 +85,28 @@ ALL_USED_IDs[length(ALL_USED_IDs)+1] = METADATA_OBJ@schema
 METADATA = METADATA_OBJ@values
 ```
 Preprocess counts matrix and metadata.
-We separate MESO samples into early (5 day) and late (15 and 30 day).
 ```{r preprocessing, include=FALSE}
 # Preprocess metadata
-METADATA[METADATA == 'N/A'] = 'Not Applicable'
+METADATA[METADATA == 'N/A'] = NA
 
-# Preprocess passage at harvest information
-METADATA$PassageAtHarvest[is.na(METADATA$PassageAtHarvest)] = 'Not Available' 
+# Replace all special characters with blank
+myFix <- function(x) str_replace_all(x, '[^[:alnum:]]', '')
+METADATA <- METADATA %>%
+  dplyr::mutate_each(funs(myFix), -UID, -C4_Cell_Line_ID, -biologicalSampleName) # fix them but don't touch some columns
 
-# Assign new values for MESO-5, 15 and 30 samples
-METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
-METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | 
-                          METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
+# Set rownames
 rownames(METADATA) = METADATA$UID
 
+# Preprocess passage at harvest information
+# METADATA$PassageAtHarvest[is.na(METADATA$PassageAtHarvest)] = 'Not Available' 
+
+# # Assign new values for MESO-5, 15 and 30 samples
+# METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
+# METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | 
+#                           METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
 ```
-#### Preprocess data
-* Remove somatic samples and samples with type NA.
+### Preprocess data
+* Remove somatic samples and samples with not type.
 * Remove samples that failed QC and samples classified as exclude.
 * Remove samples with abnormal karyotypes.
 ```{r filtering, echo=TRUE}
@@ -110,11 +115,11 @@ metadata_filtered <-
   METADATA %>%
   filter(Diffname_short != "") %>%
   filter(UID %in% colnames(COUNT)) %>%
-  filter(Cell_Type == "PSC") %>%
-  filter(!is.na(Cell_Type)) %>%
-  filter(pass_qc) %>%
-  filter(!exclude) %>%
-  filter(C4_Karyotype_Result != "abnormal" | !is.na(C4_Karyotype_Result))
+  filter(Cell_Type == "PSC") %>%  
+  filter(pass_qc == "TRUE") %>%
+  filter(exclude != "TRUE") %>%
+  filter(C4_Karyotype_Result != "abnormal") %>%
+  filter(!is.na(C4_Karyotype_Result))
 
 REMOVED_UID <- setdiff(METADATA$UID, metadata_filtered$UID)
 METADATA <- METADATA[metadata_filtered$UID,]
@@ -143,7 +148,6 @@ COUNT <- COUNT[ugenes,,drop=F]
 PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT,MIN_GENE_CPM=0,
                                                  MIN_SAMPLE_PERCENT_WITH_MIN_GENE_CPM=0)
 ```
-
 ```{r covariates.clustering}
 # Find inter relation between factor covariates
 COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
@@ -151,63 +155,46 @@ COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 # Convert factor covariates to factors
 COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
 ```
-
 ### Differential Expression Analysis At Each Differentiation Stage
+Obtain differentially expressed genes with the following covariates (as obtained from covariates analysis) in the model: 
+* Fixed Effects: Diffname short, Gender, Cell Type of Origin Level2, Reprogramming Gene Combination, Reprogramming Vector Type, Disease, run
+* Random Effects: Donor ID
 
 Function to perform differential expression analysis at each of the differentiation stages
 ```{r differential.expression, cache=TRUE}
-getDifferentialExpression <- function(COVARIATES,COUNTS){
+getDifferentialExpression <- function(COVARIATES,COUNTS, cols, varOfInterest){
   Name <- paste0(unique(COVARIATES$Diffname_short),' differentiation stage')
   print(Name)
   
   # Get covariates matrix
   ind <- which(sapply(COVARIATES,function(x){length(unique(x))})!=1)
   COVARIATES <- droplevels(COVARIATES[,ind])
-  COVARIATES1 <- as.data.frame(lapply(COVARIATES, function(cols){ if(is.factor(cols)){ levels(cols) <- str_replace_all(as.character(levels(cols)),'[^[:alnum:]]','_')}; return(cols)}))
-  rownames(COVARIATES1) = rownames(COVARIATES)
-  COVARIATES = COVARIATES1
-  
+    
   # Get processed counts data
   COUNTS <- COUNTS[,rownames(COVARIATES)]
     
-  # Get design matrix with covariates under consideration
-  DM = getDesignMatrix(dplyr::select(COVARIATES,contains('Reprogramming_Vector_Type'),contains('Gender'),contains('Donor_Life_Stage'),contains('run')), Intercept = F)
-  DM$design <- DM$design[,linColumnFinder(DM$design)$indepCols]
+  # Post adjusted design matrix
+  DESIGN = getDesignMatrix(COVARIATES[,intersect(cols,colnames(COVARIATES))], Intercept = F)
+  DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
   
   # Estimate correlation of random effects
-  VOOM.ADJUSTED.GENE_EXPRESSION = voom(COUNTS, design=DM$design, plot=F)
-  correlation <- duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DM$design, block=COVARIATES$Donor_ID)
+  EXPR = voom(COUNTS, design=DESIGN, plot=F)
   
-  # Re-calculate voom weights with correlation of random effects
-  VOOM.ADJUSTED.GENE_EXPRESSION = voom(COUNTS, design=DM$design, plot=F,
-                                       block=COVARIATES$Donor_ID, correlation = correlation$cor)
+  # Calculate correlation between donors
+  correlation <- duplicateCorrelation(EXPR, block=COVARIATES$Donor_ID)
   
-  # Fit linear model
-  FIT = lmFit(VOOM.ADJUSTED.GENE_EXPRESSION)
+  # Fit linear model using mixed effects design
+  FIT = lmFit(EXPR, block=COVARIATES$Donor_ID, correlation = correlation$cor)
   
-  # Residuals after normalisation
-  RESIDUAL.GENE_EXPRESSION = residuals.MArrayLM(FIT,VOOM.ADJUSTED.GENE_EXPRESSION$E)
-  
-  # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
-  DM1 = getDesignMatrix(dplyr::select(COVARIATES, -Reprogramming_Vector_Type,-Gender,-Donor_Life_Stage,-run,-Donor_ID),Intercept = F)
-  residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, 
-                                                  DM1$design,
-                                                  paste0('all adjusted design(voom-normalized) ',Name),
-                                                  isKeyPlot=TRUE)
-  
-  if(is.null(residualSigCovars$significantCovars)){
-    print(paste0('Following dependent coefficients needs to be accounted for:',paste(residualSigCovars$significantCovars,collapse=',')))
-    print(residualSigCovars$PC_res[[2]]$plotData)
-  }
-  
-  # Make contrast to check differential expression between cell line types
-  CONT.NAMES <- colnames(DM$design)[grep('Reprogramming_Vector_Type',colnames(DM$design))]
+  # Make contrast to check differential expression between different differentiation stages
+  CONT.NAMES <- colnames(DESIGN)[grep(varOfInterest,colnames(DESIGN))]
   CONT.NAMES <- combn(CONT.NAMES,2)
   CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
-
+  
   CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-  colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub('Reprogramming_Vector_Type','',x);})
-
+  colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub(varOfInterest,'',x);
+                                                      x <- gsub('-','_',x)})
+  
   # Refit contrasts
   FIT.CONTRAST <- contrasts.fit(FIT,CONT)
   
@@ -216,33 +203,37 @@ getDifferentialExpression <- function(COVARIATES,COUNTS){
   
   # Obtain all the differential expession combinations
   DEXP <- list()
-  DEXP$logFC <- data.frame(row.names = rownames(VOOM.ADJUSTED.GENE_EXPRESSION$E))
-  DEXP$adj.P.Val <- data.frame(row.names = rownames(VOOM.ADJUSTED.GENE_EXPRESSION$E))
+  DEXP$logFC <- data.frame(row.names = rownames(COUNT))
+  DEXP$adj.P.Val <- data.frame(row.names = rownames(COUNT))
+  DEXP$SIG.SETS <- data.frame()
   
   for (i in colnames(CONT)){
-    tmp <- topTable(FIT.CONTRAST, coef=i, number=1e8)    
+    tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(COUNT)[1])    
     DEXP$logFC[,i] <- tmp[rownames(DEXP$logFC),'logFC']
-    DEXP$adj.P.Val[,i] <- tmp[rownames(DEXP$adj.P.Val),'adj.P.Val']
+    DEXP$adj.P.Val[,i] <- tmp[rownames(DEXP$adj.P.Val),'adj.P.Val'] 
+    
+    DEXP$SIG.SETS <- rbind(DEXP$SIG.SETS,
+                           getUpDownGenes(DEXP$adj.P.Val[,i], DEXP$logFC[,i], rownames(DEXP$logFC), i, FC_CUTOFF = 0.01))
   }
-
+  
   # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
   DEXP$SIG.EXP.POS <- DEXP$adj.P.Val<=0.05 & DEXP$logFC >= 0   
   DEXP$NUM.SIG.EXP.POS <- colSums(DEXP$SIG.EXP.POS)
   
-  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC < 0
-  DEXP$SIG.EXP.NEG <- DEXP$adj.P.Val<=0.05 & DEXP$logFC < 0   
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
+  DEXP$SIG.EXP.NEG <- DEXP$adj.P.Val<=0.05 & DEXP$logFC <= 0    
   DEXP$NUM.SIG.EXP.NEG <- colSums(DEXP$SIG.EXP.NEG)
   
-  
-  return(list(FIT = FIT,FIT.CONTRAST = FIT.CONTRAST, DEXP = DEXP, residualSigCovars=residualSigCovars))
+  return(list(FIT = FIT,FIT.CONTRAST = FIT.CONTRAST, DEXP = DEXP))
 }
 ```
-
+### Cell Type of Origin Level2
 Perform differential expression except MESO_LATE due to unavailability of enough Donor replications (at least 2-3 donors need triplicate samples)
+Modeling with the following coefficients as fixed effects Diffname short, Gender, Cell Type of Origin Level2, Reprogramming Gene Combination, Reprogramming Vector Type, Disease, and run, and Donor_ID as random effects 
 Number of significantly expressed genes at an FDR <= 0.05
-```{r diff.exp.diffstate, cache=TRUE}
+```{r cell.type.origin, cache=TRUE}
 COV <- split(COVARIATES,COVARIATES$Diffname_short)
-DIFF.EXP <- lapply(COV[-(5)],getDifferentialExpression,COUNT)
+CELL.TYPE.ORIG <- lapply(COV[c(2,7)],getDifferentialExpression,COUNT, c("Cell_Type_of_Origin_Level2", "Diffname_short", "Gender", "Reprogramming_Gene_Combination", "Reprogramming_Vector_Type", "Disease", "run"), varOfInterest = "Cell_Type_of_Origin_Level2")
 
 tmp <- lapply(DIFF.EXP,function(x){return(data.frame(Contrast = names(x$DEXP$NUM.SIG.EXP.NEG), POS = x$DEXP$NUM.SIG.EXP.POS, NEG = x$DEXP$NUM.SIG.EXP.NEG))})
 tmp <- join_all(tmp,by='Contrast',match='all')
