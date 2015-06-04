@@ -314,7 +314,7 @@ residualSigCovars[["PC_res"]][[2]]$plotData
 Reperform normalisation with custom design matrix (manually with Diffname short, Gender, Cell Type of Origin Level2, Reprogramming Gene Combination, Reprogramming Vector Type, Disease, run as fixed effects and Donor ID as random effects)
 ```{r reperform.normalisation}
 # Post adjusted design matrix
-DM1 = getDesignMatrix(COVARIATES[,c("Diffname_short", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Gene_Combination", "Reprogramming_Vector_Type","Donor_Life_Stage", "Disease", "run"), drop=F],Intercept = F)
+DM1 = getDesignMatrix(COVARIATES[,c("Diffname_short", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Gene_Combination", "Reprogramming_Vector_Type", "Disease", "run"), drop=F],Intercept = F)
 DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols]
     
 # Estimate correlation of random effects
