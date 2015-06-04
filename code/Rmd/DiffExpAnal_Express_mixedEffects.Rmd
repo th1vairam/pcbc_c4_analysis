@@ -61,7 +61,7 @@ COUNT_ID = 'syn3446250'
 METADATA_ID = 'syn3156503'
 
 SYNAPSE_STORE = T
-parentId = 'syn3276099'
+parentId = 'syn3471223'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c("Diffname_short", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Gene_Combination", "Reprogramming_Vector_Type", "Disease", "run", "Donor_ID")
@@ -608,8 +608,7 @@ if(SYNAPSE_STORE){
 
   thisFile <- getPermlink(repository = thisRepo,
                           repositoryPath=paste0('code/Rmd/', thisFileName))
-  
-  
+    
   CODE <- File('./DiffExpAnal_Express_mixedEffects.Rmd',name = 'Differential Expression Analysis Express Mixed Effects',parentId = parentId)
   CODE <- synStore(CODE, used = ALL_USED_IDs,activityName = activityName, executed=thisFile)
       
