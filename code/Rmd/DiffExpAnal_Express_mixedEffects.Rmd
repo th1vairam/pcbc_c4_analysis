@@ -331,7 +331,7 @@ CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.NEG <- colSums(CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG)
 
 save(CELL.TYPE.OF.ORIGIN,file='DifferentialExpressionCellTypeOfOrigin.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)(, collapes= ',')` in linear model
+Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapes= ',')` in linear model
 
 Number of differentially expressed genes at FDR <= 0.05 and logFC >= 1 or logFC <= -1
 ```{r significant.sets3,cache=TRUE}
