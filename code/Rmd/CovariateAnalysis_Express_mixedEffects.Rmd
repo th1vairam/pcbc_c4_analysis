@@ -69,7 +69,7 @@ ContCovariates = NULL
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. 
 
-Factor covariates considered for analysis are `r FactorCovariates`, and continuous covariates considered for the analysis are `r ContCovariates`.
+Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`.
 
 Obtain count matrix and metadata from synapse.
 ```{r getdata, cache=TRUE, include=FALSE}
@@ -119,7 +119,7 @@ COUNT <- COUNT[, METADATA$UID]
 ```
 The following `r length(REMOVED_UID)` samples were removed:
 
-`r REMOVED_UID` 
+`r paste(gsub('_','\\\\_',REMOVED_UID), collapse= ',')` 
 
 ### CPM Normalisation
 Determine design matrix for normalisation and differential expression analysis. 
@@ -197,7 +197,7 @@ preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DESIGN,
 # Find significant covariates
 adjustCovars = designMatVarsToCovars(getCovariatesMap(DM),preAdjustedSigCovars$significantCovars)
 ```
-Significant covariates to adjust at FDR 0.1 are `r adjustCovars`
+Significant covariates to adjust at FDR 0.1 are `r paste(gsub('_','\\\\_',adjustCovars), collapse= ',')`
 ```{r preAdjustedSigCovars.NULL, fig.width=15, fig.height=8}
 preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```
@@ -206,7 +206,7 @@ preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Normalisation (iterative)
 Since many covariates are correlated, re-normalising COVARIATES with an iterative design matrix. Here Donor_ID is chosen as random effect
-```{r iterative.adjusted.voom.normalisation}
+```{r iterative.adjusted.voom.normalisation, cache=TRUE}
 postAdjustCovars = list()
 postAdjustCovars$fixed = ''
 postAdjustCovars$random = 'Donor_ID'
@@ -261,7 +261,7 @@ while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
   postAdjustCovars$fixed = c(postAdjustCovars$fixed,names(which.max(covariatesEffects)))
   loopCount = loopCount + 1
 }
-tmp <- paste('Using following covariates in the final model', paste(paste(postAdjustCovars$fixed,collapse=','),'as fixed effects and', paste(postAdjustCovars$random,collapse=','),'as random effects'))
+tmp <- paste('Using following covariates in the final model', paste(paste(gsub('_','\\\\_',postAdjustCovars$fixed),collapse=','),'as fixed effects and', paste(gsub('_','\\\\_',postAdjustCovars$random),collapse=','),'as random effects'))
 ```
 `r tmp`
 
@@ -371,7 +371,7 @@ if (SYNAPSE_STORE){
   # Github link
   thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
                       ref="branch", 
-                      refName='diff_exp')
+                      refName='cov_anal')
 
   thisFile <- getPermlink(repository = thisRepo,
                           repositoryPath=paste0('code/Rmd/', thisFileName))
