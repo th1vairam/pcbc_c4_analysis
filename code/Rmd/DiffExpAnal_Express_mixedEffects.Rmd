@@ -64,12 +64,12 @@ SYNAPSE_STORE = T
 parentId = 'syn3471223'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
-FactorCovariates = c("Diffname_short", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Gene_Combination", "Reprogramming_Vector_Type", "Disease", "run", "Donor_ID")
+FactorCovariates = c("Diffname_short", "Gender", "Reprogramming_Vector_Type_Level2", "Cell_Type_of_Origin_Level2", "Donor_Life_Stage", "Disease", "run","Donor_ID")
 ContCovariates = NULL
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. 
 
-Factor covariates considered for analysis are `r FactorCovariates`, and continuous covariates considered for the analysis are `r ContCovariates`.
+Factor covariates considered for analysis are  `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are  `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`.
 
 Obtain count matrix and metadata from synapse.
 ```{r getdata, cache=TRUE, include=FALSE}
@@ -96,14 +96,6 @@ METADATA <- METADATA %>%
 
 # Set rownames
 rownames(METADATA) = METADATA$UID
-
-# Preprocess passage at harvest information
-# METADATA$PassageAtHarvest[is.na(METADATA$PassageAtHarvest)] = 'Not Available' 
-
-# # Assign new values for MESO-5, 15 and 30 samples
-# METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-5'] = 'MESO_EARLY'
-# METADATA$Diffname_short[METADATA$Diffname_short == 'MESO-15' | 
-#                           METADATA$Diffname_short == 'MESO-30'] = 'MESO_LATE'
 ```
 ### Preprocess data
 * Remove somatic samples and samples with not type.
@@ -118,8 +110,7 @@ metadata_filtered <-
   filter(Cell_Type == "PSC") %>%  
   filter(pass_qc == "TRUE") %>%
   filter(exclude != "TRUE") %>%
-  filter(C4_Karyotype_Result != "abnormal") %>%
-  filter(!is.na(C4_Karyotype_Result))
+  filter(C4_Karyotype_Result != "abnormal")
 
 REMOVED_UID <- setdiff(METADATA$UID, metadata_filtered$UID)
 METADATA <- METADATA[metadata_filtered$UID,]
@@ -127,7 +118,7 @@ COUNT <- COUNT[, METADATA$UID]
 ```
 The following `r length(REMOVED_UID)` samples were removed:
 
-`r REMOVED_UID` 
+`r paste(gsub('_','\\\\_',REMOVED_UID), collapse= ',')` 
 
 ### CPM Normalisation
 Determine design matrix for normalisation and differential expression analysis. 
@@ -157,9 +148,8 @@ COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
 ```
 ### Differential expression 
 Obtain differentially expressed genes with the following covariates (as obtained from covariates analysis) in the model: 
-* Fixed Effects: Diffname short, Gender, Cell Type of Origin Level2, Reprogramming Gene Combination, Reprogramming Vector Type, Disease, run
+* Fixed Effects: Diffname short, Gender, Cell Type of Origin Level2, Reprogramming Vector Type Level2, Donor Life Stage, lane, run
 * Random Effects: Donor ID
-
 #### Differentiation stages
 ```{r diffstate, cache=TRUE, include=FALSE}
 # Post adjusted design matrix
