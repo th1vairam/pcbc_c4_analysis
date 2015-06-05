@@ -64,12 +64,12 @@ SYNAPSE_STORE = T
 parentId = 'syn3276099'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
-FactorCovariates = c('Diffname_short', 'run', 'lane', 'index', 'PassageAtThaw', 'PassageAtHarvest', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type_Level2')
+FactorCovariates = c('Diffname_short', 'run', 'lane', 'index', 'PassageAtThaw', 'PassageAtHarvest', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
 ContCovariates = NULL
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. 
 
-Factor covariates considered for analysis are  `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are  `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`.
+Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`.
 
 Obtain count matrix and metadata from synapse.
 ```{r getdata, cache=TRUE, include=FALSE}
@@ -307,7 +307,7 @@ Reperform normalisation with custom design matrix (manually with Diffname short,
 Cell Type of Origin Level2, Donor Life Stage, lane, run as fixed effects and Donor ID as random effects)
 ```{r reperform.normalisation}
 # Post adjusted design matrix
-DM1 = getDesignMatrix(COVARIATES[,c("Diffname_short", "Gender", "Reprogramming_Vector_Type_Level2", "Cell_Type_of_Origin_Level2", "Donor_Life_Stage", "lane", "run"), drop=F],Intercept = F)
+DM1 = getDesignMatrix(COVARIATES[,c("Diffname_short", "Gender", "Reprogramming_Vector_Type_Level2", "Cell_Type_of_Origin_Level2", "Donor_Life_Stage", "Disease", "run"), drop=F],Intercept = F)
 DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols]
     
 # Estimate correlation of random effects
