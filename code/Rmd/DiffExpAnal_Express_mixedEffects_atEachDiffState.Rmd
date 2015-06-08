@@ -170,8 +170,7 @@ RESID.EXPR = calcResiduals(EXPR$E, DESIGN, varsToAddBackIn = c( "Diffname_shortD
 
 ### Differential Expression Analysis At Each Differentiation Stage
 Obtain differentially expressed genes with the following covariates (as obtained from covariates analysis) in the model: 
-* Fixed Effects: Diffname short, Gender, Cell Type of Origin Level2 and Culture Conditions
-
+* Fixed Effects: Reprogramming vector type, Reprogramming gene combination, Gender, Cell Type of Origin Level2 and Culture Conditions
 Function to perform differential expression analysis at each of the differentiation stages
 ```{r differential.expression, cache=TRUE}
 getDifferentialExpression <- function(COVAR, EXPR, cols, varOfInterest){
@@ -326,6 +325,7 @@ for(i in 1:length(ALL.RESULTS)){
       tmp$Comparison <-  paste(diff_state, tmp$Comparison, sep = '_')
       SIG.SETS <- rbind(SIG.SETS,tmp)
     }
+    
   }
 }
 
@@ -344,14 +344,14 @@ kable(filter(PVAL, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
 Perform enrichment analysis for differentiation
 ```{r enrichment.analysis, include=FALSE}
 # Write input files to folder
-inputFolderName <- paste0(getwd(),'/GOElite_AtEachDiff_input')
+inputFolderName <- paste0(getwd(),'/GOElite_input')
 if (file.exists(inputFolderName))
   unlink(inputFolderName, recursive = T, force = T)
 dir.create(inputFolderName, showWarnings = TRUE, recursive = FALSE)
 
 # Function to write input files for GO-Elite
 writeInputFiles <- function(cont.name, FC, PVAL, inputFolderName){
-  input <- FC[(FC[,cont.name]>=0 & PVAL[,cont.name]<=0.05),c('GeneNames',cont.name),drop=F]
+  input <- FC[(FC[,cont.name]>=1 & PVAL[,cont.name]<=0.05),c('GeneNames',cont.name),drop=F]
   input <- dplyr::mutate(input,SystemCode = 'Sy')
   input <- input[,c(1,3,2)]
   colnames(input)[3] <- 'logFC'
@@ -362,7 +362,7 @@ writeInputFiles <- function(cont.name, FC, PVAL, inputFolderName){
   FName <- paste(str_replace_all(cont.name,'[^[:alnum:]]','_'),'up','txt',sep='.')    
   FName <- write.table(input,paste(inputFolderName,FName,sep='/'),sep='\t',row.names = F,col.names = T, quote=F)
   
-  input <- FC[(FC[,cont.name]<0 & PVAL[,cont.name]<=0.05),c('GeneNames',cont.name),drop=F]
+  input <- FC[(FC[,cont.name]<=-1 & PVAL[,cont.name]<=0.05),c('GeneNames',cont.name),drop=F]
   input <- dplyr::mutate(input,SystemCode = 'Sy')
   input <- input[,c(1,3,2)]
   colnames(input)[3] <- 'logFC'
@@ -375,12 +375,12 @@ writeInputFiles <- function(cont.name, FC, PVAL, inputFolderName){
   
   return(Genes)
 }
-SIG.SETS <- lapply(colnames(FC)[-(1)],writeInputFiles, FC, PVAL, inputFolderName)
-SIG.SETS <- plyr::ldply(SIG.SETS) 
-colnames(SIG.SETS) <- c('Contrast.Names','Gene.Symbols')
+DEXPP.GENES <- lapply(colnames(FC)[-(1)],writeInputFiles, FC, PVAL, inputFolderName)
+DEXPP.GENES <- plyr::ldply(DEXPP.GENES) 
+colnames(DEXPP.GENES) <- c('Contrast.Names','Gene.Symbols')
 
 # Write denominator file to folder
-denominatorFolderName <- paste0(getwd(),'/GOElite_AtEachDiff_denominator')
+denominatorFolderName <- paste0(getwd(),'/GOElite_denominator')
 if (file.exists(denominatorFolderName))
   unlink(denominatorFolderName, recursive = T, force = T)
 dir.create(denominatorFolderName, showWarnings = TRUE, recursive = FALSE)
@@ -390,7 +390,7 @@ FName <- 'Denominaor.txt'
 write.table(tmp,paste(denominatorFolderName,FName,sep='/'),sep='\t',row.names = F,col.names = T, quote=F)
 
 # Create output dir
-outputFolderName <- paste0(getwd(),'/GOElite_AtEachDiff_output')
+outputFolderName <- paste0(getwd(),'/GOElite_output')
 if (file.exists(outputFolderName))
   unlink(outputFolderName, recursive = T, force = T)
 dir.create(outputFolderName, showWarnings = TRUE, recursive = FALSE)
@@ -403,6 +403,7 @@ dir.create(outputFolderName, showWarnings = TRUE, recursive = FALSE)
 #              '--denom',denominatorFolderName,
 #              '--output',outputFolderName))
 ```
+
 ### Results
 Store files in synapse 
 ```{r synapse.store, include = FALSE, eval=TRUE}
@@ -431,11 +432,6 @@ PVAL <- synStore(PVAL, used = ALL_USED_IDs, activityName = activityName, execute
   
 write.table(DEXPP.GENES,file='./DiffnameShort_DiffGenes_Express_mixedEffects_atEachDiffState.tsv',sep='\t',row.names=F,quote=F)
 DEXPP <- File('./DiffnameShort_DiffGenes_Express_mixedEffects_atEachDiffState.tsv',name = 'Differential Expression Analysis Express Mixed Effects At Each DiffState genelist',parentId = parentId)
-annotations(DEXPP) <- list(Pvalue='0.05',Foldchage='0')
-DEXPP <- synStore(DEXPP, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
-
-write.table(DEXPP.GENES,file='./DiffnameShort_DiffGenes_Express_mixedEffects_atEachDiffState_genelist.tsv',sep='\t',row.names=F,quote=F)
-DEXPP <- File('./DiffnameShort_DiffGenes_Express_mixedEffects_atEachDiffState_genelist.tsv',name = 'Differential Expression Analysis Express Mixed Effects At Each DiffState Genelist',parentId = parentId)
 annotations(DEXPP) <- list(Pvalue='0.05',Foldchage='0')
 DEXPP <- synStore(DEXPP, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
 
