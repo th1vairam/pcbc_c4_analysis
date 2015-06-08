@@ -37,7 +37,7 @@ library(rGithubClient)
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./Methyl_CovariateAnalysis_mixedEffects.Rmd", name = 'Covariate Analysis Mixed Effects', owner = 'syn4231747', overwrite=F)
+# knitFile2Synapse(file = "./Methyl_CovariateAnalysis_mixedEffects_lessStringent.Rmd", name = 'Covariate Analysis Mixed Effects Less Stringent', parentId = 'syn4231339', overwrite=F)
 
 synapseLogin()
 
@@ -141,16 +141,14 @@ COVARIATES.CORRELATION = getAssociationStatistics(COVARIATES, PVAL = 0.1)
 ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
 ```
 ### Probe filtering
-* Retain probes with beta greater than 0.5 in atleast one sample and less than 0.5 in atleast one other sample in any of the diff state
+* Remove least varying probes (least 25%)
+* Remove probes with beta less than 0.4 in all the samples and beta greater than 0.6 in all the samples
 ```{r gene.filtering, cache=TRUE, fig.width=8, fig.height=8, echo=TRUE}
-tmp <- tapply(colnames(EXP),
-              factor(METADATA$Diffname_short),
-              function(cols,EXP){ind.retain = (rowSums(EXP[,cols] <= 0.5) > 1) & (rowSums(EXP[,cols] >= 0.5) > 1)},
-              EXP)
+exp.variance <- apply(as.matrix(EXP),1,var)
+ind.remove1 <- exp.variance < sort(exp.variance)[round(0.25*length(exp.variance))]
+ind.remove2 <- (rowSums(EXP <= 0.3)/dim(EXP)[2] == 1) | (rowSums(EXP >= 0.7)/dim(EXP)[2] == 1)
 
-ind.retain <- plyr::ldply(tmp)
-ind.retain = colSums(as.matrix(ind.retain[,-(1)]))
-EXP <- EXP[ind.retain > 0,]
+EXP <- EXP[!ind.remove1 & !ind.remove2,]
 ```
 `r dim(EXP)[1]` number of probes are considered for analysis
 
@@ -257,7 +255,7 @@ residualSigCovars[["PC_res"]][[2]]$plotData
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
 ActivityName <- 'Covariate analysi of minfi curated methylation data with mixed effects modeling'
   
-thisFileName <- 'Methyl_CovariateAnalysis_mixedEffects.Rmd'
+thisFileName <- 'Methyl_CovariateAnalysis_mixedEffects_lessStringent.Rmd'
   
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
@@ -268,6 +266,6 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
 
 # Code
-CODE <- File('./Methyl_CovariateAnalysis_mixedEffects.Rmd',name = 'Covariate Analysis Mixed Effects',parentId = parentId)
+CODE <- File('./Methyl_CovariateAnalysis_mixedEffects_lessStringent.Rmd',name = 'Covariate Analysis Mixed Effects Less Stringent',parentId = parentId)
 CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
 ```
