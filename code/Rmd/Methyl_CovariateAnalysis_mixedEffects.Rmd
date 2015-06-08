@@ -25,6 +25,7 @@ library('erer')
 library('fpc')
 library('data.table')
 library('dplyr')
+library('plyr')
 library('knitr')
 library('stringr')
 library('minfi')
@@ -147,7 +148,7 @@ tmp <- tapply(colnames(EXP),
               function(cols,EXP){ind.retain = (rowSums(EXP[,cols] <= 0.5) > 1) & (rowSums(EXP[,cols] >= 0.5) > 1)},
               EXP)
 
-ind.retain <- ldply(tmp)
+ind.retain <- plyr::ldply(tmp)
 ind.retain = colSums(as.matrix(ind.retain[,-(1)]))
 EXP <- EXP[ind.retain > 0,]
 ```
@@ -254,21 +255,19 @@ residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Store files in synapse
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
-if (SYNAPSE_STORE){  
-  ActivityName <- 'Covariate analysi of minfi curated methylation data with mixed effects modeling'
+ActivityName <- 'Covariate analysi of minfi curated methylation data with mixed effects modeling'
   
-  thisFileName <- 'Methyl_CovariateAnalysis_mixedEffects.Rmd'
+thisFileName <- 'Methyl_CovariateAnalysis_mixedEffects.Rmd'
   
-  # Github link
-  thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
-                      ref="branch", 
-                      refName='methyl')
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='methyl')
 
-  thisFile <- getPermlink(repository = thisRepo,
-                          repositoryPath=paste0('code/Rmd/', thisFileName))
-  
-  # Code
-  CODE <- File('./Methyl_CovariateAnalysis_mixedEffects.Rmd',name = 'Covariate Analysis Mixed Effects',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
-}
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Code
+CODE <- File('./Methyl_CovariateAnalysis_mixedEffects.Rmd',name = 'Covariate Analysis Mixed Effects',parentId = parentId)
+CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
 ```
