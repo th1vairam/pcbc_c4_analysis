@@ -342,13 +342,13 @@ residualSigCovars[["PC_res"]][[1]]$plotData
 ```{r residualSigCovars.manual.ALL, fig.width=15, fig.height=8}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
-Readjust for covariates, normalise and perform outlier analysis (as a sanity check)
+PCA of adjusted expression
 ```{r new.design, cache=TRUE, fig.height=10, fig.width=10}
 # Find principal components of expression to plot
-PC <- prcomp(VOOM.ADJUSTED.GENE_EXPRESSION$E)
+PC <- prcomp(RESID.EXPR)
 
 # Determine number of clusters automatically using pamk
-pam.cluster <- pamk(t(VOOM.ADJUSTED.GENE_EXPRESSION$E), krange=2:10)
+pam.cluster <- pamk(t(RESID.EXPR), krange=2:10)
 
 # Plot first 2 PCs
 plotdata <- data.frame(UID=rownames(PC$rotation), 
