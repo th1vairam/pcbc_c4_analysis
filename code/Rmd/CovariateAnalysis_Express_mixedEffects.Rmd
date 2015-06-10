@@ -61,7 +61,7 @@ COUNT_ID = 'syn3446250'
 METADATA_ID = 'syn3156503'
 
 SYNAPSE_STORE = T
-parentId = 'syn3276099'
+parentId = 'syn4412999'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c('Diffname_short', 'run', 'lane', 'PassageAtThaw', 'PassageAtHarvest', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
@@ -113,7 +113,7 @@ metadata_filtered <-
   filter(C4_Karyotype_Result != "abnormal") %>%
   filter(!is.na(C4_Karyotype_Result))
 
-REMOVED_UID <- setdiff(METADATA$UID, metadata_filtered$UID)
+REMOVED_UID <- setdiff(colnames(COUNT), metadata_filtered$UID)
 METADATA <- METADATA[metadata_filtered$UID,]
 COUNT <- COUNT[, METADATA$UID]
 ```
@@ -329,6 +329,12 @@ residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION,
                                               dplyr::select(DESIGN,-starts_with('Donor_ID')),
                                               'all adjusted design(voom-normalized)',
                                               isKeyPlot=TRUE)
+
+# Residualise matrix and add back differentiation stages
+RESID.EXPR = calcResiduals(geneBySampleValues = VOOM.ADJUSTED.GENE_EXPRESSION$E, 
+                           samplesByCovariates = VOOM.ADJUSTED.GENE_EXPRESSION$design, 
+                           varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO", "Diffname_shortMESO15", "Diffname_shortMESO30","Diffname_shortMESO5", "Diffname_shortSC"), 
+                           sampleWeights = VOOM.ADJUSTED.GENE_EXPRESSION$weights)
 ```
 ```{r residualSigCovars.manual, fig.width=15, fig.height=8}
 residualSigCovars[["PC_res"]][[1]]$plotData
@@ -336,13 +342,13 @@ residualSigCovars[["PC_res"]][[1]]$plotData
 ```{r residualSigCovars.manual.ALL, fig.width=15, fig.height=8}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
-Readjust for covariates, normalise and perform outlier analysis (as a sanity check)
+PCA of adjusted expression
 ```{r new.design, cache=TRUE, fig.height=10, fig.width=10}
 # Find principal components of expression to plot
-PC <- prcomp(VOOM.ADJUSTED.GENE_EXPRESSION$E)
+PC <- prcomp(RESID.EXPR)
 
 # Determine number of clusters automatically using pamk
-pam.cluster <- pamk(t(VOOM.ADJUSTED.GENE_EXPRESSION$E), krange=2:10)
+pam.cluster <- pamk(t(RESID.EXPR), krange=2:10)
 
 # Plot first 2 PCs
 plotdata <- data.frame(UID=rownames(PC$rotation), 
@@ -379,15 +385,21 @@ if (SYNAPSE_STORE){
   CODE <- File('./CovariateAnalysis_Express_mixedEffects.Rmd',name = 'Covariate Analysis Express Mixed Effects',parentId = parentId)
   CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
   
-  # Expression Data
-  EXP <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')  
-  write.table(EXP,file = './Processed_CPM_Counts.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  EXPRESSION <- File('./Processed_CPM_Counts.tsv',name = 'Processed Counts Express Mixed Effects',parentId = parentId)
-  EXPRESSION <- synStore(EXPRESSION, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
+  # Counts Data
+  COUNTS <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')  
+  write.table(COUNTS,file = './Processed_CPM_Counts.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed Counts Express Mixed Effects',parentId = parentId)
+  COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
+  
+  # Adjusted Expression Data
+  EXPR <- rownameToFirstColumn(RESID.EXPR,'GeneName')  
+  write.table(EXPR,file = './Adjusted_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  RESID.EXPR <- File('./Adjusted_Expression.tsv',name = 'Adjusted Expression Express Mixed Effects',parentId = parentId)
+  RESID.EXPR <- synStore(RESID.EXPR, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
   
   # Adjustment Weights 
-  WEIGHTS <- cbind(EXP$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
-  colnames(WEIGHTS) <- colnames(EXP)  
+  WEIGHTS <- cbind(EXPR$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
+  colnames(WEIGHTS) <- colnames(EXPR)  
   write.table(WEIGHTS,file = './AdjustedWeights_Express_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
   WEIGHTS <- File('AdjustedWeights_Express_MixedEffects.tsv',name = 'Adjusted Weights Express Mixed Effects',parentId = parentId)
   WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
@@ -405,9 +417,6 @@ if (SYNAPSE_STORE){
   DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
 }
 ```
-|  *Results*        |  *SynapseID*                  |
-|  -------          |   ---------                   |
-|  Processed Counts |  `r EXPRESSION$properties$id` |
-|  Sample Weights   |  `r WEIGHTS$properties$id`    |
-|  Covariates       |  `r COVARIATES$properties$id` |
-|  Design Matrix    |  `r DESIGN$properties$id`     |
+|  *Results*           |  *SynapseID*                  |
+|  -------             |   ---------                   |
+|  Adjusted Expression |  `r RESID.EXPR$properties$id` |
