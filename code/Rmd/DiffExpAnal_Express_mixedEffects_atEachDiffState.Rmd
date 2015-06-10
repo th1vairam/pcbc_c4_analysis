@@ -112,7 +112,7 @@ metadata_filtered <-
   filter(exclude != "TRUE") %>%
   filter(C4_Karyotype_Result != "abnormal")
 
-REMOVED_UID <- setdiff(METADATA$UID, metadata_filtered$UID)
+REMOVED_UID <- setdiff(colnames(COUNT), metadata_filtered$UID)
 METADATA <- METADATA[metadata_filtered$UID,]
 COUNT <- COUNT[, METADATA$UID]
 ```
@@ -233,7 +233,7 @@ getDifferentialExpression <- function(COVAR, EXPR, cols, varOfInterest){
     DEXP$adj.P.Val[,i] <- tmp[rownames(DEXP$adj.P.Val),'adj.P.Val'] 
     
     DEXP$SIG.SETS <- rbind(DEXP$SIG.SETS,
-                           getUpDownGenes(DEXP$adj.P.Val[,i], DEXP$logFC[,i], rownames(DEXP$logFC), i, FC_CUTOFF = 0.01))
+                           getUpDownGenes(DEXP$adj.P.Val[,i], DEXP$logFC[,i], rownames(DEXP$logFC), i))
   }
   
   # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
@@ -302,7 +302,6 @@ tmp <- join_all(tmp,by='Contrast',match='all')
 colnames(tmp)[2:dim(tmp)[2]] = rbind(paste(names(CULT.COND),'UP',sep='.'),paste(names(CULT.COND),'DOWN',sep='.'))[1:(length(CULT.COND)*2)]
 kable(tmp)
 ```
-
 Get pvalue and fold changes of some important genes
 ```{r print.imp.genes}
 ALL.RESULTS <- list(REP.GENE.COMBO, REP.VECT.TYPE, GENDER, CELL.TYPE.ORIG.L2, CULT.COND)
@@ -403,7 +402,6 @@ dir.create(outputFolderName, showWarnings = TRUE, recursive = FALSE)
 #              '--denom',denominatorFolderName,
 #              '--output',outputFolderName))
 ```
-
 ### Results
 Store files in synapse 
 ```{r synapse.store, include = FALSE, eval=TRUE}
@@ -430,8 +428,8 @@ write.table(PVAL,file='./DiffnameShort_Pvalue_Express_mixedEffects_atEachDiffSta
 PVAL <- File('./DiffnameShort_Pvalue_Express_mixedEffects_atEachDiffState.tsv',name = 'Differential Expression Analysis Express Mixed Effects At Each DiffState pvalue',parentId = parentId)
 PVAL <- synStore(PVAL, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
   
-write.table(DEXPP.GENES,file='./DiffnameShort_DiffGenes_Express_mixedEffects_atEachDiffState.tsv',sep='\t',row.names=F,quote=F)
-DEXPP <- File('./DiffnameShort_DiffGenes_Express_mixedEffects_atEachDiffState.tsv',name = 'Differential Expression Analysis Express Mixed Effects At Each DiffState genelist',parentId = parentId)
+write.table(DEXPP.GENES,file='./DiffnameShort_DiffGenes_Express_mixedEffects_atEachDiffState.gct',sep='\t',row.names=F,quote=F)
+DEXPP <- File('./DiffnameShort_DiffGenes_Express_mixedEffects_atEachDiffState.gct',name = 'Differential Expression Analysis Express Mixed Effects At Each DiffState GeneList',parentId = parentId)
 annotations(DEXPP) <- list(Pvalue='0.05',Foldchage='0')
 DEXPP <- synStore(DEXPP, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
 
@@ -443,6 +441,6 @@ SIG.SETS <- synStore(SIG.SETS, used = ALL_USED_IDs, activityName = activityName,
 |  *Results*           |  *SynapseID*                |
 |  -------             |   ---------                 |
 |  Log fold change     |  `r FC$properties$id`       |
-|  Adjusted pvalues    |  `r PVAL$properties$id`     |
-|  Differentially expressed genes (for enrichment) |  `r DEXPP$properties$id`  |
+|  Adjusted pvalues                                |  `r PVAL$properties$id`     |
+|  Differentially expressed genes (gct format)     |  `r DEXPP$properties$id`     |
 |  Differentially expressed genes (for comparison) |  `r SIG.SETS$properties$id`  |

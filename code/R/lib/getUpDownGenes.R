@@ -1,4 +1,4 @@
-getUpDownGenes <- function(PVAL,logFC, Genes, contName,PVAL_CUTOFF = 0.05, FC_CUTOFF = 1){
+getUpDownGenes <- function(PVAL,logFC, Genes, contName,PVAL_CUTOFF = 0.05, FC_CUTOFF = 1e-10){
   ind.pos <- which(PVAL<=PVAL_CUTOFF & logFC >= FC_CUTOFF)
   if (length(ind.pos) > 0){
     tmp.pos <- data.frame(GeneSymbol = Genes[ind.pos],
