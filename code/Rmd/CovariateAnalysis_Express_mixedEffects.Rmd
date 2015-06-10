@@ -392,14 +392,14 @@ if (SYNAPSE_STORE){
   COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
   
   # Adjusted Expression Data
-  RESID.EXPR <- rownameToFirstColumn(RESID.EXPR,'GeneName')  
-  write.table(RESID.EXPR,file = './Adjusted_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+  EXPR <- rownameToFirstColumn(RESID.EXPR,'GeneName')  
+  write.table(EXPR,file = './Adjusted_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
   RESID.EXPR <- File('./Adjusted_Expression.tsv',name = 'Adjusted Expression Express Mixed Effects',parentId = parentId)
   RESID.EXPR <- synStore(RESID.EXPR, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
   
   # Adjustment Weights 
-  WEIGHTS <- cbind(EXP$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
-  colnames(WEIGHTS) <- colnames(EXP)  
+  WEIGHTS <- cbind(EXPR$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
+  colnames(WEIGHTS) <- colnames(EXPR)  
   write.table(WEIGHTS,file = './AdjustedWeights_Express_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
   WEIGHTS <- File('AdjustedWeights_Express_MixedEffects.tsv',name = 'Adjusted Weights Express Mixed Effects',parentId = parentId)
   WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
