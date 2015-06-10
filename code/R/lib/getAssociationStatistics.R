@@ -6,7 +6,7 @@ getAssociationStatistics <- function(COVARIATES, PVAL=0.05){
   
   # Convert factor covariates to numeric vector
   COVARIATES[,FactorCovariates] <- lapply(COVARIATES[,FactorCovariates],
-                                          function(x){x <- unclass(x)})
+                                          function(x){x <- as.numeric(unclass(x))})
 
   # Find association between factor covariates
   if (length(FactorCovariates) != 0 & length(FactorCovariates) != 1){
