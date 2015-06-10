@@ -37,8 +37,6 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 synapseLogin()
 
 # source('/mnt/Github/knit2synapse-1//R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./DiffExpAnal_Express_mixedEffects.Rmd", owner = 'syn3972059', name = "Differential Expression Analysis Express Mixed Effects",overwrite=F)
-
 # source utility files from ../R/lib folder
 file.sources = list.files('../R/lib',pattern="*.R")
 file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
@@ -61,7 +59,7 @@ COUNT_ID = 'syn3446250'
 METADATA_ID = 'syn3156503'
 
 SYNAPSE_STORE = T
-parentId = 'syn3471223'
+parentId = 'syn4374532'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Donor_Life_Stage","lane","Culture_Conditions","run")
@@ -543,13 +541,13 @@ if(SYNAPSE_STORE){
   PVAL <- File('./DiffnameShort_Pvalue_Express_mixedEffects.tsv',name = 'Differential Expression Analysis Express Mixed Effects pvalue',parentId = parentId)
   PVAL <- synStore(PVAL, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
   
-  write.table(DEXPP.GENES,file='./DiffnameShort_DiffGenes_Express_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
-  DEXPP <- File('./DiffnameShort_DiffGenes_Express_mixedEffects.tsv',name = 'Differential Expression Analysis Express Mixed Effects genelist',parentId = parentId)
+  write.table(DEXPP.GENES,file='./DiffnameShort_DiffGenes_Express_mixedEffects.gct',sep='\t',row.names=F,quote=F)
+  DEXPP <- File('./DiffnameShort_DiffGenes_Express_mixedEffects.gct',name = 'Differential Expression Analysis Express Mixed Effects GeneList',parentId = parentId)
   annotations(DEXPP) <- list(Pvalue='0.05',Foldchage='+/-1')
   DEXPP <- synStore(DEXPP, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
   
   write.table(SIG.SETS,file='./AllSignificantGenes_Express_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
-  SIG.SETS_OBJ <- File('./AllSignificantGenes_Express_mixedEffects.tsv',name = 'Differential Expression Analysis Express Mixed Effects DiffExpGenes',parentId = parentId)
+  SIG.SETS_OBJ <- File('./AllSignificantGenes_Express_mixedEffects.tsv',name = 'Differential Expression Analysis Express Mixed Effects Comparison',parentId = parentId)
   annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='+/-1')
   SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=CODE$properties$id)
 }
@@ -558,5 +556,5 @@ if(SYNAPSE_STORE){
 |  -------                                                        |   ---------                     |
 |  Log fold change                                                |  `r FC$properties$id`           |
 |  Adjusted pvalues                                               |  `r PVAL$properties$id`         |
-|  Differentially expressed genes (genes only)                    |  `r DEXPP$properties$id`        |
+|  Differentially expressed genes (gct format)                    |  `r DEXPP$properties$id`        |
 |  Differentially expressed genes (with fold change and pvalue)   |  `r SIG.SETS_OBJ$properties$id` |
