@@ -63,7 +63,7 @@ EXP_ID = 'syn2233188'
 METADATA_ID = 'syn3156828'
 
 SYNAPSE_STORE = T
-parentId = 'syn4231339'
+parentId = 'syn4438659'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_Type", 
@@ -73,11 +73,11 @@ FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_T
                      "Reprogramming_Vector_Type" )
 ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest")
 ```
-Synapse id of count matrix used for the analysis is `r EXP_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. 
+Synapse id of count matrix used for the analysis is `r EXP_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID` 
 
-Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`.
+Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
 
-Obtain count matrix and metadata from synapse.
+Obtain count matrix and metadata from synapse
 ```{r getdata, cache=TRUE, include=FALSE}
 # Get count matrix
 EXP_OBJ = synGet(EXP_ID)
@@ -91,7 +91,7 @@ METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
 ALL_USED_IDs[length(ALL_USED_IDs)+1] = METADATA_OBJ@schema
 METADATA = METADATA_OBJ@values
 ```
-Preprocess counts matrix and metadata.
+Preprocess counts matrix and metadata
 ```{r preprocessing, include=FALSE}
 # Preprocess metadata
 METADATA[METADATA == 'N/A'] = NA
@@ -118,7 +118,7 @@ metadata_filtered <-
   filter(Cell_Type == "PSC") %>%
   filter(C4_Karyotype_Result != "abnormal" | C4_Karyotype_Result != NA)
 
-REMOVED_UID <- setdiff(METADATA$UID, metadata_filtered$UID)
+REMOVED_UID <- setdiff(colnames(EXP), metadata_filtered$UID)
 METADATA <- METADATA[metadata_filtered$UID,]
 EXP <- EXP[, METADATA$UID]
 ```
@@ -154,9 +154,8 @@ ind.retain = colSums(as.matrix(ind.retain[,-(1)]))
 EXP <- EXP[ind.retain > 0,]
 ```
 `r dim(EXP)[1]` number of probes are considered for analysis
-
 Clustering of initial normalised data (with NULL design)
-```{r decompse.normalise.data, cache=TRUE, fig.height=10, fig.width=10}
+```{r decompse.normalise.data, cache=TRUE, fig.height=8, fig.width=8}
 # Find principal components of expression to plot
 PC <- prcomp(EXP)
 
@@ -186,10 +185,10 @@ preAdjustedSigCovars = runPCAandPlotCorrelations(EXP, DESIGN$design,'NULL design
 adjustCovars = designMatVarsToCovars(getCovariatesMap(DESIGN),preAdjustedSigCovars$significantCovars)
 ```
 Significant covariates to adjust at FDR 0.1 are `r paste(gsub('_','\\\\_',adjustCovars),collapse=',')`
-```{r preAdjustedSigCovars.NULL, fig.width=20, fig.height=10}
+```{r preAdjustedSigCovars.NULL, fig.width=22, fig.height=14}
 preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```
-```{r preAdjustedSigCovars.NULL.ALL, fig.width=20, fig.height=10}
+```{r preAdjustedSigCovars.NULL.ALL, fig.width=24, fig.height=14}
 preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Normalisation (iterative)
@@ -209,7 +208,7 @@ covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCova
 postAdjustCovars$fixed = names(which.max(covariatesEffects))
 
 loopCount = 0 
-while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 1){
+while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
   print(paste('Using following covariates in the model', paste(paste(postAdjustCovars$fixed,collapse=','),'as fixed effects and', paste(postAdjustCovars$random,collapse=','),'as random effects'), sep=':'))
   
   # Post adjusted design matrix
@@ -248,14 +247,14 @@ tmp <- paste('Using following covariates in the final model', paste(gsub('_','\\
 `r tmp`
 ### Sanity Check
 Residualise significant covariates using a linear model and find correlation between PCA of residuals with covariates
-```{r residualSigCovars, fig.width=10, fig.height=5}
+```{r residualSigCovars, fig.width=22, fig.height=14}
 residualSigCovars[["PC_res"]][[1]]$plotData
 ```
-```{r residualSigCovars.ALL, fig.width=10, fig.height=5}
+```{r residualSigCovars.ALL, fig.width=24, fig.height=14}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Calculate Residuals
-```{r residualisation}
+```{r residualisation, fig.height=8, fig.width=8}
 RESID.EXP = calcResiduals(EXP, DM1$design, varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO", "Diffname_shortMESO5", "Diffname_shortSC"))
 
 # Find principal components of expression to plot
@@ -271,7 +270,7 @@ plotdata <- mutate(plotdata, labels = '');#ifelse(Diffname_short == '',as.charac
 
 p <- ggplot(plotdata, aes(x=PC1, y=PC2))
 p <- p + geom_point(aes(color = Cell_Line_Type, shape=Diffname_short, size=Gender))
-p <- p + theme_bw() + scale_size_manual(values = c(5, 2)) + scale_shape_manual(values = 1:7) + theme(legend.position="top") 
+p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + scale_shape_manual(values = 1:7) + theme(legend.position="top") 
 p <- p + geom_text(aes(label= labels), size=4, hjust=0)
 p
 ```
@@ -302,7 +301,7 @@ RESID.EXPR <- synStore(RESID.EXPR, used = ALL_USED_IDs, activityName = ActivityN
 # Covariates Matrix
 COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
 write.table(COVARIATES,file = './Covariates_Methylation_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-COVARIATES <- File('Covariates_Methylation_MixedEffects.tsv',name = 'Covariates Methylatioin Mixed Effects',parentId = parentId)
+COVARIATES <- File('Covariates_Methylation_MixedEffects.tsv',name = 'Covariates Methylation Mixed Effects',parentId = parentId)
 COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
 
 # Design Matrix
@@ -311,3 +310,6 @@ write.table(DESIGN,file = './AdjustedDesign_Methylation_MixedEffects.tsv',sep='\
 DESIGN <- File('AdjustedDesign_Methylation_MixedEffects.tsv',name = 'Adjusted Design Methylation Mixed Effects',parentId = parentId)
 DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
 ```
+|  *Results*           |  *SynapseID*                  |
+|  -------             |   ---------                   |
+|  Adjusted Expression |  `r RESID.EXPR$properties$id` |
