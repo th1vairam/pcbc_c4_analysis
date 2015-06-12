@@ -1,0 +1,213 @@
+---
+title: "Differential expression analysis of residualised data with minfi"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load required libraries
+library('synapseClient')
+library('RColorBrewer')
+library('ggplot2')
+library('gplots')
+library('limma')
+library('edgeR')
+library('ctv')
+library('psych')
+library('reshape2')
+library('vcd')
+library('erer')
+library('fpc')
+library('data.table')
+library('dplyr')
+library('plyr')
+library('knitr')
+library('stringr')
+library('minfi')
+library('org.Hs.eg.db')
+
+## Needs the dev branch
+library(rGithubClient)
+
+## Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+# source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
+# knitFile2SynapseFolder(name = 'Differential Analysis Methylation Mixed Effects LessStringent', owner = 'syn4380469', overwrite=F)
+
+synapseLogin()
+
+# source utility files from ../R/lib folder
+file.sources = list.files('../R/lib',pattern="*.R")
+file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
+tmp = sapply(file.sources,source,.GlobalEnv)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+### Download data
+```{r setup, include=FALSE}
+# Input Parameters
+EXP_ID = 'syn4437489'
+COVARIATES_ID = 'syn4437711'
+PROBE2ENTRZ_ID = 'syn2775255'
+
+SYNAPSE_STORE = T
+parentId = 'syn4438704'
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_Type", 
+                     "Tissue_of_Origin", "Reprogramming_Gene_Combination", "Culture_Conditions",  
+                     "Other_Conditions_During_Reprogramming", "Donor_Life_Stage", "Gender", 
+                     "Originating_Lab", "Donor_ID", "Cell_Type_of_Origin_Level2",
+                     "Reprogramming_Vector_Type" )
+ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest")
+```
+Synapse id of count matrix used for the analysis is `r EXP_ID` and the covariates synapse id of meta data table used for the analysis is `r COVARIATES_ID` 
+
+Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
+
+Obtain count matrix and metadata from synapse
+```{r getdata, cache=TRUE, include=FALSE}
+# Get count matrix
+EXP_OBJ = synGet(EXP_ID)
+ALL_USED_IDs = EXP_OBJ$properties$id
+EXP = fread(getFileLocation(EXP_OBJ))
+tmp = read.table(getFileLocation(EXP_OBJ), sep = '\t', header=T, check.names=F, nrow=1)
+setnames(EXP, colnames(EXP), colnames(tmp))
+setnames(EXP,'GeneName','methProbeID')
+
+# Get metadata
+COVARIATES_OBJ = synGet(COVARIATES_ID)
+ALL_USED_IDs[length(ALL_USED_IDs)+1] = COVARIATES_OBJ$properties$id
+COVARIATES = read.table(getFileLocation(COVARIATES_OBJ), sep='\t', header=T)
+
+# Get probeid to entrezid mapping
+PROBE2ENTRZ_OBJ = synGet(PROBE2ENTRZ_ID)
+ALL_USED_IDs[length(ALL_USED_IDs)+1] = PROBE2ENTRZ_ID
+PROBE2ENTRZ = fread(getFileLocation(PROBE2ENTRZ_OBJ))
+PROBE2ENTRZ = PROBE2ENTRZ[,list(entrezID = as.character(entrezID)),by = c('methProbeID')]
+
+# Get entrezid to gene symbol mapping
+ENTREZ2SYMBOL = as.data.table(as.data.frame(org.Hs.egSYMBOL2EG))
+setnames(ENTREZ2SYMBOL,'gene_id','entrezID')
+
+# Get probe to symbol mapping
+PROBE2SYMBOL = merge(PROBE2ENTRZ, ENTREZ2SYMBOL, by = 'entrezID', all = T)
+PROBE2SYMBOL = PROBE2SYMBOL[,list(symbol = paste(unique(symbol), collapse = ','),
+                                  entrezID = paste(unique(entrezID), collapse= ',')),
+                            by = c('methProbeID')]
+
+# Merge ProbeIDs to symbol mapping with expression data
+EXP = merge(EXP, PROBE2SYMBOL, by = 'methProbeID', all.x = T)
+EXP = as.data.frame(EXP)
+rownames(EXP) = EXP$methProbeID
+```
+Perform differential expression
+
+```{r diff.exp, cache=TRUE}
+# Make contrast to check differential expression between different differentiation stages
+CONT.NAMES = levels(COVARIATES$Diffname_short)
+CONT.NAMES = combn(CONT.NAMES,2)
+
+# Get differentially expressed probes
+getDifferentialExpression <- function(x, COVARIATES, EXP){  
+  print(paste0('Differentiation state: ',x[1],'-',x[2]))
+  
+  # Find differential expression
+  COV = droplevels(dplyr::filter(COVARIATES, Diffname_short == x[1] | Diffname_short == x[2]))
+  rownames(COV) = COV$UID
+  EXP.IN = EXP[,rownames(COV)]
+  dmp = dmpFinder(as.matrix(EXP.IN), COV$Diffname_short, type="categorical", shrinkVar = T)
+  
+  # Pvalue distribution
+  tmp <- rownameToFirstColumn(dmp,'methProbeID')
+  tmp <- melt(tmp, id = 'methProbeID')
+  print(ggplot(dplyr::filter(tmp, variable == 'pval' | variable == 'qval'), aes(x = value, color = variable)) + geom_density())
+    
+  # Plot top four probes
+  cpgs <- rownames(dmp)[1:4]
+  par(mfrow=c(2,2))
+  plotCpg(as.matrix(EXP.IN), cpg=cpgs, pheno=COV$Diffname_short, ylab = 'Residual Beta')
+  
+  # Map probes to genes
+  NUM.SIG.PROBES = sum(dmp$qval<=0.01)
+  NUM.SIG.GENES = length(unique(unlist(str_split(paste(EXP[rownames(dmp)[dmp$qval<=0.01],'symbol'],collapse=','),','))))
+  
+  return(list(DEXPP = dmp, NUM.SIG.GENES = NUM.SIG.GENES, NUM.SIG.PROBES = NUM.SIG.PROBES))
+}
+
+DIFF.EXP = apply(CONT.NAMES,2,getDifferentialExpression, COVARIATES, EXP)
+names(DIFF.EXP) = apply(CONT.NAMES,2,paste,collapse='_')
+
+# Print differentially expressed genes and probes
+tmp = sapply(DIFF.EXP, function(x){cbind(x$NUM.SIG.PROBES,x$NUM.SIG.GENES)})
+rownames(tmp) = c('PROBES','GENES')
+kable(tmp)
+```
+
+### Store files in synapse
+```{r synapse.store, include = FALSE, eval=TRUE}
+activityName='Differential Expression Analysis of minfi processed methylation data with mixed effects model'
+  
+thisFileName <- 'DiffExpAnal_methylation_mixedEffects.Rmd'
+  
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='methyl')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+    
+# Make folder and populate with wiki
+CODE <- Folder(name = 'Differential Expression Analysis Methylation Mixed Effects', parentId = parentId)
+CODE <- synStore(CODE)
+
+# Store results: intercept
+INT = lapply(DIFF.EXP, function(x){return(rownameToFirstColumn(x$DEXPP[,'intercept', drop=F], 'methProbeID'))})
+INT = join_all(INT, by = 'methProbeID', match = 'all')
+colnames(INT)[-(1)] = names(DIFF.EXP)
+INT = merge(INT, EXP[,c('methProbeID','symbol','entrezID')], all = T, by = 'methProbeID')
+  
+write.table(,file='./DiffnameShort_intercept_methylation_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
+INT_OBJ <- File('./DiffnameShort_intercept_methylation_mixedEffects.tsv',name = 'Differential Expression Analysis Methylation Mixed Effects intercept',parentId = CODE$properties$id)
+INT_OBJ <- synStore(INT_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+
+# Store results: pval
+PVAL = lapply(DIFF.EXP, function(x){return(rownameToFirstColumn(x$DEXPP[,'pval', drop=F], 'methProbeID'))})
+PVAL = join_all(PVAL, by = 'methProbeID', match = 'all')
+colnames(PVAL)[-(1)] = names(DIFF.EXP)
+PVAL = merge(PVAL, EXP[,c('methProbeID','symbol','entrezID')], all = T, by = 'methProbeID')
+  
+write.table(,file='./DiffnameShort_pval_methylation_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
+PVAL_OBJ <- File('./DiffnameShort_pval_methylation_mixedEffects.tsv',name = 'Differential Expression Analysis Methylation Mixed Effects pval',parentId = CODE$properties$id)
+PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+
+# Store results: fval
+FVAL = lapply(DIFF.EXP, function(x){return(rownameToFirstColumn(x$DEXPP[,'fval', drop=F], 'methProbeID'))})
+FVAL = join_all(FVAL, by = 'methProbeID', match = 'all')
+colnames(PVAL)[-(1)] = names(DIFF.EXP)
+FVAL = merge(FVAL, EXP[,c('methProbeID','symbol','entrezID')], all = T, by = 'methProbeID')
+  
+write.table(,file='./DiffnameShort_fval_methylation_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
+FVAL_OBJ <- File('./DiffnameShort_fval_methylation_mixedEffects.tsv',name = 'Differential Expression Analysis Methylation Mixed Effects fval',parentId = CODE$properties$id)
+FVAL_OBJ <- synStore(FVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+```
+|  *Results*                           |  *SynapseID*                |
+|  ----------------------------------- |   ------------------------  |
+|  Differential Expression (intercept) |  `r INT_OBJ$properties$id`  |
+|  Differential Expression (pvalue)    |  `r PVAL_OBJ$properties$id` |
+|  Differential Expression (fvalue)    |  `r FVAL_OBJ$properties$id` |

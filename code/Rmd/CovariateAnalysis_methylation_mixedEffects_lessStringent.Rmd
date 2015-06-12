@@ -147,7 +147,7 @@ ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
 ```{r gene.filtering, cache=TRUE, fig.width=8, fig.height=8, echo=TRUE}
 exp.variance <- apply(as.matrix(EXP),1,var)
 ind.remove1 <- exp.variance < sort(exp.variance)[round(0.25*length(exp.variance))]
-ind.remove2 <- (rowSums(EXP <= 0.3)/dim(EXP)[2] == 1) | (rowSums(EXP >= 0.7)/dim(EXP)[2] == 1)
+ind.remove2 <- (rowSums(EXP <= 0.2)/dim(EXP)[2] == 1) | (rowSums(EXP >= 0.8)/dim(EXP)[2] == 1)
 
 EXP <- EXP[!ind.remove1 & !ind.remove2,]
 ```
@@ -206,7 +206,7 @@ covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCova
 postAdjustCovars$fixed = names(which.max(covariatesEffects))
 
 loopCount = 0 
-while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 1){
+while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
   print(paste('Using following covariates in the model', paste(paste(postAdjustCovars$fixed,collapse=','),'as fixed effects and', paste(postAdjustCovars$random,collapse=','),'as random effects'), sep=':'))
   
   # Post adjusted design matrix
