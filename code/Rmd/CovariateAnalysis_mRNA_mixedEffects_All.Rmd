@@ -199,10 +199,10 @@ preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DESIGN,
 adjustCovars = designMatVarsToCovars(getCovariatesMap(DM),preAdjustedSigCovars$significantCovars)
 ```
 Significant covariates to adjust at FDR 0.1 are `r paste(gsub('_','\\\\_',adjustCovars), collapse= ',')`
-```{r preAdjustedSigCovars.NULL, fig.width=20, fig.height=12}
+```{r preAdjustedSigCovars.NULL, fig.width=25, fig.height=12}
 preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```
-```{r preAdjustedSigCovars.NULL.ALL, fig.width=20, fig.height=12}
+```{r preAdjustedSigCovars.NULL.ALL, fig.width=25, fig.height=12}
 preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Normalisation (iterative)
@@ -297,10 +297,10 @@ residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION,
                                               'residual matrix of all adjusted design(voom-normalized)',
                                               isKeyPlot=TRUE)
 ```
-```{r residualSigCovars, fig.width=20, fig.height=12}
+```{r residualSigCovars, fig.width=25, fig.height=12}
 residualSigCovars[["PC_res"]][[1]]$plotData
 ```
-```{r residualSigCovars.ALL, fig.width=20, fig.height=12}
+```{r residualSigCovars.ALL, fig.width=25, fig.height=12}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Normalisation (custom/manual design)
@@ -337,10 +337,10 @@ RESID.EXPR = calcResiduals(geneBySampleValues = VOOM.ADJUSTED.GENE_EXPRESSION$E,
                            varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO", "Diffname_shortMESO15", "Diffname_shortMESO30","Diffname_shortMESO5", "Diffname_shortSC"), 
                            sampleWeights = VOOM.ADJUSTED.GENE_EXPRESSION$weights)
 ```
-```{r residualSigCovars.manual, fig.width=20, fig.height=12}
+```{r residualSigCovars.manual, fig.width=25, fig.height=12}
 residualSigCovars[["PC_res"]][[1]]$plotData
 ```
-```{r residualSigCovars.manual.ALL, fig.width=20, fig.height=12}
+```{r residualSigCovars.manual.ALL, fig.width=25, fig.height=12}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 PCA of adjusted expression
