@@ -64,8 +64,8 @@ SYNAPSE_STORE = T
 parentId = 'syn3256504'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
-FactorCovariates = c('Diffname_short', 'run', 'lane', 'PassageAtThaw', 'PassageAtHarvest', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
-ContCovariates = NULL
+FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
+ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
 ```
 Synapse id of count matrix used for the analysis is `r COUNT_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. 
 
@@ -110,8 +110,7 @@ metadata_filtered <-
   filter(Cell_Type == "PSC") %>%  
   filter(pass_qc == "TRUE") %>%
   filter(exclude != "TRUE") %>%
-  filter(C4_Karyotype_Result != "abnormal") %>%
-  filter(!is.na(C4_Karyotype_Result))
+  filter(C4_Karyotype_Result != "abnormal")
 
 REMOVED_UID <- setdiff(colnames(COUNT), metadata_filtered$UID)
 METADATA <- METADATA[metadata_filtered$UID,]
@@ -149,6 +148,7 @@ COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 
 # Convert factor covariates to factors
 COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
+COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
 ```
 Covariate correlation
 ```{r covariates.correlation, fig.width=10, fig.height=10}
@@ -199,10 +199,10 @@ preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DESIGN,
 adjustCovars = designMatVarsToCovars(getCovariatesMap(DM),preAdjustedSigCovars$significantCovars)
 ```
 Significant covariates to adjust at FDR 0.1 are `r paste(gsub('_','\\\\_',adjustCovars), collapse= ',')`
-```{r preAdjustedSigCovars.NULL, fig.width=15, fig.height=10}
+```{r preAdjustedSigCovars.NULL, fig.width=20, fig.height=12}
 preAdjustedSigCovars[["PC_res"]][[1]]$plotData
 ```
-```{r preAdjustedSigCovars.NULL.ALL, fig.width=15, fig.height=10}
+```{r preAdjustedSigCovars.NULL.ALL, fig.width=20, fig.height=12}
 preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Normalisation (iterative)
@@ -297,10 +297,10 @@ residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION,
                                               'residual matrix of all adjusted design(voom-normalized)',
                                               isKeyPlot=TRUE)
 ```
-```{r residualSigCovars, fig.width=15, fig.height=10}
+```{r residualSigCovars, fig.width=20, fig.height=12}
 residualSigCovars[["PC_res"]][[1]]$plotData
 ```
-```{r residualSigCovars.ALL, fig.width=15, fig.height=10}
+```{r residualSigCovars.ALL, fig.width=20, fig.height=12}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Normalisation (custom/manual design)
@@ -337,14 +337,14 @@ RESID.EXPR = calcResiduals(geneBySampleValues = VOOM.ADJUSTED.GENE_EXPRESSION$E,
                            varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO", "Diffname_shortMESO15", "Diffname_shortMESO30","Diffname_shortMESO5", "Diffname_shortSC"), 
                            sampleWeights = VOOM.ADJUSTED.GENE_EXPRESSION$weights)
 ```
-```{r residualSigCovars.manual, fig.width=15, fig.height=8}
+```{r residualSigCovars.manual, fig.width=20, fig.height=12}
 residualSigCovars[["PC_res"]][[1]]$plotData
 ```
-```{r residualSigCovars.manual.ALL, fig.width=15, fig.height=8}
+```{r residualSigCovars.manual.ALL, fig.width=20, fig.height=12}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 PCA of adjusted expression
-```{r new.design, cache=TRUE, fig.height=10, fig.width=10}
+```{r new.design, cache=TRUE, fig.height=8, fig.width=8}
 # Find principal components of expression to plot
 PC <- prcomp(RESID.EXPR)
 
@@ -367,9 +367,6 @@ p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + scale_shape_manual(v
 p <- p + geom_text(aes(label= labels), size=4, hjust=0)
 p
 ```
-### Executed: R Mark Down
-`r print(thisFile)`
-
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
@@ -392,7 +389,7 @@ CODE <- synStore(CODE)
 # Store counts matrix
 COUNTS <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')
 write.table(COUNTS,file = './Processed_CPM_Counts.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed CPM',parentId = CODE$properties$id)
+COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed logCPM',parentId = CODE$properties$id)
 COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
   
 # Adjusted Expression Data
@@ -423,3 +420,6 @@ DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, exe
 |  *Results*           |  *SynapseID*                                                               |
 |  -------             |   ---------                                                                |
 |  Adjusted Expression |  `r paste(EXPR$properties$id,EXPR$properties$versionNumber,sep='.')`       |
+
+### Executed: Source code
+`r paste0('[Source R Markdown](',print(thisFile),')')`
