@@ -38,7 +38,7 @@ library(rGithubClient)
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
-# knitFile2SynapseFolder(name = 'Differential Analysis Methylation Mixed Effects LessStringent', owner = 'syn4380469', overwrite=F)
+# knitFile2SynapseFolder(file='./DiffExpAnal_methylation_mixedEffects.Rmd',entityName = 'Differential Expression Analysis Methylation Mixed Effects', owner = 'syn4483644', overwrite=F)
 
 synapseLogin()
 
@@ -124,6 +124,7 @@ CONT.NAMES = combn(CONT.NAMES,2)
 
 # Get differentially expressed probes
 getDifferentialExpression <- function(x, COVARIATES, EXP){  
+  browser()
   print(paste0('Differentiation state: ',x[1],'-',x[2]))
   
   # Find differential expression
@@ -137,6 +138,10 @@ getDifferentialExpression <- function(x, COVARIATES, EXP){
   tmp <- melt(tmp, id = 'methProbeID')
   print(ggplot(dplyr::filter(tmp, variable == 'pval' | variable == 'qval'), aes(x = value, color = variable)) + geom_density())
     
+  # Plot differential expression data
+  dmp = mutate(dmp, Diff.Exp = ifelse(pval <= 0.01,ifelse(intercept >= 0.4,'SIG. UP',ifelse(intercept <= -0.4,'SIG. DOWN','DIFF.EXP')),'NOT.DIFF.EXP'))
+  ggplot(dmp,aes(x=intercept,y=-log10(pval), color= Diff.Exp))+geom_point()
+  
   # Plot top four probes
   cpgs <- rownames(dmp)[1:4]
   par(mfrow=c(2,2))
@@ -182,7 +187,7 @@ INT = join_all(INT, by = 'methProbeID', match = 'all')
 colnames(INT)[-(1)] = names(DIFF.EXP)
 INT = merge(INT, EXP[,c('methProbeID','symbol','entrezID')], all = T, by = 'methProbeID')
   
-write.table(,file='./DiffnameShort_intercept_methylation_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
+write.table(INT,file='./DiffnameShort_intercept_methylation_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
 INT_OBJ <- File('./DiffnameShort_intercept_methylation_mixedEffects.tsv',name = 'Differential Expression Analysis Methylation Mixed Effects intercept',parentId = CODE$properties$id)
 INT_OBJ <- synStore(INT_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
@@ -192,22 +197,22 @@ PVAL = join_all(PVAL, by = 'methProbeID', match = 'all')
 colnames(PVAL)[-(1)] = names(DIFF.EXP)
 PVAL = merge(PVAL, EXP[,c('methProbeID','symbol','entrezID')], all = T, by = 'methProbeID')
   
-write.table(,file='./DiffnameShort_pval_methylation_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
+write.table(PVAL,file='./DiffnameShort_pval_methylation_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
 PVAL_OBJ <- File('./DiffnameShort_pval_methylation_mixedEffects.tsv',name = 'Differential Expression Analysis Methylation Mixed Effects pval',parentId = CODE$properties$id)
 PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
-# Store results: fval
-FVAL = lapply(DIFF.EXP, function(x){return(rownameToFirstColumn(x$DEXPP[,'fval', drop=F], 'methProbeID'))})
-FVAL = join_all(FVAL, by = 'methProbeID', match = 'all')
+# Store results: qval
+QVAL = lapply(DIFF.EXP, function(x){return(rownameToFirstColumn(x$DEXPP[,'qval', drop=F], 'methProbeID'))})
+QVAL = join_all(QVAL, by = 'methProbeID', match = 'all')
 colnames(PVAL)[-(1)] = names(DIFF.EXP)
-FVAL = merge(FVAL, EXP[,c('methProbeID','symbol','entrezID')], all = T, by = 'methProbeID')
+QVAL = merge(QVAL, EXP[,c('methProbeID','symbol','entrezID')], all = T, by = 'methProbeID')
   
-write.table(,file='./DiffnameShort_fval_methylation_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
-FVAL_OBJ <- File('./DiffnameShort_fval_methylation_mixedEffects.tsv',name = 'Differential Expression Analysis Methylation Mixed Effects fval',parentId = CODE$properties$id)
-FVAL_OBJ <- synStore(FVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+write.table(QVAL,file='./DiffnameShort_qval_methylation_mixedEffects.tsv',sep='\t',row.names=F,quote=F)
+QVAL_OBJ <- File('./DiffnameShort_qval_methylation_mixedEffects.tsv',name = 'Differential Expression Analysis Methylation Mixed Effects qval',parentId = CODE$properties$id)
+QVAL_OBJ <- synStore(QVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 ```
 |  *Results*                           |  *SynapseID*                |
 |  ----------------------------------- |   ------------------------  |
 |  Differential Expression (intercept) |  `r INT_OBJ$properties$id`  |
 |  Differential Expression (pvalue)    |  `r PVAL_OBJ$properties$id` |
-|  Differential Expression (fvalue)    |  `r FVAL_OBJ$properties$id` |
+|  Differential Expression (qvalue)    |  `r QVAL_OBJ$properties$id` |
