@@ -367,8 +367,11 @@ p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + scale_shape_manual(v
 p <- p + geom_text(aes(label= labels), size=4, hjust=0)
 p
 ```
+### Executed: R Mark Down
+`r print(thisFile)`
+
 ### Synapse Store
-Store covariates, design matrix, and voom adjusted gene expression
+Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
 ActivityName <- 'Covariate Analysis of eXpress aligned mRNA data with mixed effects modeling'
   
@@ -384,40 +387,39 @@ thisFile <- getPermlink(repository = thisRepo,
     
 # Populate wiki with results
 CODE <- Folder(name = 'Covariate Analysis mRNA Mixed Effects All',parentId = parentId)
-  CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
+CODE <- synStore(CODE)
+
+# Store counts matrix
+COUNTS <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')
+write.table(COUNTS,file = './Processed_CPM_Counts.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed CPM',parentId = CODE$properties$id)
+COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
   
-  # Counts Data
-  COUNTS <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')  
-  write.table(COUNTS,file = './Processed_CPM_Counts.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed Counts Express Mixed Effects',parentId = parentId)
-  COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
+# Adjusted Expression Data
+RESID.EXPR <- rownameToFirstColumn(RESID.EXPR,'GeneName')  
+write.table(RESID.EXPR,file = './Adjusted_mRNA_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+EXPR <- File('./Adjusted_mRNA_Expression.tsv',name = 'Adjusted Expression',parentId = CODE$properties$id)
+EXPR <- synStore(EXPR, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
   
-  # Adjusted Expression Data
-  EXPR <- rownameToFirstColumn(RESID.EXPR,'GeneName')  
-  write.table(EXPR,file = './Adjusted_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  RESID.EXPR <- File('./Adjusted_Expression.tsv',name = 'Adjusted Expression Express Mixed Effects',parentId = parentId)
-  RESID.EXPR <- synStore(RESID.EXPR, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
+# Adjustment Weights 
+WEIGHTS <- cbind(RESID.EXPR$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
+colnames(WEIGHTS) <- colnames(EXPR)  
+write.table(WEIGHTS,file = './Adjusted_mRNA_Weights.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+WEIGHTS <- File('Adjusted_mRNA_Weights.tsv',name = 'Adjusted Weights',parentId = CODE$properties$id)
+WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
   
-  # Adjustment Weights 
-  WEIGHTS <- cbind(EXPR$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
-  colnames(WEIGHTS) <- colnames(EXPR)  
-  write.table(WEIGHTS,file = './AdjustedWeights_Express_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  WEIGHTS <- File('AdjustedWeights_Express_MixedEffects.tsv',name = 'Adjusted Weights Express Mixed Effects',parentId = parentId)
-  WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
-  
-  # Covariates Matrix
-  COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
-  write.table(COVARIATES,file = './Covariates_Express_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  COVARIATES <- File('Covariates_Express_MixedEffects.tsv',name = 'Covariates Express Mixed Effects',parentId = parentId)
-  COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
-  
-  # Design Matrix
-  DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design,'UID')
-  write.table(DESIGN,file = './AdjustedDesign_Express_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-  DESIGN <- File('AdjustedDesign_Express_MixedEffects.tsv',name = 'Adjusted Design Express Mixed Effects',parentId = parentId)
-  DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
-}
+# Covariates Matrix
+COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
+write.table(COVARIATES,file = './Adjusted_mRNA_Covariates.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+COVARIATES <- File('Adjusted_mRNA_Covariates.tsv',name = 'Adjusted Covariates',parentId = CODE$properties$id)
+COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
+
+# Design Matrix
+DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design,'UID')
+write.table(DESIGN,file = './Adjusted_mRNA_Design.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+DESIGN <- File('Adjusted_mRNA_Design.tsv',name = 'Adjusted Design',parentId = CODE$properties$id)
+DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
 ```
-|  *Results*           |  *SynapseID*                  |
-|  -------             |   ---------                   |
-|  Adjusted Expression |  `r RESID.EXPR$properties$id` |
+|  *Results*           |  *SynapseID*                                                               |
+|  -------             |   ---------                                                                |
+|  Adjusted Expression |  `r paste(EXPR$properties$id,EXPR$properties$versionNumber,sep='.')`       |
