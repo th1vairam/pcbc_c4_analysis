@@ -35,7 +35,7 @@ library(rGithubClient)
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
-# knitFile2Synapse(file = "./CovariateAnalysis_mRNA_mixedEffects_All.Rmd", name = 'Covariate Analysis mRNA Mixed Effects All', owner = 'syn4483760', overwrite=F)
+# knitFile2SynapseFolder(file = "./CovariateAnalysis_mRNA_mixedEffects_All.Rmd", name = 'Covariate Analysis mRNA Mixed Effects All', owner = 'syn4483760', overwrite=F)
 
 synapseLogin()
 
@@ -78,6 +78,7 @@ COUNT_OBJ = synGet(COUNT_ID)
 ALL_USED_IDs = COUNT_OBJ$properties$id
 COUNT = fread(getFileLocation(COUNT_OBJ), data.table=FALSE)
 row.names(COUNT) = COUNT[,1]
+COUNT = COUNT[,-(1)]
 
 # Get metadata
 METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
