@@ -4,7 +4,7 @@ getUpDownGenes <- function(PVAL,logFC, Genes, contName,PVAL_CUTOFF = 0.05, FC_CU
     tmp.pos <- data.frame(GeneSymbol = Genes[ind.pos],
                           logFC = as.numeric(logFC[ind.pos]),
                           adj.P.value = as.numeric(PVAL[ind.pos]),
-                          Comparison = paste0(contName,'_up'))
+                          Comparison = paste0(contName,'__up'))
   } else {
     tmp.pos <- data.frame()
   }
@@ -14,7 +14,7 @@ getUpDownGenes <- function(PVAL,logFC, Genes, contName,PVAL_CUTOFF = 0.05, FC_CU
     tmp.neg <- data.frame(GeneSymbol = Genes[ind.neg],
                           logFC = as.numeric(logFC[ind.neg]),
                           adj.P.value = as.numeric(PVAL[ind.neg]),
-                          Comparison = paste0(contName,'_down'))  
+                          Comparison = paste0(contName,'__down'))  
   } else {
     tmp.neg <- data.frame()
   }
