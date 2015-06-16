@@ -37,7 +37,7 @@ library(rGithubClient)
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./CovariateAnalysis_methylation_mixedEffects.Rmd", name = 'Covariate Analysis Methylation Mixed Effects', owner = 'syn4231747', overwrite=F)
+# knitFile2Synapse(file = "./CovariateAnalysis_methylation_mixedEffects.Rmd", name = 'Covariate Analysis Methylation Mixed Effects All', owner = 'syn4486559', overwrite=F)
 
 synapseLogin()
 
@@ -63,7 +63,7 @@ EXP_ID = 'syn2233188'
 METADATA_ID = 'syn3156828'
 
 SYNAPSE_STORE = T
-parentId = 'syn4438659'
+parentId = 'syn4231339'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_Type", 
@@ -73,10 +73,6 @@ FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_T
                      "Reprogramming_Vector_Type" )
 ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest")
 ```
-Synapse id of count matrix used for the analysis is `r EXP_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID` 
-
-Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
-
 Obtain count matrix and metadata from synapse
 ```{r getdata, cache=TRUE, include=FALSE}
 # Get count matrix
@@ -91,6 +87,10 @@ METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
 ALL_USED_IDs[length(ALL_USED_IDs)+1] = METADATA_OBJ@schema
 METADATA = METADATA_OBJ@values
 ```
+Synapse id of count matrix used for the analysis is `r paste(EXP_ID, EXP_OBJ$properties$versionNumber,sep='.')` and the synapse id of meta data table used for the analysis is `r METADATA_ID` 
+
+Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
+
 Preprocess counts matrix and metadata
 ```{r preprocessing, include=FALSE}
 # Preprocess metadata
@@ -116,7 +116,7 @@ metadata_filtered <-
   filter(UID != "H9P50") %>%
   filter(UID %in% colnames(EXP)) %>%
   filter(Cell_Type == "PSC") %>%
-  filter(C4_Karyotype_Result != "abnormal" | C4_Karyotype_Result != NA)
+  filter(C4_Karyotype_Result != "abnormal")
 
 REMOVED_UID <- setdiff(colnames(EXP), metadata_filtered$UID)
 METADATA <- METADATA[metadata_filtered$UID,]
@@ -142,16 +142,14 @@ COVARIATES.CORRELATION = getAssociationStatistics(COVARIATES, PVAL = 0.1)
 ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
 ```
 ### Probe filtering
-* Retain probes with beta greater than 0.5 in atleast one sample and less than 0.5 in atleast one other sample in any of the diff state
+* Remove least varying probes (least 25%)
+* Remove probes with beta less than 0.4 in all the samples or beta greater than 0.6 in all the samples
 ```{r gene.filtering, cache=TRUE, fig.width=8, fig.height=8, echo=TRUE}
-tmp <- tapply(colnames(EXP),
-              factor(METADATA$Diffname_short),
-              function(cols,EXP){ind.retain = (rowSums(EXP[,cols] <= 0.5) > 1) & (rowSums(EXP[,cols] >= 0.5) > 1)},
-              EXP)
+exp.variance <- apply(as.matrix(EXP),1,var)
+ind.remove1 <- exp.variance < sort(exp.variance)[round(0.25*length(exp.variance))]
+ind.remove2 <- (rowSums(EXP <= 0.2)/dim(EXP)[2] == 1) | (rowSums(EXP >= 0.8)/dim(EXP)[2] == 1)
 
-ind.retain <- plyr::ldply(tmp)
-ind.retain = colSums(as.matrix(ind.retain[,-(1)]))
-EXP <- EXP[ind.retain > 0,]
+EXP <- EXP[!ind.remove1 & !ind.remove2,]
 ```
 `r dim(EXP)[1]` number of probes are considered for analysis
 Clustering of initial normalised data (with NULL design)
@@ -208,7 +206,7 @@ covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCova
 postAdjustCovars$fixed = names(which.max(covariatesEffects))
 
 loopCount = 0 
-while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
+while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 0){
   print(paste('Using following covariates in the model', paste(paste(postAdjustCovars$fixed,collapse=','),'as fixed effects and', paste(postAdjustCovars$random,collapse=','),'as random effects'), sep=':'))
   
   # Post adjusted design matrix
@@ -288,28 +286,37 @@ thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis",
 thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
 
-# Code
-CODE <- File('./CovariateAnalysis_methylation_mixedEffects.Rmd',name = 'Covariate Analysis Methylation Mixed Effects',parentId = parentId)
-CODE <- synStore(CODE, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
+# Create results folder and populate analysis results in wiki
+CODE <- Folder(name = 'Covariate Analysis Methylation Mixed Effects All', parentId = parentId)
+CODE <- synStore(CODE)
+  
+# Filtered Expression Data
+EXPR <- rownameToFirstColumn(EXPR,'methProbeID')  
+write.table(EXPR,file = './Filtered_methylation_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+EXPR_OBJ <- File('./Filtered_methylation_Expression.tsv',name = 'Filtered Expression',parentId = CODE$properties$id)
+EXPR_OBJ <- synStore(EXPR_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
 
 # Adjusted Expression Data
-EXP <- rownameToFirstColumn(RESID.EXP,'GeneName')  
-write.table(EXP,file = './Adjusted_MethylationExpression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-RESID.EXPR <- File('./Adjusted_MethylationExpression.tsv',name = 'Adjusted Expression Methylation Mixed Effects',parentId = parentId)
-RESID.EXPR <- synStore(RESID.EXPR, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)  
+RESID.EXPR <- rownameToFirstColumn(RESID.EXPR,'methProbeID')  
+write.table(RESID.EXPR,file = './Adjusted_methylation_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+RESID.EXPR_OBJ <- File('./Adjusted_methylation_Expression.tsv',name = 'Adjusted Expression',parentId = CODE$properties$id)
+RESID.EXPR_OBJ <- synStore(RESID.EXPR_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
 
 # Covariates Matrix
 COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
-write.table(COVARIATES,file = './Covariates_Methylation_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-COVARIATES <- File('Covariates_Methylation_MixedEffects.tsv',name = 'Covariates Methylation Mixed Effects',parentId = parentId)
-COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
+write.table(COVARIATES,file = './Adjusted_methylation_Covariates.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+COVARIATES_OBJ <- File('Adjusted_methylation_Covariates.tsv',name = 'Adjusted Covariates',parentId = CODE$properties$id)
+COVARIATES_OBJ <- synStore(COVARIATES_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
 
 # Design Matrix
 DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design,'UID')
-write.table(DESIGN,file = './AdjustedDesign_Methylation_MixedEffects.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-DESIGN <- File('AdjustedDesign_Methylation_MixedEffects.tsv',name = 'Adjusted Design Methylation Mixed Effects',parentId = parentId)
-DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE$properties$id)
+write.table(DESIGN,file = './Adjusted_methylation_Design.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+DESIGN_OBJ <- File('Adjusted_methylation_Design.tsv',name = 'Adjusted Design',parentId = CODE$properties$id)
+DESIGN_OBJ <- synStore(DESIGN_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
 ```
-|  *Results*           |  *SynapseID*                  |
-|  -------             |   ---------                   |
-|  Adjusted Expression |  `r RESID.EXPR$properties$id` |
+|  *Results*           |  *SynapseID*                                                                         |
+|  -------             |   ---------                                                                          |
+|  Adjusted Expression |  `r paste(RESID.EXPR_OBJ$properties$id,EXPR$properties$versionNumber,sep='.')`       |
+
+### Executed: Source code
+`r paste0('[Source R Markdown](',print(thisFile),')')`
