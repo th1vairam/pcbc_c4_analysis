@@ -146,10 +146,12 @@ ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
 * Remove probes with beta less than 0.4 in all the samples or beta greater than 0.6 in all the samples
 ```{r gene.filtering, cache=TRUE, fig.width=8, fig.height=8, echo=TRUE}
 exp.variance <- apply(as.matrix(EXP),1,var)
+hist(log10(exp.variance), main = "Variance distribution (before removal)", , xlab = 'log10(variance)')
 ind.remove1 <- exp.variance < sort(exp.variance)[round(0.25*length(exp.variance))]
 ind.remove2 <- (rowSums(EXP <= 0.2)/dim(EXP)[2] == 1) | (rowSums(EXP >= 0.8)/dim(EXP)[2] == 1)
 
 EXP <- EXP[!ind.remove1 & !ind.remove2,]
+hist(log10(exp.variance[!ind.remove1 & !ind.remove2]), main = "Variance distribution (after removal)", xlab = 'log10(variance)')
 ```
 `r dim(EXP)[1]` number of probes are considered for analysis
 Clustering of initial normalised data (with NULL design)
@@ -191,7 +193,7 @@ preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Normalisation (iterative)
 Since many covariates are confounded, re-normalising COVARIATES with an iterative design matrix. Here Donor_ID is chosen as random effect
-```{r iterative.adjusted.voom.normalisation, cache =TRUE, include=FALSE}
+```{r iterative.adjusted.normalisation, cache =TRUE, include=FALSE}
 postAdjustCovars = list()
 postAdjustCovars$fixed = ''
 postAdjustCovars$random = 'Donor_ID'
@@ -206,7 +208,7 @@ covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCova
 postAdjustCovars$fixed = names(which.max(covariatesEffects))
 
 loopCount = 0 
-while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 0){
+while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
   print(paste('Using following covariates in the model', paste(paste(postAdjustCovars$fixed,collapse=','),'as fixed effects and', paste(postAdjustCovars$random,collapse=','),'as random effects'), sep=':'))
   
   # Post adjusted design matrix
@@ -228,7 +230,7 @@ while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 0){
   # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
   residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, 
                                                 dplyr::select(as.data.frame(DESIGN$design),-starts_with('Donor_ID')),
-                                                'all adjusted design(voom-normalized)',
+                                                'all adjusted design',
                                                 isKeyPlot=TRUE)
   
   # Add postadjusted covariates (if any)
@@ -291,16 +293,16 @@ CODE <- Folder(name = 'Covariate Analysis Methylation Mixed Effects All', parent
 CODE <- synStore(CODE)
   
 # Filtered Expression Data
-EXPR <- rownameToFirstColumn(EXPR,'methProbeID')  
-write.table(EXPR,file = './Filtered_methylation_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+EXP <- rownameToFirstColumn(EXP,'methProbeID')  
+write.table(EXP,file = './Filtered_methylation_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
 EXPR_OBJ <- File('./Filtered_methylation_Expression.tsv',name = 'Filtered Expression',parentId = CODE$properties$id)
 EXPR_OBJ <- synStore(EXPR_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
 
 # Adjusted Expression Data
-RESID.EXPR <- rownameToFirstColumn(RESID.EXPR,'methProbeID')  
-write.table(RESID.EXPR,file = './Adjusted_methylation_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-RESID.EXPR_OBJ <- File('./Adjusted_methylation_Expression.tsv',name = 'Adjusted Expression',parentId = CODE$properties$id)
-RESID.EXPR_OBJ <- synStore(RESID.EXPR_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
+RESID.EXP <- rownameToFirstColumn(RESID.EXP,'methProbeID')  
+write.table(RESID.EXP,file = './Adjusted_methylation_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
+RESID_EXPR_OBJ <- File('./Adjusted_methylation_Expression.tsv',name = 'Adjusted Expression',parentId = CODE$properties$id)
+RESID_EXPR_OBJ <- synStore(RESID_EXPR_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
 
 # Covariates Matrix
 COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
@@ -309,14 +311,14 @@ COVARIATES_OBJ <- File('Adjusted_methylation_Covariates.tsv',name = 'Adjusted Co
 COVARIATES_OBJ <- synStore(COVARIATES_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
 
 # Design Matrix
-DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design,'UID')
+DESIGN <- rownameToFirstColumn(DESIGN$design,'UID')
 write.table(DESIGN,file = './Adjusted_methylation_Design.tsv',sep='\t',row.names=F,col.names=T,quote=F)
 DESIGN_OBJ <- File('Adjusted_methylation_Design.tsv',name = 'Adjusted Design',parentId = CODE$properties$id)
 DESIGN_OBJ <- synStore(DESIGN_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
 ```
-|  *Results*           |  *SynapseID*                                                                         |
-|  -------             |   ---------                                                                          |
-|  Adjusted Expression |  `r paste(RESID.EXPR_OBJ$properties$id,EXPR$properties$versionNumber,sep='.')`       |
+|  *Results*           |  *SynapseID*                                                                                   |
+|  -------             |   ---------                                                                                    |
+|  Adjusted Expression |  `r paste(RESID_EXPR_OBJ$properties$id,RESID_EXPR_OBJ$properties$versionNumber,sep='.')`       |
 
 ### Executed: Source code
 `r paste0('[Source R Markdown](',print(thisFile),')')`
