@@ -52,7 +52,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE)
+  cache = FALSE)
 ```
 ### Download data
 ```{r setup, include=FALSE}
@@ -269,7 +269,6 @@ for(i in 1:length(ALL.RESULTS)){
     
     tmp <- ALL.RESULTS[[i]][[diff_state]]$DEXP$SIG.SETS
     if (dim(tmp)[1] > 0){
-      tmp$Comparison <-  paste(diff_state, tmp$Comparison, sep = '_')
       SIG.SETS <- rbind(SIG.SETS,tmp)
     }
     
