@@ -275,7 +275,7 @@ p <- p + geom_text(aes(label= labels), size=4, hjust=0)
 p
 ```
 ### Store files in synapse
-```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache=FALSE}
 ActivityName <- 'Covariate analysis of minfi curated methylation data with mixed effects modeling'
   
 thisFileName <- 'CovariateAnalysis_methylation_mixedEffects.Rmd'
