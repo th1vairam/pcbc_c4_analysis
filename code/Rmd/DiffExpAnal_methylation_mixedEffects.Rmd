@@ -75,10 +75,6 @@ FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_T
                      "Reprogramming_Vector_Type" )
 ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest")
 ```
-Synapse id of count matrix used for the analysis is `r paste(EXP_ID,EXP_OBJ$properties$versionNumber,sep='.')` and the covariates synapse id of meta data table used for the analysis is `r paste(COVARIATES_ID,COVARIATES_OBJ$properties$versionNumber,sep='.')` 
-
-Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
-
 Obtain count matrix and metadata from synapse
 ```{r getdata, cache=TRUE, include=FALSE}
 # Get count matrix
@@ -98,21 +94,25 @@ COVARIATES = read.table(getFileLocation(COVARIATES_OBJ), sep='\t', header=T)
 # Get probe related metadata
 fData = get450KProbeMapping(EXP[['methProbeID']])
 ```
-PDF of expression
-```{r density.calculations,cache =TRUE}
-tmp = melt(EXP, id = 'methProbeID')
-tmp$data = 'Residual'
+Synapse id of count matrix used for the analysis is `r paste(EXP_ID,EXP_OBJ$properties$versionNumber,sep='.')` and the covariates synapse id of meta data table used for the analysis is `r paste(COVARIATES_ID,COVARIATES_OBJ$properties$versionNumber,sep='.')` 
 
+Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
+
+Probability density function of expression
+```{r density.calculations, cache =TRUE}
+tmp = melt(EXP, id = 'methProbeID')
+```
+```{r density.plots, cache=FALSE, fig.height=6, fig.width=6}
+print(ggplot(tmp, aes(x = value)) + geom_density()+ ggtitle('Residual Expression'))
+```
+```{r beta.density, include=FALSE}
 tmp1 = fread(synGet('syn2233188')@filePath, data.table=F)
 setnames(tmp1,'ProbeID','methProbeID')
 tmp1 = tmp1[tmp1$methProbeID %in% EXP$methProbeID,colnames(tmp1) %in% colnames(EXP)]
 tmp1 = melt(tmp1, id = 'methProbeID')
-tmp1$data = 'Beta'
-
-tmp2 = rbindlist(list(tmp1,tmp))
 ```
-```{r density.plots, cache=FALSE, fig.height=6, fig.width=6}
-print(ggplot(tmp2, aes(x = value, color= data)) + geom_density())
+```{r density.plots1, cache=FALSE, fig.height=6, fig.width=6}
+print(ggplot(tmp1, aes(x = value)) + geom_density()+ ggtitle('Beta'))
 ```
 Perform differential expression
 ```{r diff.exp, cache=TRUE, fig.width=6, fig.height=6}
