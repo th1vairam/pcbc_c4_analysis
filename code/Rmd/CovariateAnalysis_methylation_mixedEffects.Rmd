@@ -311,7 +311,7 @@ COVARIATES_OBJ <- File('Adjusted_methylation_Covariates.tsv',name = 'Adjusted Co
 COVARIATES_OBJ <- synStore(COVARIATES_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
 
 # Design Matrix
-DESIGN <- rownameToFirstColumn(DESIGN$design,'UID')
+DESIGN <- rownameToFirstColumn(DM1$design,'UID')
 write.table(DESIGN,file = './Adjusted_methylation_Design.tsv',sep='\t',row.names=F,col.names=T,quote=F)
 DESIGN_OBJ <- File('Adjusted_methylation_Design.tsv',name = 'Adjusted Design',parentId = CODE$properties$id)
 DESIGN_OBJ <- synStore(DESIGN_OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
