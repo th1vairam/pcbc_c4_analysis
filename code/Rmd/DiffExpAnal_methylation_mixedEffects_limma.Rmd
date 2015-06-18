@@ -86,7 +86,7 @@ setnames(EXP, colnames(EXP), colnames(tmp))
 
 EXP = as.data.frame(EXP)
 rownames(EXP) = EXP[,1]
-EXP = EXP[sample(dim(EXP)[1], 10000),-(1)]
+EXP = EXP[,-(1)]
 
 # Get covariates
 COVARIATES_OBJ = synGet(COVARIATES_ID)
@@ -113,7 +113,7 @@ tmp = melt(rownameToFirstColumn(EXP, 'methProbeIDs'), id = 'methProbeIDs')
 print(ggplot(tmp, aes(x = value)) + geom_density()+ ggtitle('Residual Expression'))
 ```
 Perform differential expression
-```{r diff.exp, cache=TRUE, fig.width=6, fig.height=6}
+```{r diff.exp, cache=TRUE, fig.width=8, fig.height=8}
 # Get design matrix
 DESIGN = getDesignMatrix(COVARIATES[,c('Diffname_short','Gender','Culture_Conditions','BeadChip','Cell_Type_of_Origin_Level2','Row')], Intercept = F)
 colnames(DESIGN$design) = sapply(colnames(DESIGN$design),function(x){substr(x,1,50)})
@@ -174,16 +174,16 @@ for (i in colnames(CONT)){
 DIFFNAME$SIG.EXP.POS <- DIFFNAME$adj.P.Val<=0.05 & DIFFNAME$logFC >= 0.4
 DIFFNAME$NUM.SIG.EXP.POS <- colSums(DIFFNAME$SIG.EXP.POS)
 
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= -0.4
+# Get number of significantly differentialy expressed probes with adj.P.Val <= 0.05 and logFC <= -0.4
 DIFFNAME$SIG.EXP.NEG <- DIFFNAME$adj.P.Val<=0.05 & DIFFNAME$logFC <= -0.4
 DIFFNAME$NUM.SIG.EXP.NEG <- colSums(DIFFNAME$SIG.EXP.NEG)
 ```
 Get differentially expressed probes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=',')` in linear model
 
-Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0.4 or logFC <= -0.4
+Number of differentially expressed probes at FDR <= 0.05 and logFC >= 0.4 or logFC <= -0.4
 ```{r significant.sets1,cache=TRUE}
 tmp <- cbind(as.data.frame(DIFFNAME$NUM.SIG.EXP.POS),as.data.frame(DIFFNAME$NUM.SIG.EXP.NEG))
-colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
+colnames(tmp) <- c('NUMBER OF UP REG. PROBES','NUMBER OF DOWN REG. PROBES')
 kable(tmp)
 ```
 ```{r extract.data}
@@ -223,17 +223,17 @@ PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName,
 
 # Store results: differential expression
 write.table(SIG, file='./DiffExpAnal_methylation_mixedEffects_limma_diffexp.tsv',sep='\t',row.names=F,quote=F)
-GCT_OBJ <- File('./DiffExpAnal_methylation_mixedEffects_limma_diffexp.tsv', name = 'Differentially Expressed Genes', parentId = CODE$properties$id)
+GCT_OBJ <- File('./DiffExpAnal_methylation_mixedEffects_limma_diffexp.tsv', name = 'Differentially Expressed Probes', parentId = CODE$properties$id)
 GCT_OBJ <- synStore(GCT_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
 # Store results: comparison format
 write.table(SIG.SETS, file='./DiffExpAnal_methylation_mixedEffects_limma_comparisons.tsv',sep='\t',row.names=F,quote=F)
-COMP_OBJ <- File('./DiffExpAnal_methylation_mixedEffects_limma_comparisons.tsv', name = 'Differentially Expressed Genes comparison list', parentId = CODE$properties$id)
+COMP_OBJ <- File('./DiffExpAnal_methylation_mixedEffects_limma_comparisons.tsv', name = 'Differentially Expressed Probes comparison list', parentId = CODE$properties$id)
 COMP_OBJ <- synStore(COMP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 ```
 |  *Results*                           |  *SynapseID*                |
 |  ----------------------------------- |   ------------------------  |
 | logFC |  `r paste(FC_OBJ$properties$id,FC_OBJ$properties$versionNumber,sep='.')`  |
 | pvalue    |  `r paste(PVAL_OBJ$properties$id,PVAL_OBJ$properties$versionNumber,sep='.')` |
-| Differentially Expressed Genes    |  `r paste(GCT_OBJ$properties$id,GCT_OBJ$properties$versionNumber,sep='.')` |
-| Differentially Expressed Genes (comparison list)    |  `r paste(COMP_OBJ$properties$id,COMP_OBJ$properties$versionNumber,sep='.')` |
+| Differentially Expressed Probes    |  `r paste(GCT_OBJ$properties$id,GCT_OBJ$properties$versionNumber,sep='.')` |
+| Differentially Expressed Probes (comparison list)    |  `r paste(COMP_OBJ$properties$id,COMP_OBJ$properties$versionNumber,sep='.')` |
