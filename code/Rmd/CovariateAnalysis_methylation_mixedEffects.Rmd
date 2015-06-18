@@ -36,8 +36,8 @@ library(rGithubClient)
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
-# source('/mnt/Github/knit2synapse-1/R/knitFile2Synapse.R')
-# knitFile2Synapse(file = "./CovariateAnalysis_methylation_mixedEffects.Rmd", name = 'Covariate Analysis Methylation Mixed Effects All', owner = 'syn4486559', overwrite=F)
+# source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
+# knitFile2SynapseFolder(file = "./CovariateAnalysis_methylation_mixedEffects.Rmd", name = 'Covariate Analysis Methylation Mixed Effects All', owner = 'syn4486559', overwrite=F)
 
 synapseLogin()
 
@@ -247,14 +247,14 @@ tmp <- paste('Using following covariates in the final model', paste(gsub('_','\\
 `r tmp`
 ### Sanity Check
 Residualise significant covariates using a linear model and find correlation between PCA of residuals with covariates
-```{r residualSigCovars, fig.width=22, fig.height=14}
+```{r residualSigCovars, fig.width=22, fig.height=14, cache=FALSE}
 residualSigCovars[["PC_res"]][[1]]$plotData
 ```
-```{r residualSigCovars.ALL, fig.width=24, fig.height=14}
+```{r residualSigCovars.ALL, fig.width=24, fig.height=14, cache=FALSE}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Calculate Residuals
-```{r residualisation, fig.height=8, fig.width=8}
+```{r residualisation, fig.height=8, fig.width=8, cache=FALSE}
 RESID.EXP = calcResiduals(EXP, DM1$design, varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO", "Diffname_shortMESO5", "Diffname_shortSC"))
 
 # Find principal components of expression to plot
