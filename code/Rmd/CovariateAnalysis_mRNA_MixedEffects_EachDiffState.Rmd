@@ -1,5 +1,5 @@
 ---
-title: "Covariate Analysis for eXpress aligned mRNA data with fixed effect modeling performed at indivudal differentiation stages"
+title: "Covariate Analysis for eXpress aligned mRNA data with mixed effect modeling performed at indivudal differentiation stages"
 author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
@@ -36,9 +36,9 @@ library(rGithubClient)
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # devtools::install_github("knit2synapse-1", username = "th1vairam", ref= "dev")
-# knitToFolderEntity(file = "./CovariateAnalysis_mRNA_FixedEffects_EachDiffState.Rmd", 
+# knitToFolderEntity(file = "./CovariateAnalysis_mRNA_MixedEffects_EachDiffState.Rmd", 
 #                    parentId = 'syn3256504',
-#                    entityName = 'Covariate Analysis mRNA Fixed Effects EachDiffState', 
+#                    entityName = 'Covariate Analysis mRNA Mixed Effects EachDiffState', 
 #                    overwrite=F)
 
 synapseLogin()
@@ -155,7 +155,9 @@ Covariate correlation
 ```{r covariates.correlation, fig.width=10, fig.height=10}
 covariateCorrelation <- function(COVARIATES){  
   Diffname = unique(COVARIATES$Diffname_short)
+  writeLines('------------------------------------------------------------------------------')
   writeLines(paste('Differentiation state:',as.character(Diffname)))
+  writeLines('------------------------------------------------------------------------------')
   
   COVARIATES = droplevels(COVARIATES)
   COVARIATES = COVARIATES[,sapply(COVARIATES, function(x) length(levels(x))) > 1]
@@ -173,9 +175,10 @@ COVARIATES.CORRELATION = lapply(COVARIATES, covariateCorrelation)
 Initial normalisation usign voom (with NULL design)
 ```{r initial.voom.normalisation}
 initialVoomNormalisation <- function(COVARIATES, PROCESSED_COUNTS){
+  writeLines('------------------------------------------------------------------------------')
   diffstate = unique(COVARIATES$Diffname_short)
   writeLines(paste('Differentiation state:',as.character(diffstate)))
-  
+  writeLines('------------------------------------------------------------------------------')
   # Drop unilevel covariates
   COVARIATES = droplevels(COVARIATES)
   COVARIATES = COVARIATES[,sapply(COVARIATES, function(x) length(levels(x))) > 1]
@@ -196,8 +199,10 @@ VOOM.GENE.EXPRESSION.PREADJUSTED = lapply(COVARIATES, initialVoomNormalisation, 
 Clustering of initial normalised data (with NULL design)
 ```{r decompse.normalise.data, fig.height=8, fig.width=8}
 plotPCAGeneExpression <- function(COVARIATES, VOOM.GENE.EXPRESSION.PREADJUSTED){ 
+  writeLines('------------------------------------------------------------------------------')
   diffstate = unique(COVARIATES$Diffname_short)
   writeLines(paste('Differentiation state:',as.character(diffstate)))
+  writeLines('------------------------------------------------------------------------------')
   
   # Drop unilevel covariates
   COVARIATES = droplevels(COVARIATES)
@@ -229,10 +234,10 @@ PCA.GENE.EXPRESSION = lapply(COVARIATES, plotPCAGeneExpression, VOOM.GENE.EXPRES
 Correlation between pca of unadjusted mRNA expression and covariates is used to find significant covariates
 ```{r preAdjusted.covariates, fig.width=25, fig.height=12}
 plotGeneCovariatesCorrelation <- function(COVARIATES, VOOM.GENE.EXPRESSION.PREADJUSTED){
-  writeLines('--------------------------------------------------------------------------------------------------------------------------------------')
+  writeLines('------------------------------------------------------------------------------')
   diffstate = unique(COVARIATES$Diffname_short)
   writeLines(paste('Differentiation state:',as.character(diffstate)))
-  writeLines('--------------------------------------------------------------------------------------------------------------------------------------')
+  writeLines('------------------------------------------------------------------------------')
   
   # Drop unilevel covariates
   COVARIATES = droplevels(COVARIATES)
@@ -250,9 +255,9 @@ plotGeneCovariatesCorrelation <- function(COVARIATES, VOOM.GENE.EXPRESSION.PREAD
   adjustCovars = designMatVarsToCovars(getCovariatesMap(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$DM),
                                        preAdjustedSigCovars$significantCovars)
   
-  writeLines('--------------------------------------------------------------------------------------------------------------------------------------')
+  writeLines('------------------------------------------------------------------------------')
   writeLines(paste('Significant covariates to adjust at FDR 0.1 are',paste(gsub('_','\\\\_',adjustCovars), collapse= ',')))
-  writeLines('--------------------------------------------------------------------------------------------------------------------------------------')
+  writeLines('------------------------------------------------------------------------------')
   writeLines('')
   writeLines('')
   
@@ -263,13 +268,13 @@ PREADJUSTED.COVARIATES = lapply(COVARIATES, plotGeneCovariatesCorrelation, VOOM.
 ```
 
 ### Normalisation (iterative)
-Since many covariates are correlated, re-normalising COVARIATES with an iterative design matrix. All effects are considered as fixed effects
+Since many covariates are correlated, re-normalising COVARIATES with an iterative design matrix. All effects are considered as fixed effects, except Donor_ID which is a random effect
 ```{r iterative.adjusted.voom.normalisation, fig.width=25, fig.height=12}
 iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSION.PREADJUSTED, PREADJUSTED.COVARIATES){  
-  writeLines('--------------------------------------------------------------------------------------------------------------------------------------')
+  writeLines('------------------------------------------------------------------------------')
   diffstate = unique(COVARIATES$Diffname_short)  
   writeLines(paste('Differentiation state:',as.character(diffstate)))
-  writeLines('--------------------------------------------------------------------------------------------------------------------------------------')
+  writeLines('------------------------------------------------------------------------------')
   
   # Drop unilevel covariates
   COVARIATES = droplevels(COVARIATES)
@@ -277,6 +282,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
   
   # Assign return values
   FIT = c()
+  CORRELATION = c()
   RESIDUAL.GENE.EXPRESSION = c()  
   postAdjustCovars = c()
   
@@ -287,13 +293,13 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
                                             residualSigCovars$significantCovars)
   covariatesEffects = designMat2CovEffects(getCovariatesMap(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$DM),
                                            residualSigCovars$Effects.significantCovars)
-  covariatesEffects = covariatesEffects[setdiff(significantCovars,postAdjustCovars)]
+  covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars,'Donor_ID'))]
     
   postAdjustCovars = names(which.max(covariatesEffects))
   
   loopCount = 0 
   while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
-    writeLines(paste('Using following covariates in the model',
+    writeLines(paste('Using following covariates in the model:',
                 paste(paste(gsub('_','\\\\_',postAdjustCovars),collapse=', '),'as fixed effects'),
                 sep=':'))
     
@@ -301,13 +307,32 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
     DM1 = getDesignMatrix(COVARIATES[,postAdjustCovars,drop=F],Intercept = F)
     DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols]
     
-    # Estimate correlation of random effects
+    # Estimate sample weights with null design
     GENE.EXPRESSION = voom(PROCESSED_COUNTS[[diffstate]]$filteredExprMatrix, 
                            design = DM1$design, 
                            plot=F)
     
+    # Estimate correlation between donor effects
+    CORRELATION = duplicateCorrelation(GENE.EXPRESSION, 
+                                       design = DM1$design,
+                                       block = COVARIATES$Donor_ID)
+    
+    if(abs(CORRELATION$cor) == 1 || abs(CORRELATION$cor) == 0){
+      writeLines('Random effects correlation cannot be estimated')
+      break
+    }
+    
+    # Estimate sample weights with correlation efects
+    GENE.EXPRESSION = voom(PROCESSED_COUNTS[[diffstate]]$filteredExprMatrix, 
+                           design = DM1$design,
+                           block = COVARIATES$Donor_ID,
+                           correlation = CORRELATION$consensus.cor,
+                           plot=F)
+    
     # Fit linear model with chosen design
-    FIT = lmFit(GENE.EXPRESSION)
+    FIT = lmFit(GENE.EXPRESSION,
+                block = COVARIATES$Donor_ID,
+                correlation = CORRELATION$consensus.cor)
     
     # Residuals after normalisation
     RESIDUAL.GENE.EXPRESSION = residuals.MArrayLM(FIT,GENE.EXPRESSION$E)
@@ -317,7 +342,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
     
     # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
     residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE.EXPRESSION, 
-                                                  VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$DM$design,
+                                                  dplyr::select(as.data.frame(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$DM$design),-starts_with('Donor_ID')),
                                                   'all adjusted design(voom-normalized)',
                                                   isKeyPlot=TRUE)
     
@@ -326,19 +351,19 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
                                               residualSigCovars$significantCovars)
     covariatesEffects = designMat2CovEffects(getCovariatesMap(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$DM),
                                              residualSigCovars$Effects.significantCovars)
-    covariatesEffects = covariatesEffects[setdiff(significantCovars,postAdjustCovars)]
+    covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars,'Donor_ID'))]
     
     postAdjustCovars = c(postAdjustCovars,names(which.max(covariatesEffects)))
     loopCount = loopCount + 1
   }
-  writeLines('--------------------------------------------------------------------------------------------------------------------------------------')
+  writeLines('--------------------------------------------------------------------------------------------')
   writeLines(paste('Using following covariates in the final model', paste(paste(gsub('_','\\\\_',postAdjustCovars),collapse=','),'as fixed effects')))
-  writeLines('--------------------------------------------------------------------------------------------------------------------------------------')
+  writeLines('--------------------------------------------------------------------------------------------')
   writeLines('')
   
   ### Sanity Check
   print(residualSigCovars[["PC_res"]][[2]]$plotData)
-  writeLines('--------------------------------------------------------------------------------------------------------------------------------------')
+  writeLines('---------------------------------------------------------------------------------------------')
   return(list(FIT = FIT,
               RESIDUAL.GENE.EXPRESSION = RESIDUAL.GENE.EXPRESSION,
               residualSigCovars = residualSigCovars,
@@ -350,9 +375,9 @@ VOOM.GENE.EXPRESSION.POSTADJUSTED = lapply(COVARIATES, iterativeNormalisation, P
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
-ActivityName <- 'Covariate Analysis of eXpress aligned mRNA data at each diff state with fixed effects'
+ActivityName <- 'Covariate Analysis of eXpress aligned mRNA data at each diff state with mixed effects'
   
-thisFileName <- 'CovariateAnalysis_mRNA_FixedEffects_EachDiffState.Rmd'
+thisFileName <- 'CovariateAnalysis_mRNA_MixedEffects_EachDiffState.Rmd'
   
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
@@ -363,7 +388,7 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Populate wiki with results
-CODE <- Folder(name = 'Covariate Analysis mRNA Fixed Effects EachDiffState', parentId = parentId)
+CODE <- Folder(name = 'Covariate Analysis mRNA Mixed Effects EachDiffState', parentId = parentId)
 CODE <- synStore(CODE)
 ```
 
