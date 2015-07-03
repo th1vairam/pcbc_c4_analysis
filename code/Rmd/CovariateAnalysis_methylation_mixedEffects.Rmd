@@ -62,7 +62,6 @@ knitr::opts_chunk$set(
 EXP_ID = 'syn2233188'
 METADATA_ID = 'syn3156828'
 
-SYNAPSE_STORE = T
 parentId = 'syn4438659'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
