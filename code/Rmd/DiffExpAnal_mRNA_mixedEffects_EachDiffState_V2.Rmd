@@ -1,5 +1,5 @@
 ---
-title: "Differential Network Analysis for eXpress aligned mRNA data with mixed effect modeling performed at indivudal differentiation stages"
+title: "Differential Expression Analysis for eXpress aligned mRNA data with mixed effect modeling performed at indivudal differentiation stages"
 author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
@@ -235,7 +235,7 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
 Number of differentially expressed genes at EB stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
-```{r print.imp.genes.DE}
+```{r print.imp.genes.EB}
 tmp1 = rownameToFirstColumn(as.data.frame(DEXP$EB$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
 colnames(tmp1) = c('Contrast Names','Up Regulated')
 tmp2 = rownameToFirstColumn(as.data.frame(DEXP$EB$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
@@ -244,7 +244,7 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
 Number of differentially expressed genes at ECTO stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
-```{r print.imp.genes.DE}
+```{r print.imp.genes.ECTO}
 tmp1 = rownameToFirstColumn(as.data.frame(DEXP$ECTO$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
 colnames(tmp1) = c('Contrast Names','Up Regulated')
 tmp2 = rownameToFirstColumn(as.data.frame(DEXP$ECTO$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
@@ -253,7 +253,7 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
 Number of differentially expressed genes at MESO5 stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
-```{r print.imp.genes.DE}
+```{r print.imp.genes.MESO5}
 tmp1 = rownameToFirstColumn(as.data.frame(DEXP$MESO5$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
 colnames(tmp1) = c('Contrast Names','Up Regulated')
 tmp2 = rownameToFirstColumn(as.data.frame(DEXP$MESO5$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
@@ -262,7 +262,7 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
 Number of differentially expressed genes at SC stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
-```{r print.imp.genes.DE}
+```{r print.imp.genes.SC}
 tmp1 = rownameToFirstColumn(as.data.frame(DEXP$SC$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
 colnames(tmp1) = c('Contrast Names','Up Regulated')
 tmp2 = rownameToFirstColumn(as.data.frame(DEXP$SC$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
