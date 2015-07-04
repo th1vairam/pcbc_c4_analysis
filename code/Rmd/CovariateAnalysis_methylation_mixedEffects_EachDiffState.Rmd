@@ -29,6 +29,7 @@ library('plyr')
 library('knitr')
 library('stringr')
 library('minfi')
+library('knit2synapse')
 
 ## Needs the dev branch
 library(rGithubClient)
