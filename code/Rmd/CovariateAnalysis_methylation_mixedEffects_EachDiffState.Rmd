@@ -37,9 +37,9 @@ library(rGithubClient)
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # devtools::install_github("knit2synapse-1", username = "th1vairam", ref= "dev")
-# knitToFolderEntity(file = "./CovariateAnalysis_mRNA_MixedEffects_EachDiffState.Rmd", 
-#                    parentId = 'syn3256504',
-#                    entityName = 'Covariate Analysis mRNA Mixed Effects EachDiffState', 
+# knitToFolderEntity(file = "./CovariateAnalysis_methylation_mixedEffects_EachDiffState.Rmd", 
+#                    parentId = 'syn4231339',
+#                    entityName = 'Covariate Analysis Methylation Mixed Effects EachDiffState', 
 #                    overwrite=F)
 
 synapseLogin()
@@ -65,7 +65,7 @@ knitr::opts_chunk$set(
 EXP_ID = 'syn2233188'
 METADATA_ID = 'syn3156828'
 
-parentId = 'syn4438659'
+parentId = 'syn4231339'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_Type", 
@@ -153,7 +153,7 @@ covariateCorrelation <- function(COVARIATES){
   
   # Correlation between covariates
   COVARIATES.CORRELATION = getAssociationStatistics(COVARIATES, PVAL = 0.1)  
-  ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
+  print(ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15))
   
   return(list(COVARIATES.CORRELATION = COVARIATES.CORRELATION))
 }
@@ -161,7 +161,7 @@ covariateCorrelation <- function(COVARIATES){
 COVARIATES.CORRELATION = lapply(COVARIATES, covariateCorrelation)
 ```
 ### Probe filtering
-* Retain probes with beta greater than 0.5 in atleast one sample and less than 0.5 in atleast one other sample in any of the diff state
+Retain probes with beta greater than 0.5 in atleast one sample and less than 0.5 in atleast one other sample
 ```{r gene.filtering, cache=TRUE, fig.width=8, fig.height=8, echo=TRUE}
 splitData <- function(cols,EXP,METADATA){
   Diffname = unique(METADATA[cols,'Diffname_short'])
@@ -184,7 +184,7 @@ PROC.EXP <- tapply(colnames(EXP),
 ```
 
 Clustering of initial normalised data (with NULL design)
-```{r decompse.normalise.data, cache=TRUE, fig.height=8, fig.width=8}
+```{r decompse.normalise.data, include=TRUE, cache=TRUE, fig.height=8, fig.width=8}
 plotPCAMethylExpression <- function(COVARIATES, PROC.EXP){ 
   writeLines('------------------------------------------------------------------------------')
   diffstate = unique(COVARIATES$Diffname_short)
@@ -210,6 +210,7 @@ plotPCAMethylExpression <- function(COVARIATES, PROC.EXP){
   p <- p + geom_point(aes(color = Gender, shape=Reprogramming_Vector_Type, size=Cell_Line_Type))
   p <- p + theme_bw() + scale_size_manual(values = c(5, 2)) + scale_shape_manual(values = 1:7) + theme(legend.position="top") 
   p <- p + geom_text(aes(label= labels), size=4, hjust=0)
+  print(p)
 
   return(list(p = p))
 }
@@ -219,7 +220,7 @@ PCA.METHYL.EXPRESSION = lapply(COVARIATES, plotPCAMethylExpression, PROC.EXP)
 ```
 ### Significant Covariates
 Correlation between pca of unadjusted expression and covariates is used to find significant covariates
-```{r preAdjusted.covariates, cache=TRUE}
+```{r preAdjusted.covariates, include = TRUE, cache=FALSE, fig.width=25, fig.height=12}
 plotMethylCovariatesCorrelation <- function(COVARIATES, PROC.EXP){
   writeLines('------------------------------------------------------------------------------')
   diffstate = unique(COVARIATES$Diffname_short)
@@ -258,7 +259,7 @@ PREADJUSTED.COVARIATES = lapply(COVARIATES, plotMethylCovariatesCorrelation, PRO
 ```
 ### Normalisation (iterative)
 Since many covariates are correlated, re-normalising COVARIATES with an iterative design matrix. All effects are considered as fixed effects, except Donor_ID which is a random effect
-```{r iterative.adjusted.voom.normalisation, cache =TRUE, include=FALSE}
+```{r iterative.adjusted.normalisation, cache = FALSE, include=TRUE, fig.width=25, fig.height=12}
 iterativeMethylNormalisation <- function(COVARIATES, 
                                          PROC.EXP,
                                          PREADJUSTED.COVARIATES){
@@ -323,7 +324,7 @@ iterativeMethylNormalisation <- function(COVARIATES,
     
     # Find PC of residual gene expression and significant covariates that are highly correlated with PCs 
     DESIGN = as.data.frame(PREADJUSTED.COVARIATES[[diffstate]]$DESIGN$design)
-    residualSigCovars = runPCAandPlotCorrelations(PROC.EXP[[diffstate]], 
+    residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.METHYL.EXPRESSION, 
                                                   dplyr::select(DESIGN, -starts_with('Donor_ID')),
                                                   'all adjusted design')
     
@@ -346,6 +347,7 @@ iterativeMethylNormalisation <- function(COVARIATES,
   
   ### Sanity Check
   print(residualSigCovars[["PC_res"]][[2]]$plotData)
+  
   writeLines('---------------------------------------------------------------------------------------------')
   
   return(list(FIT = FIT,
@@ -357,7 +359,7 @@ POSTADJUSTED.COVARIATES = lapply(COVARIATES, iterativeMethylNormalisation, PROC.
 ```
 
 ### Synapse Store
-Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
+Store processed beta values, covariates, and design matrices
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache=FALSE}
 ActivityName <- 'Covariate Analysis of minfi aligned methylation data at each diff state with mixed effects'
   
