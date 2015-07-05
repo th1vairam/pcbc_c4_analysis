@@ -40,7 +40,7 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 # devtools::install_github("knit2synapse-1", username = "th1vairam", ref= "dev")
 # knitToFolderEntity(file = "./CovariateAnalysis_methylation_mixedEffects.Rmd", 
 #                    parentId = 'syn4231339',
-#                    entityName = 'Covariate Analysis Methylation Mixed Effects', 
+#                    entityName = 'Covariate Analysis Methylation Mixed Effects All', 
 #                    overwrite=F)
 
 synapseLogin()
