@@ -170,8 +170,11 @@ splitData <- function(cols,EXP,METADATA){
   writeLines(paste('Differentiation state:',as.character(Diffname)));
   writeLines('------------------------------------------------------------------------------');
   
-  ind.retain = (rowSums(EXP[,cols] <= 0.5) > 1) & (rowSums(EXP[,cols] >= 0.5) > 1);
-  EXP = EXP[ind.retain,cols];
+  exp.variance <- apply(as.matrix(EXP[,cols]),1,var)
+  ind.remove1 <- exp.variance < sort(exp.variance)[round(0.25*length(exp.variance))]
+  ind.remove2 <- (rowSums(EXP[,cols] <= 0.25)/dim(EXP[,cols])[2] == 1) | (rowSums(EXP[,cols] >= 0.75)/dim(EXP[,cols])[2] == 1)
+  
+  EXP <- EXP[!ind.remove1 & !ind.remove2,cols]  
   
   writeLines(paste(dim(EXP)[1],'number of probes and',dim(EXP)[2],'number of samples are considered for the analysis'));
   return(EXP)
@@ -337,8 +340,8 @@ iterativeMethylNormalisation <- function(COVARIATES,
     covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars,'Donor_ID'))]
     
     postAdjustCovars = c(postAdjustCovars,names(which.max(covariatesEffects)))
-    write.table(diffstate, file = './temp.txt', append=T)
-    write.table(postAdjustCovars, file = './temp.txt', append=T)
+    write.table(diffstate, file = './temp.txt', append=T, col.names=F, row.names=F,quote=F)
+    write.table(paste(postAdjustCovars, collapse=','), file = './temp.txt', append=T, col.names=F, row.names=F,quote=F)
     loopCount = loopCount + 1
   }
   writeLines('--------------------------------------------------------------------------------------------')

@@ -240,7 +240,8 @@ while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 15){
   
   covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars$fixed,postAdjustCovars$random))]
   
-  postAdjustCovars$fixed = c(postAdjustCovars$fixed,names(which.max(covariatesEffects)))
+  postAdjustCovars$fixed = c(postAdjustCovars$fixed,names(which.max(covariatesEffects)))  
+  write.table(paste(postAdjustCovars$fixed, collapse=','), './temp.txt', append= T, row.names=F, col.names=F, quote=F)
   loopCount = loopCount + 1
 }
 tmp <- paste('Using following covariates in the final model', paste(gsub('_','\\\\_',postAdjustCovars$fixed),collapse=','),'as fixed effects and', paste(gsub('_','\\\\_',postAdjustCovars$random),collapse=','),'as random effects')
