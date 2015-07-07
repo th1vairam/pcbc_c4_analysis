@@ -170,11 +170,9 @@ splitData <- function(cols,EXP,METADATA){
   writeLines(paste('Differentiation state:',as.character(Diffname)));
   writeLines('------------------------------------------------------------------------------');
   
-  exp.variance <- apply(as.matrix(EXP[,cols]),1,var)
-  ind.remove1 <- exp.variance < sort(exp.variance)[round(0.25*length(exp.variance))]
-  ind.remove2 <- (rowSums(EXP[,cols] <= 0.25)/dim(EXP[,cols])[2] == 1) | (rowSums(EXP[,cols] >= 0.75)/dim(EXP[,cols])[2] == 1)
+  ind.remove <- (rowSums(EXP[,cols] <= 0.25)/dim(EXP[,cols])[2] == 1) | (rowSums(EXP[,cols] >= 0.75)/dim(EXP[,cols])[2] == 1)
   
-  EXP <- EXP[!ind.remove1 & !ind.remove2,cols]  
+  EXP <- EXP[!ind.remove,cols]  
   
   writeLines(paste(dim(EXP)[1],'number of probes and',dim(EXP)[2],'number of samples are considered for the analysis'));
   return(EXP)
@@ -245,7 +243,7 @@ plotMethylCovariatesCorrelation <- function(COVARIATES, PROC.EXP){
   # Find significant covariates
   adjustCovars = designMatVarsToCovars(getCovariatesMap(DESIGN),preAdjustedSigCovars$significantCovars)
   
-    # Plot preAdjustedSigCovars
+  # Plot preAdjustedSigCovars
   print(preAdjustedSigCovars[["PC_res"]][[2]]$plotData)  
   
   writeLines('------------------------------------------------------------------------------')
@@ -294,7 +292,7 @@ iterativeMethylNormalisation <- function(COVARIATES,
   postAdjustCovars = names(which.max(covariatesEffects))
  
   loopCount = 0 
-  while(length(residualSigCovars$significantCovars) != 0 && loopCount <= 15){
+  while(length(covariatesEffects) != 0 && loopCount <= 15){
     writeLines(paste('Using following covariates in the model:',
                      paste(postAdjustCovars,collapse=', '),
                      'as fixed effects'
