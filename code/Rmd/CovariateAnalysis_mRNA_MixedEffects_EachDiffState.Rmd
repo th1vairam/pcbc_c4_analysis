@@ -301,7 +301,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
   colnames(DESIGN) = substr(colnames(DESIGN),1,50)
   
   loopCount = 0 
-  while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 2){
+  while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 15){
     writeLines(paste('Using following covariates in the model:',
                 paste(paste(gsub('_','\\\\_',postAdjustCovars),collapse=', '),'as fixed effects'),
                 sep=':'))
