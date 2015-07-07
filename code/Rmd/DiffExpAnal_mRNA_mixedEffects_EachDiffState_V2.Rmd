@@ -107,8 +107,7 @@ getData <- function(DiffState, All.Files, FactorCovariates, ContCovariates){
 
   writeLines('------------------------------------------------------------------------------')
   return(list( PROC.COUNT = PROC.COUNT,
-               COVARIATES = COVARIATES,
-               WEIGHTS = WEIGHTS,
+               COVARIATES = COVARIATES,              
                DESIGN = DESIGN,
                ALL_USED_IDs = ALL_USED_IDs))
   

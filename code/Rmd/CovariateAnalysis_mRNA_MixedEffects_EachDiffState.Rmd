@@ -285,6 +285,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
   CORRELATION = c()
   RESIDUAL.GENE.EXPRESSION = c()  
   postAdjustCovars = c()
+  GENE.EXPRESSION = c()
   
   # Assign residual covariates
   residualSigCovars = PREADJUSTED.COVARIATES[[diffstate]]$preAdjustedSigCovars
@@ -357,8 +358,8 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
     covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars,'Donor_ID'))]
     
     postAdjustCovars = c(postAdjustCovars,names(which.max(covariatesEffects)))
-    write.table(diffstate, file = './temp.txt', append=T)
-    write.table(postAdjustCovars, file = './temp.txt', append=T)
+    write.table(diffstate, file = './temp.txt', append=T, col.names=F,row.names=F,quote=F)
+    write.table(paste(postAdjustCovars, collapse=','), file = './temp.txt', append=T, col.names=F,row.names=F,quote=F)
     loopCount = loopCount + 1
   }
   writeLines('--------------------------------------------------------------------------------------------')
