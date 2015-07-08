@@ -58,10 +58,10 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE)
+  cache = FALSE)
 ```
 ### Download data
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, cache = FALSE}
 # Input Parameters
 EXP_ID = 'syn2233188'
 METADATA_ID = 'syn3156828'
@@ -79,7 +79,7 @@ ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest")
 Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
 
 Obtain count matrix and metadata from synapse
-```{r getdata, cache=TRUE, include=FALSE}
+```{r getdata, cache=FALSE, include=FALSE}
 # Get count matrix
 EXP_OBJ = synGet(EXP_ID)
 ALL_USED_IDs = EXP_OBJ$properties$id
@@ -95,7 +95,7 @@ METADATA = METADATA_OBJ@values
 Synapse id of count matrix used for the analysis is `r paste(EXP_OBJ$properties$id,EXP_OBJ$properties$versionNumber,sep='.')` and the synapse id of meta data table used for the analysis is `r METADATA_ID` 
 
 Preprocess counts matrix and metadata
-```{r preprocessing, include=FALSE}
+```{r preprocessing, include=FALSE, cache = FALSE}
 # Preprocess metadata
 METADATA[METADATA == 'N/A'] = NA
 
@@ -111,7 +111,7 @@ rownames(METADATA) = METADATA$UID
 * Remove samples with no Diffname short
 * Remove somatic samples and samples with no Cell Type
 * Remove samples with abnornal or no C4 Karyotype Result
-```{r filtering, echo=TRUE}
+```{r filtering, echo=TRUE, cache = FALSE}
 #### Pre processing mRNA expression counts and metadata ####
 metadata_filtered <- 
   METADATA %>%
@@ -130,7 +130,7 @@ The following `r length(REMOVED_UID)` samples were removed:
 `r paste(gsub('_','\\\\_',REMOVED_UID),collapse=', ')` 
 ### Covariate clustering
 Determine relationship between covariates
-```{r covariates.clustering}
+```{r covariates.clustering,cache=FALSE}
 # Find inter relation between factor covariates
 COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 
@@ -142,7 +142,7 @@ COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
 COVARIATES = split(COVARIATES,COVARIATES$Diffname_short)
 ```
 Covariate correlation
-```{r covariates.correlation, fig.width=10, fig.height=10}
+```{r covariates.correlation, fig.width=10, fig.height=10, cache = FALSE}
 covariateCorrelation <- function(COVARIATES){  
   Diffname = unique(COVARIATES$Diffname_short)
   writeLines('------------------------------------------------------------------------------')
@@ -163,7 +163,7 @@ COVARIATES.CORRELATION = lapply(COVARIATES, covariateCorrelation)
 ```
 ### Probe filtering
 Retain probes with beta greater than 0.5 in atleast one sample and less than 0.5 in atleast one other sample
-```{r gene.filtering, cache=TRUE, fig.width=8, fig.height=8, echo=TRUE}
+```{r gene.filtering, cache=TRUE, fig.width=8, fig.height=8, echo=TRUE, cache = FALSE}
 splitData <- function(cols,EXP,METADATA){
   Diffname = unique(METADATA[cols,'Diffname_short'])
   writeLines('------------------------------------------------------------------------------');
@@ -186,7 +186,7 @@ PROC.EXP <- tapply(colnames(EXP),
 ```
 
 Clustering of initial normalised data (with NULL design)
-```{r decompse.normalise.data, include=TRUE, cache=TRUE, fig.height=8, fig.width=8}
+```{r decompse.normalise.data, include=TRUE, cache=TRUE, fig.height=8, fig.width=8, cache = FALSE}
 plotPCAMethylExpression <- function(COVARIATES, PROC.EXP){ 
   writeLines('------------------------------------------------------------------------------')
   diffstate = unique(COVARIATES$Diffname_short)
@@ -222,7 +222,7 @@ PCA.METHYL.EXPRESSION = lapply(COVARIATES, plotPCAMethylExpression, PROC.EXP)
 ```
 ### Significant Covariates
 Correlation between pca of unadjusted expression and covariates is used to find significant covariates
-```{r preAdjusted.covariates, include = TRUE, cache=FALSE, fig.width=25, fig.height=12}
+```{r preAdjusted.covariates, include = TRUE, cache=FALSE, fig.width=25, fig.height=12, cache = FALSE}
 plotMethylCovariatesCorrelation <- function(COVARIATES, PROC.EXP){
   writeLines('------------------------------------------------------------------------------')
   diffstate = unique(COVARIATES$Diffname_short)
@@ -328,7 +328,7 @@ iterativeMethylNormalisation <- function(COVARIATES,
     DESIGN = as.data.frame(PREADJUSTED.COVARIATES[[diffstate]]$DESIGN$design)
     residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.METHYL.EXPRESSION, 
                                                   dplyr::select(DESIGN, -starts_with('Donor_ID')),
-                                                  'all adjusted design')
+                                                  'residuals')
     
     # Add postadjusted covariates (if any)
     significantCovars = designMatVarsToCovars(getCovariatesMap(PREADJUSTED.COVARIATES[[diffstate]]$DESIGN),
