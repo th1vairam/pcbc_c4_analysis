@@ -56,7 +56,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE)
+  cache = FALSE)
 ```
 ### Download data
 ```{r setup, include=FALSE}
@@ -65,13 +65,13 @@ COVARIATES_FOLDER = 'syn4557064'
 parentId = 'syn3256504'
 
 # Diffstate Names
-diffstate = list(DE = 'DE', EB = 'EB', ECTO = 'ECTO', MES05 = 'MESO5', SC = 'SC')
+diffstate = list(DE = 'DE', EB = 'EB', ECTO = 'ECTO', MESO5 = 'MESO5', SC = 'SC')
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
 ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
 ```
 Obtain processed counts, design, weights and covariates matrix from synapse
-```{r getdata, cache=TRUE, include=FALSE}
+```{r getdata, cache=FALSE, include=FALSE}
 All.Files = synQuery(paste0('select * from file where parentId == "',COVARIATES_FOLDER,'"'))
 
 # Function to download expression counts, 
@@ -169,6 +169,14 @@ getDifferentialExpression <- function(diffstate, DATA){
   CONT.TO.CHECK = setdiff(colnames(DATA[[diffstate]]$COVARIATES),'run')
   CONT.TO.CHECK = CONT.TO.CHECK[!!sapply(CONT.TO.CHECK, function(x, DESIGN) length(grep(x,colnames(DESIGN))), DESIGN)]
   
+  if (length(CONT.TO.CHECK) == 0){
+    return(list(FIT = FIT,
+                FIT.CONTRAST = c(),
+                GENE.EXPRESSION = GENE.EXPRESSION,
+                CORRELATION = CORRELATION,
+                DIFF.EXP = c()))    
+  }
+  
   ALL.CONT = c()
   for (name in CONT.TO.CHECK){
     CONT.NAMES <- colnames(DESIGN)[grep(name,colnames(DESIGN))]
@@ -212,12 +220,12 @@ getDifferentialExpression <- function(diffstate, DATA){
                                               FC_CUTOFF = 0))
   }
 
-  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and log2FC >= 1
-  DIFF.EXP$SIG.EXP.POS <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC >= 1
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and log2FC >= 0.5
+  DIFF.EXP$SIG.EXP.POS <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC >= 0.5
   DIFF.EXP$NUM.SIG.EXP.POS <- colSums(DIFF.EXP$SIG.EXP.POS)
   
-  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= -1
-  DIFF.EXP$SIG.EXP.NEG <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC <= -1
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= -0.5
+  DIFF.EXP$SIG.EXP.NEG <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC <= -0.5
   DIFF.EXP$NUM.SIG.EXP.NEG <- colSums(DIFF.EXP$SIG.EXP.NEG)
     
   return(list(DIFF.EXP = DIFF.EXP,
@@ -230,8 +238,8 @@ getDifferentialExpression <- function(diffstate, DATA){
 # Compute differential expression at each differentiation stages
 DEXP = lapply(diffstate, getDifferentialExpression, DATA)
 ```
-Number of differentially expressed genes at DE stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
-```{r print.imp.genes.DE}
+Number of differentially expressed genes at DE stage for adj.P.Val <= 0.05 and logFC >= 0.5 or <= -0.5
+```{r print.imp.genes.DE,cache=FALSE}
 tmp1 = rownameToFirstColumn(as.data.frame(DEXP$DE$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
 colnames(tmp1) = c('Contrast Names','Up Regulated')
 tmp2 = rownameToFirstColumn(as.data.frame(DEXP$DE$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
@@ -239,8 +247,8 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
-Number of differentially expressed genes at EB stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
-```{r print.imp.genes.EB}
+Number of differentially expressed genes at EB stage for adj.P.Val <= 0.05 and logFC >= 0.5 or <= -0.5
+```{r print.imp.genes.EB,cache=FALSE}
 tmp1 = rownameToFirstColumn(as.data.frame(DEXP$EB$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
 colnames(tmp1) = c('Contrast Names','Up Regulated')
 tmp2 = rownameToFirstColumn(as.data.frame(DEXP$EB$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
@@ -248,8 +256,8 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
-Number of differentially expressed genes at ECTO stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
-```{r print.imp.genes.ECTO}
+Number of differentially expressed genes at ECTO stage for adj.P.Val <= 0.05 and logFC >= 0.5 or <= -0.5
+```{r print.imp.genes.ECTO,cache=FALSE}
 tmp1 = rownameToFirstColumn(as.data.frame(DEXP$ECTO$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
 colnames(tmp1) = c('Contrast Names','Up Regulated')
 tmp2 = rownameToFirstColumn(as.data.frame(DEXP$ECTO$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
@@ -257,8 +265,8 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
-Number of differentially expressed genes at MESO5 stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
-```{r print.imp.genes.MESO5}
+Number of differentially expressed genes at MESO5 stage for adj.P.Val <= 0.05 and logFC >= 0.5 or <= -0.5
+```{r print.imp.genes.MESO5,cache=FALSE}
 tmp1 = rownameToFirstColumn(as.data.frame(DEXP$MESO5$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
 colnames(tmp1) = c('Contrast Names','Up Regulated')
 tmp2 = rownameToFirstColumn(as.data.frame(DEXP$MESO5$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
@@ -266,8 +274,8 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
-Number of differentially expressed genes at SC stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
-```{r print.imp.genes.SC}
+Number of differentially expressed genes at SC stage for adj.P.Val <= 0.05 and logFC >= 0.5 or <= -0.5
+```{r print.imp.genes.SC, cache=FALSE}
 tmp1 = rownameToFirstColumn(as.data.frame(DEXP$SC$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
 colnames(tmp1) = c('Contrast Names','Up Regulated')
 tmp2 = rownameToFirstColumn(as.data.frame(DEXP$SC$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
@@ -275,7 +283,7 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
-```{r merge.results}
+```{r merge.results, cache=FALSE}
 logFC = join_all(lapply(DEXP, function(x){rownameToFirstColumn(x$DIFF.EXP$logFC, 'GeneNames')}), 
                  by = 'GeneNames', match = 'all')
 adjPVal = join_all(lapply(DEXP, function(x){rownameToFirstColumn(x$DIFF.EXP$adj.P.Val, 'GeneNames')}), 
@@ -283,19 +291,10 @@ adjPVal = join_all(lapply(DEXP, function(x){rownameToFirstColumn(x$DIFF.EXP$adj.
 comparisonSet = rbindlist(lapply(DEXP, function(x){x$DIFF.EXP$SIG.SETS}))
 ALL_USED_IDs = as.character(unlist(lapply(DATA, function(x){return(x$ALL_USED_IDs)})))
 ```
-Get pvalue and fold changes of some important genes
 
-Fold change:
-```{r FC}
-kable(filter(logFC, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
-```
-Adjusted Pvalue:
-```{r PVAL}
-kable(filter(adjPVal, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
-```
 ### Results
 Store files in synapse 
-```{r synapse.store, include = FALSE, eval=TRUE}
+```{r synapse.store, include = FALSE, eval=TRUE, cache=FALSE}
 activityName='Differential Expression Analysis of eXpress aligned data with mixed effects model at each differentiation stages'
   
 thisFileName <- 'DiffExpAnal_mRNA_mixedEffects_EachDiffState_V2.Rmd'
