@@ -57,7 +57,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = FALSE)
+  cache = TRUE)
 ```
 ### Download data
 ```{r setup, include=FALSE}
@@ -88,7 +88,6 @@ tmp = read.table(getFileLocation(EXP_OBJ), sep = '\t', header=T, check.names=F, 
 setnames(EXP, colnames(EXP), colnames(tmp))
 EXP = as.data.frame(EXP)
 rownames(EXP) = EXP[,1]
-EXP = EXP[,-(1)]
 
 # Get filtered metadata
 COVARIATES_OBJ = synGet(COVARIATES_ID)
@@ -124,11 +123,12 @@ setnames(tmp1,'ProbeID','methProbeID')
 tmp1 = tmp1[tmp1$methProbeID %in% EXP$methProbeID,colnames(tmp1) %in% colnames(EXP)]
 tmp1 = melt(tmp1, id = 'methProbeID')
 ```
-```{r density.plots1, cache=FALSE, fig.height=6, fig.width=6}
+```{r density.plots1, cache=TRUE, fig.height=6, fig.width=6}
 print(ggplot(tmp1, aes(x = value)) + geom_density()+ ggtitle('Beta'))
 ```
 Perform differential expression
 ```{r diff.exp, fig.width=6, fig.height=6}
+EXP = EXP[,-(1)]
 # Estimate correlation of random effects
 correlation <- duplicateCorrelation(EXP, design = DESIGN, block=COVARIATES$Donor_ID)
   
@@ -190,7 +190,7 @@ DIFF.EXP$NUM.SIG.EXP.POS <- colSums(DIFF.EXP$SIG.EXP.POS)
 DIFF.EXP$SIG.EXP.NEG <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC <= -0.5
 DIFF.EXP$NUM.SIG.EXP.NEG <- colSums(DIFF.EXP$SIG.EXP.NEG)
 ```
-Number of differentially expressed genes at DE stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
+Number of differentially expressed genes at DE stage for adj.P.Val <= 0.05 and logFC >= 0.5 or <= -0.5
 ```{r print.num.diff}
 # Print differentially expressed genes and probes
 tmp1 = rownameToFirstColumn(as.data.frame(DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
@@ -206,7 +206,7 @@ adjPVal = rownameToFirstColumn(DIFF.EXP$adj.P.Val,'methProbeIDs')
 Comparisons = DIFF.EXP$SIG.SETS
 ```
 ### Store files in synapse
-```{r synapse.store, include = FALSE, eval=TRUE, cache=FALSE}
+```{r synapse.store, include = FALSE, eval=FALSE, cache=FALSE}
 activityName='Differential Expression Analysis of minfi processed methylation data with mixed effects model'
   
 thisFileName <- 'DiffExpAnal_methylation_mixedEffects.Rmd'
