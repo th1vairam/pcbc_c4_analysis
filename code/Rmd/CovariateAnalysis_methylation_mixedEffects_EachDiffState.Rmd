@@ -170,7 +170,7 @@ splitData <- function(cols,EXP,METADATA){
   writeLines(paste('Differentiation state:',as.character(Diffname)));
   writeLines('------------------------------------------------------------------------------');
   
-  ind.remove <- (rowSums(EXP[,cols] <= 0.25)/dim(EXP[,cols])[2] == 1) | (rowSums(EXP[,cols] >= 0.75)/dim(EXP[,cols])[2] == 1)
+  ind.remove <- (rowSums(EXP[,cols] <= 0.2)/dim(EXP[,cols])[2] == 1) | (rowSums(EXP[,cols] >= 0.7)/dim(EXP[,cols])[2] == 1)
   
   EXP <- EXP[!ind.remove,cols]  
   
