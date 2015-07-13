@@ -56,7 +56,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE)
+  cache = FALSE)
 ```
 ### Download data
 ```{r setup, include=FALSE}
@@ -246,7 +246,10 @@ plotGeneCovariatesCorrelation <- function(COVARIATES, VOOM.GENE.EXPRESSION.PREAD
   # Find correlation between PC's of gene expression with covariates
   DESIGN = getDesignMat2Fact(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$DM$design,FactorCovariates)
   colnames(DESIGN) = substr(colnames(DESIGN),1,50)
-  preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$GENE.EXPRESSION$E, DESIGN,'NULL design(voom-normalized)', isKeyPlot=TRUE)
+  preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$GENE.EXPRESSION$E, 
+                                                   DESIGN,
+                                                   'NULL design(voom-normalized)', 
+                                                   isKeyPlot=TRUE)
   
   # Plot preAdjustedSigCovars
   print(preAdjustedSigCovars[["PC_res"]][[2]]$plotData)  
@@ -285,6 +288,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
   CORRELATION = c()
   RESIDUAL.GENE.EXPRESSION = c()  
   postAdjustCovars = c()
+  GENE.EXPRESSION = c()
   
   # Assign residual covariates
   residualSigCovars = PREADJUSTED.COVARIATES[[diffstate]]$preAdjustedSigCovars
@@ -301,7 +305,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
   colnames(DESIGN) = substr(colnames(DESIGN),1,50)
   
   loopCount = 0 
-  while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 2){
+  while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 15){
     writeLines(paste('Using following covariates in the model:',
                 paste(paste(gsub('_','\\\\_',postAdjustCovars),collapse=', '),'as fixed effects'),
                 sep=':'))
@@ -346,7 +350,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
     # Find PC of residual gene expression and significant covariates that are highly correlated with PCs    
     residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE.EXPRESSION, 
                                                   DESIGN,
-                                                  'all adjusted design(voom-normalized)',
+                                                  'residuals(voom-normalized)',
                                                   isKeyPlot=TRUE)
     
     # Add postadjusted covariates (if any)
@@ -357,8 +361,8 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
     covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars,'Donor_ID'))]
     
     postAdjustCovars = c(postAdjustCovars,names(which.max(covariatesEffects)))
-    write.table(diffstate, file = './temp.txt', append=T)
-    write.table(postAdjustCovars, file = './temp.txt', append=T)
+    write.table(diffstate, file = './temp.txt', append=T, col.names=F,row.names=F,quote=F)
+    write.table(paste(postAdjustCovars, collapse=','), file = './temp.txt', append=T, col.names=F,row.names=F,quote=F)
     loopCount = loopCount + 1
   }
   writeLines('--------------------------------------------------------------------------------------------')
