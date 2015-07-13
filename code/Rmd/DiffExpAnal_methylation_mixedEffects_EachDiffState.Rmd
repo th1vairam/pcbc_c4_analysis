@@ -1,5 +1,5 @@
 ---
-title: "Differential expression analysis of minfi curated methylation data with mixed effect modeling at each differentiation stages"
+title: "Differential methylation analysis of minfi curated data with mixed effect modeling at each differentiation stages"
 author: "Thanneer Perumal"
 date: '`r date()`'
 output: html_document
@@ -116,7 +116,8 @@ getData <- function(DiffState, All.Files, FactorCovariates, ContCovariates){
   return(list(ALL_USED_IDs = ALL_USED_IDs,
               EXP = EXP,
               COVARIATES = COVARIATES,
-              DESIGN = DESIGN))
+              DESIGN = DESIGN,
+              fData = fData))
 }
 
 # Get data from synapse
@@ -235,17 +236,15 @@ colnames(tmp2) = c('Contrast Names','Down Regulated')
 
 kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
 ```
-```{r merge.results}
-logFC = join_all(lapply(DEXP, function(x){rownameToFirstColumn(x$DIFF.EXP$logFC, 'methProbeIDs')}), 
-                 by = 'methProbeIDs', match = 'all')
-adjPVal = join_all(lapply(DEXP, function(x){rownameToFirstColumn(x$DIFF.EXP$adj.P.Val, 'methProbeIDs')}), 
-                 by = 'methProbeIDs', match = 'all')
-comparisonSet = rbindlist(lapply(DEXP, function(x){x$DIFF.EXP$SIG.SETS}))
-ALL_USED_IDs = as.character(unlist(lapply(DATA, function(x){return(x$ALL_USED_IDs)})))
+```{r merge.results, cache=FALSE}
+logFC = rownameToFirstColumn(DEXP$SC$DIFF.EXP$logFC, 'methProbeIDs')
+adjPVal = rownameToFirstColumn(DEXP$SC$DIFF.EXP$adj.P.Val,'methProbeIDs')
+comparisonSet = DEXP$SC$DIFF.EXP$SIG.SETS
+ALL_USED_IDs = DATA$SC$ALL_USED_IDs
 ```
 
 ### Store files in synapse
-```{r synapse.store, include = FALSE, eval=FALSE, cache=FALSE}
+```{r synapse.store, include = FALSE, eval=TRUE, cache=FALSE}
 activityName='Differential Expression Analysis of minfi processed methylation data with mixed effects model at each differentiation state'
   
 thisFileName <- 'DiffExpAnal_methylation_mixedEffects_EachDiffState.Rmd'
