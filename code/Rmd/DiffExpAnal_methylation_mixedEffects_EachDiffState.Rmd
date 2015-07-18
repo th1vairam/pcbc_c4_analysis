@@ -62,6 +62,10 @@ knitr::opts_chunk$set(
 ### Download data
 ```{r setup, include=FALSE}
 # Input Parameters
+mRNA.logCPM_ID = 'syn4483934'
+mRNA.logCPM = fread(synGet(mRNA.logCPM_ID)@filePath, data.table=F)
+genesInBackground = mRNA.logCPM$GeneName
+
 COVARIATES_FOLDER = 'syn4589417'
 
 parentId = 'syn4231339'
