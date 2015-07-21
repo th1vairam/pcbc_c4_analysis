@@ -109,22 +109,36 @@ for (name in names(Comparisons)){
 }
 
 # Write results to file
+for(name in names(enrichResults.mRNA))
+  enrichResults.mRNA[[name]]$ComparisonName = name
 enrichmentResults = do.call(rbind,enrichResults.mRNA)
 enrichmentResults$ngenes = unlist(enrichmentResults$ngenes)
 enrichmentResults$noverlap = unlist(enrichmentResults$noverlap)
 write.table(enrichmentResults, file = 'enrichmentResults_mRNA.tsv', sep='\t', row.names=F, quote=F)
 
+thisFileName <- 'EnrichmentAnalysis_Enrichr.Rmd'
+  
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='enrich')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
 # Write to synapse
 OBJ <- File('enrichmentResults_mRNA.tsv',
             name = 'Enrichment Results mRNA',
-            parentId = '')
+            parentId = 'syn4483762')
 OBJ <- synStore(OBJ, 
                 used = ALL_USED_IDs, 
-                activityName = 'Enrichment Analysis'
+                activityName = 'Enrichment Analysis',
+                activityDescription = 'Enrichment analysis based on enrichr genesets',
                 executed = thisFile)
 ```
 ### Filter Gene Sets for methylation
 ```{r filter.genesets.methyl, include=FALSE}
+ALL_USED_IDs = GENE.SETS_FOLDER
 BETA_ID = 'syn4487642'
 ALL_USED_IDs = c(ALL_USED_IDs, BETA_ID)
 BETA = data.table::fread(synGet(BETA_ID)@filePath, data.table=F)
@@ -176,4 +190,33 @@ for (name in names(Comparisons)){
   enrichResults.methyl[[name]] = do.call(rbind,tmp)
   writeLines(paste0('Completed ',name))  
 }
+
+# Write results to file
+for(name in names(enrichResults.methyl))
+  enrichResults.methyl[[name]]$ComparisonName = name
+enrichmentResults = do.call(rbind,enrichResults.methyl)
+enrichmentResults$ngenes = unlist(enrichmentResults$ngenes)
+enrichmentResults$noverlap = unlist(enrichmentResults$noverlap)
+write.table(enrichmentResults, file = 'enrichmentResults_methylation.tsv', sep='\t', row.names=F, quote=F)
+
+thisFileName <- 'EnrichmentAnalysis_Enrichr.Rmd'
+  
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='enrich')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Write to synapse
+OBJ <- File('enrichmentResults_methylation.tsv',
+            name = 'Enrichment Results methylation',
+            parentId = 'syn4489211')
+OBJ <- synStore(OBJ, 
+                used = ALL_USED_IDs, 
+                activityName = 'Enrichment Analysis',
+                activityDescription = 'Enrichment analysis based on enrichr genesets',
+                executed = thisFile)
+
 ```
