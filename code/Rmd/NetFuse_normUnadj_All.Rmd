@@ -1,0 +1,287 @@
+---
+title: "Network fusion analysis of mRNA, miRNA, and methylation data (filtered, normalised and unadjusted)"
+author: "Thanneer Perumal"
+date: "`r date()`"
+output: html_document
+---
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")  
+
+# Load required libraries
+library('synapseClient')
+library('data.table')
+library('dplyr')
+library('knitr')
+library('stringr')
+library('SNFtool')
+library('WGCNA')
+library('igraph')
+library('cluster')
+library('knit2synapse')
+
+## Needs the dev branch
+library(rGithubClient)
+
+## Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+synapseLogin()
+
+knitToFolderEntity(file = "./NetFuse_normUnadj_All.Rmd", parentId = 'syn4821700', entityName = 'Network Fusion Analysis Normalised Unadjusted All')
+
+# source utility files from ../R/lib folder
+file.sources = list.files('../R/lib',pattern="*.R")
+file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
+tmp = sapply(file.sources,source,.GlobalEnv)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE)
+```
+### Download data
+```{r setup, include=FALSE}
+# Input Parameters
+MRNA.COUNT_ID = 'syn4483934'
+MIRNA.COUNT_ID = 'syn4595977'
+METHYL.COUNT_ID = 'syn4487642'
+
+MRNA.METADATA_ID = 'syn3156503'
+MIRNA.METADATA_ID = 'syn3219876'
+METHYL.METADATA_ID = 'syn3156828'
+
+parentId = 'syn4821700'
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
+ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
+```
+Obtain unadjusted but normalised and filtered log CPM counts for mRNA and miRNA and matrix from synapse.
+```{r getdata, cache=TRUE, include=FALSE}
+# Get mRNA log cpm count matrix
+MRNA.COUNT_OBJ = synGet(MRNA.COUNT_ID)
+ALL_USED_IDs = MRNA.COUNT_OBJ$properties$id
+MRNA.COUNT = fread(MRNA.COUNT_OBJ@filePath, data.table=F)
+row.names(MRNA.COUNT) = MRNA.COUNT[,1]
+MRNA.COUNT = as.matrix(MRNA.COUNT[,-(1)])
+
+# Get mRNA metadata
+MRNA.METADATA_OBJ = synTableQuery(paste('SELECT * FROM',MRNA.METADATA_ID,sep=' '))
+ALL_USED_IDs[length(ALL_USED_IDs)+1] = MRNA.METADATA_OBJ@schema
+MRNA.METADATA = MRNA.METADATA_OBJ@values
+
+# Match counts and metadata
+MRNA.METADATA = MRNA.METADATA[match(intersect(MRNA.METADATA$UID, colnames(MRNA.COUNT)), MRNA.METADATA$UID),]
+MRNA.COUNT = MRNA.COUNT[,match(intersect(MRNA.METADATA$UID, colnames(MRNA.COUNT)), colnames(MRNA.COUNT))]
+
+# Get miRNA log cpm count matrix
+MIRNA.COUNT_OBJ = synGet(MIRNA.COUNT_ID)
+ALL_USED_IDs = c(ALL_USED_IDs, MIRNA.COUNT_OBJ$properties$id)
+MIRNA.COUNT = fread(getFileLocation(MIRNA.COUNT_OBJ), data.table=FALSE)
+row.names(MIRNA.COUNT) = MIRNA.COUNT[,1]
+MIRNA.COUNT = as.matrix(MIRNA.COUNT[,-(1)])
+
+# Get miRNA metadata
+MIRNA.METADATA_OBJ = synTableQuery(paste('SELECT * FROM',MIRNA.METADATA_ID,sep=' '))
+ALL_USED_IDs[length(ALL_USED_IDs)+1] = MIRNA.METADATA_OBJ@schema
+MIRNA.METADATA = MIRNA.METADATA_OBJ@values
+
+# Match counts and metadata
+MIRNA.METADATA = MIRNA.METADATA[match(intersect(MIRNA.METADATA$UID, colnames(MIRNA.COUNT)), MIRNA.METADATA$UID),]
+MIRNA.COUNT = MIRNA.COUNT[,match(intersect(MIRNA.METADATA$UID, colnames(MIRNA.COUNT)), colnames(MIRNA.COUNT))]
+
+# Get methyl beta matrix
+METHYL.COUNT_OBJ = synGet(METHYL.COUNT_ID)
+ALL_USED_IDs = c(ALL_USED_IDs, METHYL.COUNT_OBJ$properties$id)
+METHYL.COUNT = fread(getFileLocation(METHYL.COUNT_OBJ), data.table=FALSE)
+row.names(METHYL.COUNT) = METHYL.COUNT[,1]
+METHYL.COUNT = as.matrix(METHYL.COUNT[,-(1)])
+
+# Get methyl metadata
+METHYL.METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METHYL.METADATA_ID,sep=' '))
+ALL_USED_IDs[length(ALL_USED_IDs)+1] = METHYL.METADATA_OBJ@schema
+METHYL.METADATA = METHYL.METADATA_OBJ@values
+
+# Match beta matrix and metadata
+METHYL.METADATA = METHYL.METADATA[match(intersect(METHYL.METADATA$UID, colnames(METHYL.COUNT)), METHYL.METADATA$UID),]
+METHYL.COUNT = METHYL.COUNT[,match(intersect(METHYL.METADATA$UID, colnames(METHYL.COUNT)), colnames(METHYL.COUNT))]
+
+```
+Synapse IDs of used data:
+| ** Name **                | ** SynapseID **                                                                                     |
+| mRNA filtered logCPM      | `r paste(MRNA.COUNT_OBJ$properties$id, MRNA.COUNT_OBJ$properties$versionNumber, sep='.')`           |
+| miRNA filtered logCPM     | `r paste(MIRNA.COUNT_OBJ$properties$id, MIRNA.COUNT_OBJ$properties$versionNumber, sep='.')`         |
+| methylation filtered beta | `r paste(METHYL.COUNT_OBJ$properties$id, METHYL.COUNT_OBJ$properties$versionNumber, sep='.')`       |
+| mRNA metadata             | `r MRNA.METADATA_OBJ@schema`     |
+| miRNA metadata            | `r MIRNA.METADATA_OBJ@schema`    |
+| methylation metadata      | `r METHYL.METADATA_OBJ@schema`   |
+
+### Arrange data
+```{r intersect.samples}
+# Find intersecting samples
+All.Samples = intersect(
+  intersect(MRNA.METADATA$biologicalSampleName, MIRNA.METADATA$biologicalSampleName), 
+  METHYL.METADATA$biologicalSampleName
+  )
+
+# Subset metadata that has all three data types
+MRNA.METADATA = MRNA.METADATA[MRNA.METADATA$biologicalSampleName %in% All.Samples,]
+MIRNA.METADATA = MIRNA.METADATA[MIRNA.METADATA$biologicalSampleName %in% All.Samples,]
+METHYL.METADATA = METHYL.METADATA[METHYL.METADATA$biologicalSampleName %in% All.Samples,]
+
+# Combine duplicated sampels by averaging expression
+combineExpr <- function(x, METADATA, COUNT){  
+  tmp = COUNT[,filter(METADATA, biologicalSampleName == x)$UID];
+  if (!is(tmp, 'numeric'))
+    tmp = rowMeans(tmp)
+  return(tmp)
+  }
+
+MRNA.COUNT = sapply(All.Samples, combineExpr, MRNA.METADATA, MRNA.COUNT)
+MIRNA.COUNT = sapply(All.Samples, combineExpr, MIRNA.METADATA, MIRNA.COUNT)
+METHYL.COUNT = sapply(All.Samples, combineExpr, METHYL.METADATA, METHYL.COUNT)
+```
+Total number of samples that have all three assays performed are
+Before summary (with some replicates)
+    * mRNA: `r dim(MRNA.METADATA)[1]`, miRNA: `r dim(MIRNA.METADATA)[1]`, methylation: `r dim(METHYL.METADATA)[1]`
+After summary (replicates are taken as average)
+    * mRNA: `r dim(MRNA.COUNT)[2]`, miRNA: `r dim(MIRNA.COUNT)[2]`, methylation: `r dim(METHYL.COUNT)[2]`
+
+### Similarity Network Fusion 
+Fusion using eucledian distance 
+```{r snf.eucl, fig.height=10, fig.width=10}
+# Get sample metadata (mRNA is used as source)
+METADATA = unique(MRNA.METADATA[,setdiff(c('biologicalSampleName',FactorCovariates, ContCovariates),c('run','lane'))])
+rownames(METADATA) = METADATA$biologicalSampleName
+
+# Merge all forms of data into a list
+DATA = list(MRNA.COUNT, MIRNA.COUNT, METHYL.COUNT)
+names(DATA) = c('mRNA','miRNA','methylation')
+
+# Standard normalisation
+NORM.DATA = lapply(DATA, standardNormalization)
+
+# Calculate distance between samples (biweight correlation is used)
+DIST = lapply(NORM.DATA, function(x){
+  D = dist2(t(x),t(x))
+  rownames(D) = colnames(x)
+  colnames(D) = colnames(x)
+  return(D)
+  })
+
+# Calculate average degree from individual data
+K = mean(sapply(DIST, function(x){
+  g = graph.adjacency(x/max(x), mode="undirected", weighted = TRUE)
+  k = mean(graph.strength(g),na.rm=T)
+  return(k)
+  }))
+
+# Get affinity matrix for combining with SNF
+W = lapply(DIST, function(x, K, alpha){
+  A = affinityMatrix(x, K, alpha)
+  rownames(A) = rownames(x)
+  colnames(A) = colnames(A)
+  return(A)
+  }, K, 0.5); # where alpha = 0.5 is the hyperparameter
+
+# Similarity Network Fusion
+M = SNF(W, K, t = 20); # where t is the number of iteration 10-20
+rownames(M) = colnames(DATA$mRNA)
+colnames(M) = colnames(DATA$mRNA)
+
+# Plot clustergram of SNF matrix
+M1 = M;
+diag(M1) = 0;
+dev.off()
+ggheatmap.show(ggheatmap(M1, brewer.pal(9, 'Reds')), col.width=0.3, row.width=0.15)
+```
+PAM clustering
+```{r pam.cluster}
+# Find cluster of samples using spectral clustering
+C = 5   				# number of clusters
+group = pam(M1, C); 	# the final subtypes information 
+
+kable(table(group$clustering, METADATA$Diffname_short), row.names=T)
+```
+Hierarchichal clustering
+```{r hcluster, fig.height=10, fig.width=15}
+# Using hierarchichal clustering
+clust = hclust(dist(M))
+tree = cutreeStatic(clust, cutHeight = 0.785, minSize=3)
+
+sizeGrWindow(10,8);
+plotDendroAndColors(clust, 
+                    labels2colors(cbind(tree, METADATA[,-(1)])),
+                    groupLabels = c('Cluster',colnames(METADATA)[-(1)]))
+dev.off()
+```
+Eigen sample calculations
+```{r eigen.sample}
+calculateModuleEigenSample <- function(x, tree){
+  ME = moduleEigengenes(x, tree)$eigengenes
+  
+  dissimME = (1-t(cor(ME, method="p")))/2
+  hclustdatME = hclust(as.dist(dissimME), method="average")
+  
+  # Plot the eigengene dendrogram
+  par(mfrow=c(1,1))
+  print(plot(hclustdatME, main="Clustering tree based of the module eigensamples"))
+  
+  # Plot pairs of ME to merge modules
+  print(plotMEpairs(ME))
+  
+  kME = cor(x, ME)
+  return(kME)
+}
+kME = lapply(DATA, calculateModuleEigenSample, tree)
+kME.all = (kME$mRNA+kME$miRNA+kME$methylation)/3
+
+MC = intramodularConnectivity(M, tree)
+```
+Plot of module connectivity vs membership
+```{r mod.plots, fig.height=7, fig.width=7}
+plotkWvskME <- function(i, j, tree, kME.all, MC, METADATA){
+  tmp = data.frame(kWithin = MC$kWithin[tree==i], kME = kME.all[tree==i,j])
+  tmp = cbind(tmp, METADATA[tree==i,])
+  
+  p <- ggplot(tmp, aes(x = kWithin, y = kME)) 
+  p <- p + geom_point(aes(color=Gender, shape = Diffname_short)) 
+  p <- p + geom_text(aes(label=biologicalSampleName, size=4, hjust=-0.1))
+  p <- p + theme(legend.position="top") + ggtitle(paste('Module',i,'and Eigen vector',j));
+  print(p);
+  return(p)
+}
+
+p <- list()
+for (i in 1:max(tree)){
+  p[[i]] <- list()
+  for (j in 1:dim(kME.all)[2]){
+    p[i][j] <- plotkWvskME(i, j, tree, kME.all, MC, METADATA)
+  }
+}
+```
+# Store in synapse
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+ActivityName <- 'Network Fusion Analysis'
+  
+thisFileName <- 'NetFuse_normUnadj_All.Rmd'
+  
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='netfuse')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+    
+# Populate wiki with results
+CODE <- Folder(name = 'Network Fusion Analysis Normalised Unadjusted All',parentId = parentId)
+CODE <- synStore(CODE)
+```
