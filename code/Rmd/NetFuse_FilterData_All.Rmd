@@ -1,0 +1,171 @@
+---
+title: "Network fusion analysis of mRNA, miRNA, and methylation data (filtered, normalised and unadjusted)"
+author: "Thanneer Perumal"
+date: "`r date()`"
+output: html_document
+---
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")  
+
+# Load required libraries
+library('synapseClient')
+library('data.table')
+library('dplyr')
+library('knitr')
+library('stringr')
+library('SNFtool')
+library('WGCNA')
+library('igraph')
+library('cluster')
+library('knit2synapse')
+
+## Needs the dev branch
+library(rGithubClient)
+
+## Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+synapseLogin()
+
+# knitToFolderEntity(file = "./NetFuse_normUnadj_All.Rmd", parentId = 'syn4821700', entityName = 'Network Fusion Analysis Normalised Unadjusted All')
+
+# source utility files from ../R/lib folder
+file.sources = list.files('../R/lib',pattern="*.R")
+file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
+tmp = sapply(file.sources,source,.GlobalEnv)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+### Download data
+```{r setup, include=FALSE}
+# Input Parameters
+COUNT_IDs = c(MRNA = 'syn4483934', MIRNA = 'syn4595977', METHYL = 'syn4487642')
+METADATA_IDs = c(MRNA = 'syn3156503', MIRNA = 'syn3219876', METHYL = 'syn3156828')
+
+parentId = 'syn4821700'
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
+ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
+```
+Obtain unadjusted but normalised and filtered log CPM counts for mRNA and miRNA and matrix from synapse.
+```{r getdata, cache=TRUE, include=FALSE}
+# Get log cpm count matrix or beta matrix
+COUNTS = lapply(COUNT_IDs, function(COUNT_ID){
+  COUNT_OBJ = synGet(COUNT_ID)
+  COUNT = fread(COUNT_OBJ@filePath, data.table=F, header=T)
+  row.names(COUNT) = COUNT[,1]
+  COUNT = as.matrix(COUNT[,-(1)])
+  return(COUNT)
+})
+
+# Get metadata from all three assays
+METADATA = lapply(METADATA_IDs, function(METADATA_ID){
+  METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
+  METADATA = METADATA_OBJ@values
+  return(METADATA)
+  })
+
+ALL_USED_IDs = c(COUNT_IDs, METADATA_IDs)
+```
+### Filter Metadata
+```{r filter.metadata}
+METADATA = mapply(function(COUNT,METADATA){
+  METADATA <- METADATA %>%  filter(UID %in% colnames(COUNT))  
+  }, COUNTS, METADATA)
+
+# Find unique samples that are in all three assays
+METADATA = lapply(METADATA, function(METADATA){
+  METADATA = mutate(METADATA, NUID = paste(C4_Cell_Line_ID, Diffname_short, sep='_'))
+  return(METADATA)
+  })
+NUID = intersect(METADATA$MRNA$NUID, intersect(METADATA$MIRNA$NUID, METADATA$METHYL$NUID))
+COM.COLS = c("C4_Cell_Line_ID", "Diffname_short", "Originating_Lab_ID", "Cell_Line_Type","Cell_Type_of_Origin","Cell_Line_of_Origin","Tissue_of_Origin","Reprogramming_Vector_Type","Reprogramming_Gene_Combination","Culture_Conditions","Small_Molecules","Donor_Life_Stage","Race","Ethnicity","Gender","Disease","Donor_Phenotype","Originating_Lab","Donor_ID","Cell_Type_of_Origin_Level2","Reprogramming_Vector_Type_Level2","NUID")
+  
+# Subset metadata
+METADATA = lapply(METADATA, function(METADATA, NUID){ 
+  METADATA <- METADATA[METADATA$NUID %in% NUID,]
+  return(METADATA)
+  }, NUID)
+
+kable(sapply(METADATA,dim))
+```
+### Filter Counts Data
+```{r intersect.samples}
+# Subset counts matrix
+COUNTS = mapply(function(COUNT, METADATA){
+  COUNT = COUNT[,METADATA$UID]
+  return(COUNT)
+  }, COUNTS, METADATA)
+
+kable(sapply(COUNTS,dim))
+```
+### Merge Counts (Mean of replicates)
+```{r merge}
+COUNTS = mapply(function(COUNT, METADATA, NUID){
+  COUNT = sapply(NUID, function(x, COUNT, METADATA){
+    UID = METADATA$UID[METADATA$NUID %in% x]    
+    if (length(UID) > 1){
+      tmp = rowMeans(COUNT[,UID])
+      } else {
+        tmp = COUNT[,UID]
+      }
+    return(tmp)
+    }, COUNT, METADATA)
+  colnames(COUNT) = NUID
+  
+  return(COUNT)
+}, COUNTS, METADATA, MoreArgs = list(NUID))
+kable(sapply(COUNTS,dim))
+```
+### Merge metadata
+```{r merge}
+METADATA = lapply(METADATA, function(METADATA, COM.COLS){
+  METADATA = unique(METADATA[,COM.COLS])
+  }, COM.COLS)
+kable(sapply(METADATA,dim))
+```
+### Store data in synapse
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+ActivityName <- 'Filtering Data'
+  
+thisFileName <- 'NetFuse_FilterData_All.Rmd'
+  
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='netfuse')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+    
+# Populate wiki with results
+CODE <- Folder(name = 'Filtered Data',parentId = parentId)
+CODE <- synStore(CODE)
+
+# Store counts matrix
+for (name in names(COUNTS)){
+  COUNT <- rownameToFirstColumn(COUNTS[[name]],'GeneNameOrProbeID')
+  write.table(COUNT,file = paste0('./Merged_',name,'_Counts.tsv'),sep='\t',row.names=F,col.names=T,quote=F)
+  COUNT <- File(paste0('./Merged_',name,'_Counts.tsv'),name = paste('Merged',name,'Counts'),parentId = CODE$properties$id)
+  COUNT <- synStore(COUNT, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
+}
+
+# Store counts matrix
+for (name in names(METADATA)){
+  write.table(METADATA[[name]],file = paste0('./Merged_',name,'_Metadata.tsv'),sep='\t',row.names=F,col.names=T,quote=F)
+  OBJ <- File(paste0('./Merged_',name,'_Metadata.tsv'),name = paste('Merged',name,'Metadata'),parentId = CODE$properties$id)
+  OBJ <- synStore(OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
+}
+```
