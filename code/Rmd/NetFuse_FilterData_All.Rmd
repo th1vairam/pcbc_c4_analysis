@@ -30,7 +30,7 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 
 synapseLogin()
 
-# knitToFolderEntity(file = "./NetFuse_normUnadj_All.Rmd", parentId = 'syn4821700', entityName = 'Network Fusion Analysis Normalised Unadjusted All')
+# knitToFolderEntity(file = "./NetFuse_FilterData_All.Rmd", parentId = 'syn4821700', entityName = 'Filtered Data')
 
 # source utility files from ../R/lib folder
 file.sources = list.files('../R/lib',pattern="*.R")
@@ -130,9 +130,12 @@ COUNTS = mapply(function(COUNT, METADATA, NUID){
 kable(sapply(COUNTS,dim))
 ```
 ### Merge metadata
-```{r merge}
-METADATA = lapply(METADATA, function(METADATA, COM.COLS){
+```{r merge.metadata}
+METADATA = lapply(METADATA, function(METADATA, COM.COLS, NUID){
   METADATA = unique(METADATA[,COM.COLS])
+  rownames(METADATA) = METADATA$NUID
+  METADATA = METADATA[NUID,]
+  METADATA = METADATA[,c('NUID',setdiff(colnames(METADATA),'NUID'))]
   }, COM.COLS)
 kable(sapply(METADATA,dim))
 ```
@@ -159,13 +162,13 @@ for (name in names(COUNTS)){
   COUNT <- rownameToFirstColumn(COUNTS[[name]],'GeneNameOrProbeID')
   write.table(COUNT,file = paste0('./Merged_',name,'_Counts.tsv'),sep='\t',row.names=F,col.names=T,quote=F)
   COUNT <- File(paste0('./Merged_',name,'_Counts.tsv'),name = paste('Merged',name,'Counts'),parentId = CODE$properties$id)
-  COUNT <- synStore(COUNT, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
+  COUNT <- synStore(COUNT, used = as.character(ALL_USED_IDs), activityName = ActivityName, executed = thisFile)  
 }
 
 # Store counts matrix
 for (name in names(METADATA)){
   write.table(METADATA[[name]],file = paste0('./Merged_',name,'_Metadata.tsv'),sep='\t',row.names=F,col.names=T,quote=F)
   OBJ <- File(paste0('./Merged_',name,'_Metadata.tsv'),name = paste('Merged',name,'Metadata'),parentId = CODE$properties$id)
-  OBJ <- synStore(OBJ, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
+  OBJ <- synStore(OBJ, used = as.character(ALL_USED_IDs), activityName = ActivityName, executed = thisFile)  
 }
 ```
