@@ -45,7 +45,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE)
+  cache = FALSE)
 ```
 ### Download data
 ```{r setup, include=FALSE}
@@ -136,7 +136,7 @@ METADATA = lapply(METADATA, function(METADATA, COM.COLS, NUID){
   rownames(METADATA) = METADATA$NUID
   METADATA = METADATA[NUID,]
   METADATA = METADATA[,c('NUID',setdiff(colnames(METADATA),'NUID'))]
-  }, COM.COLS)
+  }, COM.COLS, NUID)
 kable(sapply(METADATA,dim))
 ```
 ### Store data in synapse
