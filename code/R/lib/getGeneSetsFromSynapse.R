@@ -10,7 +10,11 @@ getGeneSetsFromSynapse <- function(FolderID){
     names(GeneList) = sapply(GeneList, function(x){return(x[1])})
     
     # Remove the first two elements of all lists
-    GeneList = lapply(GeneList, function(x){return(x = x[-(1:2)])})
+    GeneList = lapply(GeneList, function(x){
+      x = x[-(1:2)]
+      x = unique(sapply(x, function(y) { return(strsplit(y,',')[[1]][1]) }))
+      return(x)
+      })
     
     return(GeneList)
   }
