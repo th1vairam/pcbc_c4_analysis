@@ -11,10 +11,10 @@ output: html_document
 cat("\014")
 
 # Load required libraries
-library(synapseClient)
 library(data.table)
 library(dplyr)
 library(tools)
+library(synapseClient)
 
 ## Needs the dev branch
 library(rGithubClient)
@@ -46,10 +46,10 @@ knitr::opts_chunk$set(
 ### Download Gene Lists
 ```{r get.genesets, include=FALSE}
 # Input Parameters
-GENE.SETS_FOLDER = 'syn4598359'
-ALL_USED_IDs = GENE.SETS_FOLDER
+GENE.SETS_ID = 'syn4867851'
+ALL_USED_IDs = GENE.SETS_ID
 
-GeneSets = getGeneSetsFromSynapse(GENE.SETS_FOLDER)
+load(synGet(GENE.SETS_ID)@filePath)
 ```
 `r length(GeneSets)` category of genesets were downloaded from synapse
 ### Filter Gene Sets for mRNA
@@ -62,9 +62,19 @@ genesInBackground = logCPM$GeneName
 GeneSets.mRNA = filterGeneSets(GeneSets, genesInBackground)
 
 # Choose gene sets for testing
-GeneSets.mRNA = GeneSets.mRNA[names(GeneSets.mRNA) %in% c("GO_Biological_Process", "TRANSFAC_and_JASPAR_PWMs", "Reactome", "WikiPathways_2015")]
+gsets = c("Achilles_fitness_decrease", "Achilles_fitness_increase", "Allen_Brain_Atlas_down", "Allen_Brain_Atlas_up",
+          "BioCarta", "CMAP_down", "CMAP_up", "Cancer_Cell_Line_Encyclopedia", "ChEA", "Cross_Species_Phenotype",
+          "Disease_Signatures_from_GEO_down", "Disease_Signatures_from_GEO_up", "Drug_Perturbations_from_GEO",
+          "ENCODE_Histone_Modifications_2013", "ESCAPE", "GO_Biological_Process", "GO_Cellular_Component", "GO_Molecular_Function",
+          "GeneSigDB", "Genome_Browser_PWMs.1", "HMDB_Metabolites", "HomoloGene", "Human_Gene_Atlas", "KEGG_2015",
+          "MGI_Mammalian_Phenotype", "MGI_Mammalian_Phenotype_Level_3", "MGI_Mammalian_Phenotype_Level_4", "MSigDB_Computational",
+          "MSigDB_Oncogenic_Signatures", "Mouse_Gene_Atlas", "NCI-60_Cancer_Cell_Lines", "NCI-Nature", 
+          "NURSA_Human_Endogenous_Complexome", "OMIM_Disease", "OMIM_Expanded", "PPI_Hub_Proteins", "Pfam_InterPro_Domains",
+          "Phosphatase_Substrates_from_DEPOD", "Reactome", "SILAC_Phosphoproteomics", "TF-LOF_Expression_from_GEO", 
+          "TargetScan_microRNA", "Tissue_Protein_Expression_from_Human_Proteome_Map", "Tissue_Protein_Expression_from_ProteomicsDB",
+          "Transcription_Factor_PPIs", "Virus_Perturbations_from_GEO_down", "Virus_Perturbations_from_GEO_up", "WikiPathways_2015")
 
-# c("Achilles_fitness_decrease", "Achilles_fitness_increase", "BioCarta", "CMAP_down", "CMAP_up", "Cancer_Cell_Line_Encyclopedia", "ChEA", "Drug_Perturbations_from_GEO", "ENCODE_Histone_Modifications_2013", "ESCAPE", "GO_Biological_Process", "GO_Cellular_Component", "GO_Molecular_Function", "GeneSigDB", "Genome_Browser_PWMs.1", "HMDB_Metabolites", "HomoloGene", "KEGG_2015", "MGI_Mammalian_Phenotype", "MSigDB_Computational", "MSigDB_Oncogenic_Signatures", "NCI-60_Cancer_Cell_Lines", "NCI-Nature", "NURSA_Human_Endogenous_Complexome", "OMIM_Disease", "OMIM_Expanded", "PPI_Hub_Proteins", "Pfam_InterPro_Domains", "Phosphatase_Substrates_from_DEPOD", "Reactome", "SILAC_Phosphoproteomics", "TRANSFAC_and_JASPAR_PWMs", "TargetScan_microRNA", "Transcription_Factor_PPIs", "WikiPathways_2015")
+GeneSets.mRNA = GeneSets.mRNA[gsets]
 ```
 ### Perform mRNA enrichment analysis
 ```{r mRNA.enrichment}
@@ -104,16 +114,17 @@ for (name in names(Comparisons)){
   for (name1 in names(tmp))
     tmp[[name1]]$category = name1
   
-  enrichResults.mRNA[[name]] = do.call(rbind,tmp)
+  enrichResults.mRNA[[name]] = rbindlist(tmp)
   writeLines(paste0('Completed ',name))  
 }
 
 # Write results to file
 for(name in names(enrichResults.mRNA))
   enrichResults.mRNA[[name]]$ComparisonName = name
-enrichmentResults = do.call(rbind,enrichResults.mRNA)
+enrichmentResults = rbindlist(enrichResults.mRNA)
 enrichmentResults$ngenes = unlist(enrichmentResults$ngenes)
 enrichmentResults$noverlap = unlist(enrichmentResults$noverlap)
+enrichmentResults = enrichmentResults[enrichmentResults$pval<=0.1,]
 write.table(enrichmentResults, file = 'enrichmentResults_mRNA.tsv', sep='\t', row.names=F, quote=F)
 
 thisFileName <- 'EnrichmentAnalysis_Enrichr.Rmd'
@@ -147,7 +158,7 @@ genesInBackground = unique(get450KProbeMapping(BETA$methProbeID)$Annotation$near
 GeneSets.methyl = filterGeneSets(GeneSets, genesInBackground)
 
 # Choose gene sets for testing
-GeneSets.methyl = GeneSets.methyl[names(GeneSets.methyl) %in% c("Achilles_fitness_decrease", "Achilles_fitness_increase", "BioCarta", "CMAP_down", "CMAP_up", "Cancer_Cell_Line_Encyclopedia", "ChEA", "Drug_Perturbations_from_GEO", "ENCODE_Histone_Modifications_2013", "ESCAPE", "GO_Biological_Process", "GO_Cellular_Component", "GO_Molecular_Function", "GeneSigDB", "Genome_Browser_PWMs.1", "HMDB_Metabolites", "HomoloGene", "KEGG_2015", "MGI_Mammalian_Phenotype", "MSigDB_Computational", "MSigDB_Oncogenic_Signatures", "NCI-60_Cancer_Cell_Lines", "NCI-Nature", "NURSA_Human_Endogenous_Complexome", "OMIM_Disease", "OMIM_Expanded", "PPI_Hub_Proteins", "Pfam_InterPro_Domains", "Phosphatase_Substrates_from_DEPOD", "Reactome", "SILAC_Phosphoproteomics", "TRANSFAC_and_JASPAR_PWMs", "TargetScan_microRNA", "Transcription_Factor_PPIs", "WikiPathways_2015")]
+GeneSets.methyl = GeneSets.methyl[gsets]
 ```
 ### Perform methylation enrichment analysis
 ```{r methyl.enrichment}
@@ -187,16 +198,17 @@ for (name in names(Comparisons)){
   for (name1 in names(tmp))
     tmp[[name1]]$category = name1
   
-  enrichResults.methyl[[name]] = do.call(rbind,tmp)
+  enrichResults.methyl[[name]] = rbindlist(tmp)
   writeLines(paste0('Completed ',name))  
 }
 
 # Write results to file
 for(name in names(enrichResults.methyl))
   enrichResults.methyl[[name]]$ComparisonName = name
-enrichmentResults = do.call(rbind,enrichResults.methyl)
+enrichmentResults = rbindlist(enrichResults.methyl)
 enrichmentResults$ngenes = unlist(enrichmentResults$ngenes)
 enrichmentResults$noverlap = unlist(enrichmentResults$noverlap)
+enrichmentResults = enrichmentResults[enrichmentResults$pval<=0.1,]
 write.table(enrichmentResults, file = 'enrichmentResults_methylation.tsv', sep='\t', row.names=F, quote=F)
 
 thisFileName <- 'EnrichmentAnalysis_Enrichr.Rmd'
@@ -218,5 +230,4 @@ OBJ <- synStore(OBJ,
                 activityName = 'Enrichment Analysis',
                 activityDescription = 'Enrichment analysis based on enrichr genesets',
                 executed = thisFile)
-
 ```
