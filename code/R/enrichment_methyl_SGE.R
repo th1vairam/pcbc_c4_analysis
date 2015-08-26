@@ -178,7 +178,7 @@ GeneSets = filterGeneSets(GeneSets, backGroundGenes, minSize = 10, maxSize = 500
 # Perform enrichment analysis
 enrichResults.methyl = list()
 comp = Comparisons[[args]]
-tmp = lapply(GeneSets[1:3],
+tmp = lapply(GeneSets,
              function(x, comp, genesInBackground){
                tmp = ldply(lapply(x, fisherEnrichment, comp, genesInBackground))
                setnames(tmp, '.id', 'GeneSetName')

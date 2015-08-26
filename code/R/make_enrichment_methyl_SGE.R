@@ -15,7 +15,6 @@ synapseLogin()
 
 # Get differential methylation (ALL)
 DMETHYL.ALL_ID = 'syn4527629'
-ALL_USED_IDs = c(ALL_USED_IDs, DMETHYL.ALL_ID)
 DMETHYL.ALL = data.table::fread(synGet(DMETHYL.ALL_ID)@filePath, data.table=F)
 
 # Filter comparisons
@@ -24,7 +23,6 @@ Comparisons.ALL = lapply(Comparisons.ALL, function(x){return(unique(x$nearestTx[
 
 # Get differential expression (EACH)
 DMETHYL.EACH_ID = 'syn4598861'
-ALL_USED_IDs = c(ALL_USED_IDs, DMETHYL.EACH_ID)
 DMETHYL.EACH = data.table::fread(synGet(DMETHYL.EACH_ID)@filePath, data.table=F)
 
 # Filter comparisons
