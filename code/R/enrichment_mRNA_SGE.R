@@ -21,6 +21,7 @@ library(stringr)
 library(igraph)
 library(data.table)
 library(biomaRt)
+library(plyr)
 
 # Needs the dev branch
 library(rGithubClient)
@@ -33,7 +34,7 @@ synapseLogin()
 #### Github commit ####
 # Get github links for provenance
 thisFileName <- 'enrichment_mRNA_SGE.R'
-  
+
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
                     ref="branch", 
@@ -100,10 +101,10 @@ fisherEnrichment <- function(genesInSignificantSet, # A character vector of diff
   return(data.frame(pval = pval$p.value,
                     ngenes = length(genesInGeneSet),
                     noverlap = length(intersect(genesInGeneSet, genesInSignificantSet)),
-	 	    Odds.Ratio = OR,
-		    Genes = paste(intersect(genesInGeneSet, genesInSignificantSet), collapse = '|')
-		   )
-	)
+                    Odds.Ratio = OR,
+                    Genes = paste(intersect(genesInGeneSet, genesInSignificantSet), collapse = '|')
+  )
+  )
 }
 
 # Function to convert rownames to first column of a df
@@ -179,15 +180,15 @@ enrichResults.mRNA = list()
 comp = Comparisons[[args]]
 tmp = lapply(GeneSets,
              function(x, comp, genesInBackground){
-               tmp = as.data.frame(t(sapply(x, fisherEnrichment, comp, genesInBackground)))
-               tmp = rownameToFirstColumn(tmp,'GeneSetName')
+               tmp = ldply(lapply(x, fisherEnrichment, comp, genesInBackground))
+               setnames(tmp, '.id', 'GeneSetName')
                return(tmp)
              },
              comp, backGroundGenes)
-  
+
 for (name1 in names(tmp))
   tmp[[name1]]$Category = name1
-  
+
 enrichResults.mRNA[[args]] = as.data.frame(rbindlist(tmp))
 enrichResults.mRNA[[args]]$FDR = p.adjust(enrichResults.mRNA[[args]]$pval,'fdr')
 enrichResults.mRNA[[args]]$adj.pval = p.adjust(enrichResults.mRNA[[args]]$pval,'bonferroni')
@@ -198,13 +199,13 @@ writeLines(paste0('Completed ',args))
 for(name in names(enrichResults.mRNA))
   enrichResults.mRNA[[name]]$ComparisonName = name
 enrichmentResults = as.data.frame(rbindlist(enrichResults.mRNA))
-
-enrichmentResults$ngenes = unlist(enrichmentResults$ngenes)
-enrichmentResults$noverlap = unlist(enrichmentResults$noverlap)
-enrichmentResults$pval = unlist(enrichmentResults$pval)
-enrichmentResults$FDR = unlist(enrichmentResults$FDR)
-enrichmentResults$adj.pval = unlist(enrichmentResults$adj.pval)
-enrichmentResults$Odds.Ratio = unlist(enrichmentResults$Odds.Ratio)
+ 
+# enrichmentResults$ngenes = unlist(enrichmentResults$ngenes)
+# enrichmentResults$noverlap = unlist(enrichmentResults$noverlap)
+# enrichmentResults$pval = unlist(enrichmentResults$pval)
+# enrichmentResults$FDR = unlist(enrichmentResults$FDR)
+# enrichmentResults$adj.pval = unlist(enrichmentResults$adj.pval)
+# enrichmentResults$Odds.Ratio = unlist(enrichmentResults$Odds.Ratio)
 
 write.table(enrichmentResults, file = paste(gsub('[^[:alnum:]]','_',args),'enrichmentResults_mRNA.tsv',sep='.'), sep='\t', row.names=F)
 collectGarbage()

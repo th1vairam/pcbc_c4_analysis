@@ -37,18 +37,18 @@ fp_all = file(paste('sgeEnrichPCBC/allSubmissions.sh'),'w+')
 cat('#!/bin/bash',file=fp_all,sep='\n')
 close(fp_all)
 for (id in names(Comparisons)){
-  fp = file (paste('/home/ec2-user/Work/Github/metanetwork/R/sgeEnrichPCBC/SUB',id,sep='.'), "w+")
+  fp = file (paste('/home/ec2-user/Work/Github/pcbc_c4_analysis/code/R/sgeEnrichPCBC/SUB',id,sep='.'), "w+")
   cat('#!/bin/bash', 
       'sleep 30', 
-      paste('Rscript /home/ec2-user/Work/Github/metanetwork/R/enrichment_mRNA_SGE.R',id), 
+      paste('Rscript /home/ec2-user/Work/Github/pcbc_c4_analysis/code/R/enrichment_mRNA_SGE.R',id), 
       file = fp,
       sep = '\n')
   close(fp)
   
   fp_all = file(paste('sgeEnrichPCBC/allSubmissions.sh'),'a+')    
-  cat(paste('qsub','-cwd','-V',paste('/home/ec2-user/Work/Github/metanetwork/R/sgeEnrichPCBC/SUB',id,sep='.'),
-            '-o',paste('/home/ec2-user/Work/Github/metanetwork/R/sgeEnrichPCBC/SUB',id,'o',sep='.'),
-            '-e',paste('/home/ec2-user/Work/Github/metanetwork/R/sgeEnrichPCBC/SUB',id,'e',sep='.')),
+  cat(paste('qsub','-cwd','-V',paste('/home/ec2-user/Work/Github/pcbc_c4_analysis/code/R/sgeEnrichPCBC/SUB',id,sep='.'),
+            '-o',paste('/home/ec2-user/Work/Github/pcbc_c4_analysis/code/R/sgeEnrichPCBC/SUB',id,'o',sep='.'),
+            '-e',paste('/home/ec2-user/Work/Github/pcbc_c4_analysis/code/R/sgeEnrichPCBC/SUB',id,'e',sep='.')),
       file=fp_all,
       sep='\n')
   close(fp_all)
