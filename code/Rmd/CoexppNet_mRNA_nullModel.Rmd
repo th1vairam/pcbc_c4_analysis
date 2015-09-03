@@ -41,7 +41,7 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 # source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
 # knitToFolderEntity(file = "./CoexppNet_mRNA_nullModel.Rmd", 
 #                    entityName = 'Coexpression Network Analysis mRNA All Null Model', 
-#                    owner = 'syn3256504', 
+#                    parentId = 'syn3256504', 
 #                    overwrite=F)
 
 synapseLogin()
@@ -160,7 +160,6 @@ COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
 ### Normalisation (with NULL)
 Initial normalisation usign voom (with NULL design)
 ```{r initial.voom.normalisation}
-dev.off()
 # Initial normalisation of gene expression
 VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, plot=T)
 ```
@@ -212,16 +211,22 @@ softPower = 8
 collectGarbage()
 save(list=c('powerTables'), file = 'CoexppNet_mRNA_nullModel.RData')
 ```
-
 Beta is chosen to be `r softPower`
 ```{r wgcna.adj, fig.width=15, fig.height=10}
-EXPR = t(VOOM.GENE_EXPRESSION$E[1:5000,])
+EXPR = t(VOOM.GENE_EXPRESSION$E)
+
 # Get adjacency matrix
-Adj = abs(bicor(EXPR, nThreads = 2))^softPower
+Adj = bicor(EXPR, nThreads = 2)
+Adj = Adj/abs(Adj) * (Adj^softPower)
 collectGarbage()
 
 # Get topological overlap matrix
-TOM = TOMsimilarity(Adj)
+TOM = blockwiseIndividualTOMs(fixDataStructure(EXPR[,1:10000]), 
+                              corType = 'bicor',
+                              TOMType = "signed", 
+                              nThreads = 2,
+                              saveTOMs = F,
+                              verbose = 3)
 collectGarbage()
 
 # Hierachical clustering
@@ -239,7 +244,9 @@ unmergedNetModules = cutreeDynamic(dendro = tree,
                                    pamRespectsDendro = TRUE)
 unmergedNetModules.colors = labels2colors(unmergedNetModules)
 collectGarbage()
-
+```
+Dendrogram tree of gene clustering
+```{r }
 sizeGrWindow(12,10);
 plotDendroAndColors(tree, unmergedNetModules.colors, "Dynamic Tree Cut",
                     dendroLabels = FALSE, hang = 0.03,
