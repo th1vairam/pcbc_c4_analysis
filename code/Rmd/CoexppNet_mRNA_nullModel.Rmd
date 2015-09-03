@@ -29,6 +29,8 @@ library(erer)
 library(fpc)
 library(WGCNA)
 library(Rclusterpp)
+library(circlize)
+library(knit2synapse)
 
 ## Needs the dev branch
 library(rGithubClient)
@@ -37,7 +39,10 @@ library(rGithubClient)
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
-# knitFile2SynapseFolder(file = "./CovariateAnalysis_mRNA_mixedEffects_All.Rmd", name = 'Covariate Analysis mRNA Mixed Effects All', owner = 'syn4483760', overwrite=F)
+# knitToFolderEntity(file = "./CoexppNet_mRNA_nullModel.Rmd", 
+#                    entityName = 'Coexpression Network Analysis mRNA All Null Model', 
+#                    owner = 'syn3256504', 
+#                    overwrite=F)
 
 synapseLogin()
 
@@ -161,7 +166,7 @@ VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, pl
 ```
 Sample clustering to check for outliers
 ```{r sample.clustering, fig.height=15, fig.width=20}
-sampleTrees = flashClust(dist(t(VOOM.GENE_EXPRESSION$E)), method = "average")
+sampleTrees = flashClust::hclust(dist(t(VOOM.GENE_EXPRESSION$E)), method = "average")
 tree = cutreeStatic(sampleTrees, cutHeight = 200, minSize=3)
 
 sizeGrWindow(12,10);
@@ -205,6 +210,7 @@ for (i in 1:length(plotCols)){
 multiplot(plotlist=p, cols=2)
 softPower = 8
 collectGarbage()
+save(list=c('powerTables'), file = 'CoexppNet_mRNA_nullModel.RData')
 ```
 
 Beta is chosen to be `r softPower`
@@ -212,12 +218,15 @@ Beta is chosen to be `r softPower`
 EXPR = t(VOOM.GENE_EXPRESSION$E[1:5000,])
 # Get adjacency matrix
 Adj = abs(bicor(EXPR, nThreads = 2))^softPower
+collectGarbage()
 
 # Get topological overlap matrix
 TOM = TOMsimilarity(Adj)
+collectGarbage()
 
 # Hierachical clustering
 tree = Rclusterpp.hclust(as.dist(1-TOM), method = "average");
+collectGarbage()
 
 # We like large modules, so we set the minimum module size relatively high:
 minModuleSize = 30;
@@ -229,12 +238,16 @@ unmergedNetModules = cutreeDynamic(dendro = tree,
                                    minClusterSize = minModuleSize,
                                    pamRespectsDendro = TRUE)
 unmergedNetModules.colors = labels2colors(unmergedNetModules)
+collectGarbage()
 
 sizeGrWindow(12,10);
 plotDendroAndColors(tree, unmergedNetModules.colors, "Dynamic Tree Cut",
                     dendroLabels = FALSE, hang = 0.03,
                     addGuide = TRUE, guideHang = 0.05)
-
+save(list=c('powerTables', 'Adj', 'TOM', 'tree', 'unmergedNetModules'), file = 'CoexppNet_mRNA_nullModel.RData')
+```
+### Module analysis
+```{r module.analysis}
 # Merge modules with similar expression profiles
 # Calculate module eigengenes
 unmergedMEs = moduleEigengenes(EXPR, 
@@ -246,6 +259,7 @@ MEDiss = 1 - abs(cor(unmergedMEs$eigengenes, use = "p"))
 
 # Cluster module eigen genes
 METree = hclust(as.dist(MEDiss), method = "average");
+collectGarbage()
 
 # Plot the results
 sizeGrWindow(7,6)
@@ -271,16 +285,58 @@ plotDendroAndColors(tree, cbind(unmergedNetModules.colors, mergedNetModules.colo
                     c("Unmerged", "Merged"),
                     dendroLabels = FALSE, hang = 0.03,
                     addGuide = TRUE, guideHang = 0.05)
+save(list=c('powerTables', 'Adj', 'TOM', 'tree', 'unmergedNetModules',
+            'mergedMEs','mergedNetModules'), file = 'CoexppNet_mRNA_nullModel.RData')
 ```
 
-```{r compare.covars}
+```{r compare.covars, fig.height=10, fig.width=15}
 # Set up variables to contain the module-trait correlations
-moduleTraitCor = list();
-moduleTraitPvalue = list();
+DESIGN = getDesignMatrix(COVARIATES, Intercept = F)
 
 # Calculate the correlations
-g = getAssociationStatistics(cbind(mergedMEs[[1]]$data, COVARIATES), use='p')
+g = corr.test(mergedMEs[[1]]$data, DESIGN$design)
 
-moduleTraitPvalue[[set]] = corPvalueFisher(moduleTraitCor[[set]], exprSize$nSamples[set]);
-}
+moduleTraitCor = g$r
+moduleTraitPvalue = melt(g$p)
+moduleTraitPvalue$value = p.adjust(moduleTraitPvalue$value, 'bonferroni')
+moduleTraitPvalue = cast(moduleTraitPvalue, X1~X2)
+rownames(moduleTraitPvalue) = moduleTraitPvalue$X1
+moduleTraitPvalue = moduleTraitPvalue[,-(1)]
+moduleTraitCor[moduleTraitPvalue > 0.05] = 0
+
+moduleTraitCor = moduleTraitCor[, colSums(moduleTraitCor) != 0]
+
+Heatmap(moduleTraitCor, 
+        column_title = 'Covariates', 
+        row_title = 'Module Eigengene', 
+        name = 'Correlation',
+        col = colorRamp2(c(-1,0,1), c("green", "white", "red")))
+
+save(list=c('powerTables', 'Adj', 'TOM', 'tree', 'unmergedNetModules',
+            'mergedMEs','mergedNetModules','moduleTraitCor', 'moduleTraitPvalue'), 
+     file = 'CoexppNet_mRNA_nullModel.RData')
+```
+### Synapse Store
+```{r synapse.store, cache=FALSE, include=FALSE}
+parentId = 'syn3256504'
+
+activityName='Coexpression Network Analysis of eXpress aligned mRNA data with NULL model'
+  
+thisFileName <- 'CoexppNet_mRNA_nullModel.Rmd'
+  
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='mRNANet')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+    
+# Create folder to tore the results and populate analysis wiki
+CODE <- Folder(name = 'Coexpression Network Analysis mRNA All Null Model',parentId = parentId)
+CODE <- synStore(CODE)
+      
+# Store Results
+COEXPP_OBJ <- File('./CoexppNet_mRNA_nullModel.RData', name = 'Coexpression Networks', parentId = CODE$properties$id)
+COEXPP_OBJ <- synStore(COEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 ```
