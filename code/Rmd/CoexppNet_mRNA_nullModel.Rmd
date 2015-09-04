@@ -216,42 +216,46 @@ Beta is chosen to be `r softPower`
 EXPR = t(VOOM.GENE_EXPRESSION$E)
 
 # Get adjacency matrix
-Adj = bicor(EXPR, nThreads = 2)
-Adj = Adj/abs(Adj) * (Adj^softPower)
-collectGarbage()
+# Adj = bicor(EXPR, nThreads = 2)
+# Adj = Adj/abs(Adj) * (Adj^softPower)
+# collectGarbage()
 
 # Get topological overlap matrix
-TOM = blockwiseIndividualTOMs(fixDataStructure(EXPR[,1:10000]), 
-                              corType = 'bicor',
-                              TOMType = "signed", 
-                              nThreads = 2,
-                              saveTOMs = F,
-                              verbose = 3)
+Net = blockwiseModules((EXPR),
+                       corType = 'bicor',
+                       power=6,
+                       TOMType = "signed", 
+                       mergeCutHeight = 0.3,
+                       nThreads = 2,
+                       verbose = 3)
 collectGarbage()
 
 # Hierachical clustering
-tree = Rclusterpp.hclust(as.dist(1-TOM), method = "average");
+tree = Net$dendrograms[[1]]; #Rclusterpp.hclust(as.dist(1-TOM), method = "average");
 collectGarbage()
 
 # We like large modules, so we set the minimum module size relatively high:
 minModuleSize = 30;
 
 # Module identification using dynamic tree cut:
-unmergedNetModules = cutreeDynamic(dendro = tree, 
-                                   distM = 1-TOM,
-                                   deepSplit = 2, 
-                                   minClusterSize = minModuleSize,
-                                   pamRespectsDendro = TRUE)
-unmergedNetModules.colors = labels2colors(unmergedNetModules)
+# unmergedNetModules = cutreeDynamic(dendro = tree, 
+#                                    distM = 1-TOM,
+#                                    deepSplit = 2, 
+#                                    minClusterSize = minModuleSize,
+#                                    pamRespectsDendro = TRUE)
+# unmergedNetModules.colors = labels2colors(unmergedNetModules)
+unmergedNetModules.colors = Net$unmergedColors
 collectGarbage()
 ```
 Dendrogram tree of gene clustering
-```{r }
-sizeGrWindow(12,10);
-plotDendroAndColors(tree, unmergedNetModules.colors, "Dynamic Tree Cut",
-                    dendroLabels = FALSE, hang = 0.03,
-                    addGuide = TRUE, guideHang = 0.05)
-save(list=c('powerTables', 'Adj', 'TOM', 'tree', 'unmergedNetModules'), file = 'CoexppNet_mRNA_nullModel.RData')
+```{r dendro.modules, fig.height=12, fig.width=20}
+for (i in 1:length(Net$dendrograms)){
+  sizeGrWindow(12,10);
+  plotDendroAndColors(Net$dendrograms[[i]], Net$unmergedColors[Net$blockGenes[[i]]], "Dynamic Tree Cut",
+                      dendroLabels = FALSE, hang = 0.03,
+                      addGuide = TRUE, guideHang = 0.05)
+  }
+save(list=c('powerTables', 'Net', 'tree', 'unmergedNetModules.colors'), file = 'CoexppNet_mRNA_nullModel.RData')
 ```
 ### Module analysis
 ```{r module.analysis}
@@ -273,10 +277,10 @@ sizeGrWindow(7,6)
 par(mfrow = c(1,1))
 plot(METree, main = "Consensus clustering of consensus module eigengenes",
      xlab = "", sub = "")
-abline(h=0.25, col = "red")
+abline(h=0.15, col = "red")
 
 # Merge modules
-merge = mergeCloseModules(fixDataStructure(EXPR), unmergedNetModules.colors, cutHeight = 0.2, verbose = 3)
+merge = mergeCloseModules(fixDataStructure(EXPR), unmergedNetModules.colors, cutHeight = 0.15, verbose = 3)
 
 # Numeric module labels
 mergedNetModules = merge$colors
@@ -287,13 +291,16 @@ mergedNetModules.colors = labels2colors(mergedNetModules)
 # Eigengenes of the new merged modules:
 mergedMEs = merge$newMEs
 
-sizeGrWindow(9,6)
-plotDendroAndColors(tree, cbind(unmergedNetModules.colors, mergedNetModules.colors),
-                    c("Unmerged", "Merged"),
-                    dendroLabels = FALSE, hang = 0.03,
-                    addGuide = TRUE, guideHang = 0.05)
-save(list=c('powerTables', 'Adj', 'TOM', 'tree', 'unmergedNetModules',
-            'mergedMEs','mergedNetModules'), file = 'CoexppNet_mRNA_nullModel.RData')
+for (i in 1:length(Net$dendrograms)){
+  sizeGrWindow(9,6)
+  plotDendroAndColors(Net$dendrograms[[i]], 
+                      cbind(unmergedNetModules.colors[Net$blockGenes[[i]]], mergedNetModules.colors[Net$blockGenes[[i]]]),
+                      c("Unmerged", "Merged"),
+                      dendroLabels = FALSE, hang = 0.03,
+                      addGuide = TRUE, guideHang = 0.05)
+  }
+save(list=c('powerTables', 'Net', 'tree', 'unmergedNetModules.colors',
+            'mergedMEs','mergedNetModules.colors'), file = 'CoexppNet_mRNA_nullModel.RData')
 ```
 
 ```{r compare.covars, fig.height=10, fig.width=15}
