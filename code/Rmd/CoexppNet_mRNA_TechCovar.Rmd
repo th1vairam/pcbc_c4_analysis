@@ -31,6 +31,7 @@ library(WGCNA)
 library(Rclusterpp)
 library(circlize)
 library(knit2synapse)
+# library(ComplexHeatmap)
 
 ## Needs the dev branch
 library(rGithubClient)
@@ -59,7 +60,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE)
+  cache = FALSE)
 ```
 ### Download data
 ```{r setup, include=FALSE}
@@ -161,18 +162,17 @@ COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
 Initial normalisation usign voom (residualised technical covariates with donor id as random variable)
 ```{r technical.voom.normalisation, fig.height=14, fig.width=20}
 # Design matrix with only technical covariates
-DESIGN = getDesignMatrix(COVARIATES[,c("lane", "run")], Intercept = F)
+covars = c("Diffname_short","Gender", "Cell_Type_of_Origin_Level2", "Donor_Life_Stage", "lane", "Culture_Conditions", "run")
+DESIGN = getDesignMatrix(COVARIATES[,covars], Intercept = F)
 DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
 
 # Initial normalisation of gene expression
-sizeGrWindow(10,10)
 VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DESIGN, plot=T)
     
 # Calculate correlation between donors
 correlation <- duplicateCorrelation(VOOM.GENE_EXPRESSION, block=COVARIATES$Donor_ID)
 
 # Normalisation of gene expression with random effects
-sizeGrWindow(10,10)
 VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, 
                             design=DESIGN, 
                             plot=T, 
@@ -184,6 +184,8 @@ FIT = lmFit(VOOM.GENE_EXPRESSION, block=COVARIATES$Donor_ID, correlation = corre
 
 # Calculate residuals
 EXPR = residuals.MArrayLM(FIT, VOOM.GENE_EXPRESSION)
+varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO", "Diffname_shortMESO15", "Diffname_shortMESO30", "Diffname_shortMESO5", "Diffname_shortSC", "Genderfemale", "Cell_Type_of_Origin_Level2blood", "Cell_Type_of_Origin_Level2fibroblast", "Cell_Type_of_Origin_Level2innercellmass", "Donor_Life_Stageadult", "Donor_Life_Stageblastocyst", "Donor_Life_Stagechildhood", "Donor_Life_Stagefetal", "Donor_Life_Stagenewborn", "Culture_ConditionsDMEMF12KOSR01mMBME01mMNEAA01mMLgluatime20ngmlbFGF", "Culture_ConditionsE8", "Culture_ConditionsFeederandKOSRcultureconditions", "Culture_ConditionsStandardTESR1MatrigelorKOSRMEFs", "Culture_ConditionsStromalnonprimed", "Culture_ConditionsStromalprimed", "Culture_ConditionsiPSCsweregeneratedandintiallymaintainedusingMEFKSRculturesAftertransfertoWiCelliPSCsexpandedinFeederIndependentTeSR1Medium")
+EXPR = EXPR + VOOM.GENE_EXPRESSION$weights * (FIT$coefficients[,varsToAddBackIn] %*% t(VOOM.GENE_EXPRESSION$design[,varsToAddBackIn]))
 
 # Design matrix with all covariates
 DESIGN = getDesignMatrix(COVARIATES, Intercept = F)
@@ -191,20 +193,39 @@ DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
 colnames(DESIGN) = str_sub(colnames(DESIGN), 1, 30)
 
 # Correlation between covariates and expression residuals
-sizeGrWindow(20,15)
 residualCovaraitesCorrelation = runPCAandPlotCorrelations(EXPR, DESIGN, dataName = 'residual covariates relation')
-residualCovaraitesCorrelation$PC_res[[2]]
+print(residualCovaraitesCorrelation$PC_res[[2]])
 ```
 Sample clustering to check for outliers
 ```{r sample.clustering, fig.height=15, fig.width=20}
 sampleTrees = flashClust::hclust(dist(t(EXPR)), method = "average")
 tree = cutreeStatic(sampleTrees, cutHeight = 200, minSize=3)
 
-sizeGrWindow(12,10);
 plotDendroAndColors(sampleTrees, 
                     labels2colors(cbind(tree,COVARIATES)),
                     groupLabels = c('Cluster',colnames(COVARIATES)))
 collectGarbage()
+
+# Find principal components of expression to plot
+PC <- prcomp(EXPR)
+
+# Determine number of clusters automatically using pamk
+pam.cluster <- pamk(t(EXPR), krange=2:10)
+
+# Plot first 2 PCs
+plotdata <- data.frame(UID=rownames(PC$rotation), 
+                       PC1=PC$rotation[,1], 
+                       PC2=PC$rotation[,2], 
+                       cluster=pam.cluster$pamobject$clustering)
+
+plotdata <- merge(plotdata, METADATA, by="UID")
+plotdata <- mutate(plotdata, labels = '');#ifelse(Diffname_short == '',as.character(UID),'')) 
+
+p <- ggplot(plotdata, aes(x=PC1, y=PC2))
+p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
+p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + scale_shape_manual(values=1:7) + theme(legend.position="top") 
+p <- p + geom_text(aes(label= labels), size=4, hjust=0)
+print(p)
 ```
 ### Coexpression networks
 ```{r wgcna.power, fig.height=8, fig.width=8}
@@ -213,12 +234,14 @@ collectGarbage()
 enableWGCNAThreads()
 
 # Choose a set of soft-thresholding powers
-powers = c(seq(2,10,by=1), seq(12,20, by=2));
+powers = c(seq(2,10,by=1), seq(12,30, by=2));
 
 # Call the network topology analysis function
 EXPR = t(EXPR)
 powerTables = pickSoftThreshold((EXPR), 
                                 powerVector=powers,
+                                corFnc = 'bicor',
+                                networkType = 'unsigned',
                                 verbose = 2)[[2]]
 collectGarbage();
 
@@ -239,49 +262,47 @@ for (i in 1:length(plotCols)){
 }
 
 multiplot(plotlist=p, cols=2)
-softPower = 6.5
+softPower = 12
 collectGarbage()
 save(list=c('powerTables'), file = 'CoexppNet_mRNA_technicalCovariates.RData')
 ```
 Beta is chosen to be `r softPower`
 ```{r wgcna.adj, fig.width=15, fig.height=10}
 # Get adjacency matrix
-# Adj = bicor(EXPR, nThreads = 2)
-# Adj = Adj/abs(Adj) * (Adj^softPower)
-# collectGarbage()
-
-# Get topological overlap matrix
-Net = blockwiseModules((EXPR),
-                       corType = 'bicor',
-                       power=softPower,
-                       TOMType = "signed", 
-                       mergeCutHeight = 0.3,
-                       nThreads = 2,
-                       verbose = 3)
+Adj = bicor(EXPR, nThreads = 2)
+Adj = abs(Adj^softPower);#Adj/abs(Adj) * abs(Adj^softPower)
 collectGarbage()
 
-# We like large modules, so we set the minimum module size relatively high:
+# Get topological overlap matrix
+TOM = TOMdist(Adj, TOMType='unsigned', verbose=3)
+
+# Hierarchichal clustering
+tree = Rclusterpp.hclust(as.dist(TOM), method = "average", distance = "euclidean")
+collectGarbage()
+
+# We set the minimum module size relatively high
 minModuleSize = 30;
 
 # Module identification using dynamic tree cut:
-# unmergedNetModules = cutreeDynamic(dendro = tree, 
-#                                    distM = 1-TOM,
-#                                    deepSplit = 2, 
-#                                    minClusterSize = minModuleSize,
-#                                    pamRespectsDendro = TRUE)
-# unmergedNetModules.colors = labels2colors(unmergedNetModules)
-unmergedNetModules.colors = Net$unmergedColors
+unmergedNetModules = cutreeDynamic(dendro = tree, 
+                                   method = "hybrid",
+                                   deepSplit = 4,
+                                   minClusterSize = minModuleSize,                                   
+                                   distM = TOM,
+                                   pamRespectsDendro = TRUE,
+                                   verbose=3)
+
+unmergedNetModules.colors = labels2colors(unmergedNetModules)
 collectGarbage()
+
+save(list=c('powerTables', 'Adj', 'TOM','tree', 'unmergedNetModules.colors'), 
+     file = 'CoexppNet_mRNA_technicalCovariates.RData')
 ```
 Dendrogram tree of gene clustering
 ```{r dendro.modules, fig.height=12, fig.width=20}
-for (i in 1:length(Net$dendrograms)){
-  sizeGrWindow(12,10);
-  plotDendroAndColors(Net$dendrograms[[i]], Net$unmergedColors[Net$blockGenes[[i]]], "Dynamic Tree Cut",
-                      dendroLabels = FALSE, hang = 0.03,
-                      addGuide = TRUE, guideHang = 0.05)
-  }
-save(list=c('powerTables', 'Net', 'unmergedNetModules.colors'), file = 'CoexppNet_mRNA_technicalCovariates.RData')
+plotDendroAndColors(tree, unmergedNetModules.colors, "Dynamic Tree Cut",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
 ```
 ### Module analysis
 ```{r module.analysis}
@@ -299,9 +320,8 @@ METree = hclust(as.dist(MEDiss), method = "average");
 collectGarbage()
 
 # Plot the results
-sizeGrWindow(7,6)
 par(mfrow = c(1,1))
-plot(METree, main = "Consensus clustering of consensus module eigengenes",
+plot(METree, main = "Clustering of module eigengenes",
      xlab = "", sub = "")
 abline(h=0.15, col = "red")
 
@@ -313,49 +333,110 @@ mergedNetModules = merge$colors
 
 # Convert labels to colors
 mergedNetModules.colors = labels2colors(mergedNetModules)
+mergedNetModules.colors = matchLabels(unmergedNetModules.colors, mergedNetModules.colors)
 
 # Eigengenes of the new merged modules:
 mergedMEs = merge$newMEs
+MEs = orderMEs(mergedMEs[[1]]$data)
 
-for (i in 1:length(Net$dendrograms)){
-  sizeGrWindow(9,6)
-  plotDendroAndColors(Net$dendrograms[[i]], 
-                      cbind(unmergedNetModules.colors[Net$blockGenes[[i]]], mergedNetModules.colors[Net$blockGenes[[i]]]),
-                      c("Unmerged", "Merged"),
-                      dendroLabels = FALSE, hang = 0.03,
-                      addGuide = TRUE, guideHang = 0.05)
-  }
-save(list=c('powerTables', 'Net', 'unmergedNetModules.colors',
-            'mergedMEs','mergedNetModules.colors'), file = 'CoexppNet_mRNA_technicalCovariates.RData')
+tmp = corr.test(MEs)
+tmp1 = tmp$r
+tmp1[tmp$pval >= 0.05] = 0
+tmp1 = melt(tmp1)
+
+# Plot correlation between eigen genes
+writeLines('Correlation between eigen genes')
+p = ggplot(tmp1, aes(x=X1,y=X2)) + geom_tile(aes(fill = value), colour = "white") + 
+  scale_fill_gradient2(low = "green", high = "red", limits = c(-1,1))
+p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+p
+
+# Plot dendrogram and module colors
+writeLines('Module dendrogram and color assignment')
+plotDendroAndColors(tree,
+                    cbind(unmergedNetModules.colors, mergedNetModules.colors),
+                    c("Unmerged", "Merged"),
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+save(list=c('powerTables', 'Adj', 'TOM','tree', 'unmergedNetModules.colors',
+            'unmergedMEs', 'mergedNetModules.colors', 'mergedMEs'), 
+     file = 'CoexppNet_mRNA_technicalCovariates.RData')
 ```
-
+### Compare eigen genes and covariates
 ```{r compare.covars, fig.height=10, fig.width=15}
 # Set up variables to contain the module-trait correlations
-DESIGN = getDesignMatrix(COVARIATES, Intercept = F)
+DESIGN = getDesignMatrix(COVARIATES[,FactorCovariates], Intercept = F)$design
+DESIGN[is.na(DESIGN)] = 0
 
+DESIGN.SPLIT = lapply(FactorCovariates, function(x, DESIGN){ ind = grep(x, colnames(DESIGN)); return(DESIGN[,ind])}, DESIGN)
+names(DESIGN.SPLIT) = FactorCovariates
+
+# Also obtain comparisons
+ALL.COMP = mapply(function(x, y){
+  CONT.NAMES <- colnames(x)
+  CONT.NAMES <- combn(CONT.NAMES,2)
+  CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+  
+  CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(x))
+  colnames(CONT) = gsub(y,'',colnames(CONT))
+  
+  ALL.CONT = x %*% CONT
+  
+  colnames(x) = gsub(y, '', colnames(x))
+  
+  return(ALL.CONT)
+  }, DESIGN.SPLIT, FactorCovariates)
+ALL.COMP = do.call(cbind, ALL.COMP)
+ALL.COMP = ALL.COMP[,!duplicated(colnames(ALL.COMP))]
+```
+Correlation between module eigen genes and molecular traits
+```{r calculate.corr}
 # Calculate the correlations
-g = corr.test(mergedMEs[[1]]$data, DESIGN$design)
+g = corr.test(mergedMEs[[1]]$data, ALL.COMP, adjust = 'bonferroni')
 
 moduleTraitCor = g$r
-moduleTraitPvalue = melt(g$p)
-moduleTraitPvalue$value = p.adjust(moduleTraitPvalue$value, 'bonferroni')
-moduleTraitPvalue = cast(moduleTraitPvalue, X1~X2)
-rownames(moduleTraitPvalue) = moduleTraitPvalue$X1
-moduleTraitPvalue = moduleTraitPvalue[,-(1)]
+moduleTraitPvalue = g$p
 moduleTraitCor[moduleTraitPvalue > 0.05] = 0
 
 moduleTraitCor = moduleTraitCor[, colSums(moduleTraitCor) != 0]
+colnames(moduleTraitCor) = str_sub(colnames(moduleTraitCor),1,25)
 
-Heatmap(moduleTraitCor, 
-        column_title = 'Covariates', 
-        row_title = 'Module Eigengene', 
-        name = 'Correlation',
-        col = colorRamp2(c(-1,0,1), c("green", "white", "red")))
+tmp = reshape2::melt(moduleTraitCor)
+setnames(tmp, c('X1','X2'), c('MEs','Trait'))
+p = ggplot(tmp, aes(x=MEs,y=Trait)) + geom_tile(aes(fill = value), colour = "white") + 
+  scale_fill_gradient2(low = "green", high = "red", limits = c(-1,1))
+p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+p
 
-save(list=c('powerTables', 'Adj', 'TOM', 'unmergedNetModules',
-            'mergedMEs','mergedNetModules','moduleTraitCor', 'moduleTraitPvalue'), 
+# Heatmap(moduleTraitCor, 
+#         column_title = 'Covariates', 
+#         row_title = 'Module Eigengene', 
+#         name = 'Correlation',
+#         col = colorRamp2(c(-1,0,1), c("green", "white", "red")))
+
+save(list=c('powerTables', 'Adj', 'TOM','tree', 'unmergedNetModules.colors',
+            'unmergedMEs', 'mergedNetModules.colors', 'mergedMEs','g','ALL.COMP'), 
      file = 'CoexppNet_mRNA_technicalCovariates.RData')
 ```
+vbsr between MEs and traits
+```{r vbsr}
+associationStats = sapply(MEs, function(x, ALL.COMP){
+  tmp = vbsr(x,ALL.COMP)$z
+  names(tmp) = colnames(ALL.COMP)
+  return(tmp)
+}, ALL.COMP)
+rownames(associationStats) = str_sub(rownames(associationStats), 1, 25)
+
+associationStats = associationStats[rowSums(abs(associationStats) >= 5) != 0,colSums(abs(associationStats) >= 5) != 0]
+
+tmp = reshape2::melt(associationStats)
+setnames(tmp, c('X1','X2','value'), c('Trait', 'MEs','Zscores'))
+p = ggplot(tmp, aes(x=MEs,y=Trait)) + geom_tile(aes(fill = Zscores), colour = "white") + 
+  scale_fill_gradient2(low = "green", high = "red", limits = c(-70,70))
+p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+p
+```
+
 ### Synapse Store
 ```{r synapse.store, cache=FALSE, include=FALSE}
 parentId = 'syn3256504'
@@ -379,4 +460,10 @@ CODE <- synStore(CODE)
 # Store Results
 COEXPP_OBJ <- File('./CoexppNet_mRNA_technicalCovariates.RData', name = 'Coexpression Networks', parentId = CODE$properties$id)
 COEXPP_OBJ <- synStore(COEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+
+# Store Results
+MOD = data.frame(GeneNames = colnames(EXPR) , merged = mergedNetModules.colors, unmerged = unmergedNetModules.colors)
+write.table(MOD, file='modules.tsv', sep='\t', quote=F, row.names=F)
+MOD_OBJ <- File('modules.tsv', name = 'Coexpression Network Modules', parentId = CODE$properties$id)
+MOD_OBJ <- synStore(MOD_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 ```
