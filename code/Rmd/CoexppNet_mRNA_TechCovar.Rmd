@@ -1,5 +1,5 @@
 ---
-title: "Coexpression Network Analysis for eXpress aligned mRNA data with only technical covariates"
+title: "Coexpression Network Analysis for eXpress aligned mRNA data with only technical covariates (signed)"
 author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
@@ -42,7 +42,7 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
 # knitToFolderEntity(file = "./CoexppNet_mRNA_TechCovar.Rmd", 
-#                    entityName = 'Coexpression Network Analysis mRNA All Technical Covariates Model', 
+#                    entityName = 'Coexpression Network Analysis mRNA All Technical Covariates Model Signed', 
 #                    parentId = 'syn3256504', 
 #                    overwrite=F)
 
@@ -244,7 +244,7 @@ EXPR = t(EXPR)
 powerTables = pickSoftThreshold((EXPR), 
                                 powerVector=powers,
                                 corFnc = 'bicor',
-                                networkType = 'unsigned',
+                                networkType = 'signed',
                                 verbose = 2)[[2]]
 collectGarbage();
 
@@ -265,19 +265,19 @@ for (i in 1:length(plotCols)){
 }
 
 multiplot(plotlist=p, cols=2)
-softPower = 18
+softPower = 20
 collectGarbage()
-save(list=c('powerTables'), file = 'CoexppNet_mRNA_technicalCovariates.RData')
+save(list=c('powerTables'), file = 'CoexppNet_mRNA_technicalCovariates_signed.RData')
 ```
 Beta is chosen to be `r softPower`
 ```{r wgcna.adj, fig.width=15, fig.height=10}
 # Get adjacency matrix
 Adj = bicor(EXPR, nThreads = 2)
-Adj = abs(Adj^softPower);#Adj/abs(Adj) * abs(Adj^softPower)
+Adj = Adj/abs(Adj) * abs(Adj^softPower); # abs(Adj^softPower);#
 collectGarbage()
 
 # Get topological overlap matrix
-TOM = TOMdist(Adj, TOMType='unsigned', verbose=3)
+TOM = TOMdist(Adj, TOMType='signed', verbose=3)
 
 # Hierarchichal clustering
 tree = Rclusterpp.hclust(as.dist(TOM), method = "average", distance = "euclidean")
@@ -299,7 +299,7 @@ unmergedNetModules.colors = labels2colors(unmergedNetModules)
 collectGarbage()
 
 save(list=c('powerTables', 'Adj', 'TOM','tree', 'unmergedNetModules.colors'), 
-     file = 'CoexppNet_mRNA_technicalCovariates.RData')
+     file = 'CoexppNet_mRNA_technicalCovariates_signed.RData')
 ```
 Dendrogram tree of gene clustering
 ```{r dendro.modules, fig.height=12, fig.width=20}
@@ -363,7 +363,7 @@ plotDendroAndColors(tree,
                     addGuide = TRUE, guideHang = 0.05)
 save(list=c('powerTables', 'Adj', 'TOM','tree', 'unmergedNetModules.colors',
             'unmergedMEs', 'mergedNetModules.colors', 'mergedMEs'), 
-     file = 'CoexppNet_mRNA_technicalCovariates.RData')
+     file = 'CoexppNet_mRNA_technicalCovariates_signed.RData')
 ```
 ### Compare eigen genes and covariates
 ```{r compare.covars, fig.height=10, fig.width=15}
@@ -419,7 +419,7 @@ p
 
 save(list=c('powerTables', 'Adj', 'TOM','tree', 'unmergedNetModules.colors',
             'unmergedMEs', 'mergedNetModules.colors', 'mergedMEs','g','ALL.COMP'), 
-     file = 'CoexppNet_mRNA_technicalCovariates.RData')
+     file = 'CoexppNet_mRNA_technicalCovariates_signed.RData')
 ```
 vbsr between MEs and traits
 ```{r vbsr, fig.height=15, fig.width=10}
@@ -457,11 +457,11 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Create folder to tore the results and populate analysis wiki
-CODE <- Folder(name = 'Coexpression Network Analysis mRNA All Technical Covariates Model',parentId = parentId)
+CODE <- Folder(name = 'Coexpression Network Analysis mRNA All Technical Covariates Model Signed',parentId = parentId)
 CODE <- synStore(CODE)
       
 # Store Results
-COEXPP_OBJ <- File('./CoexppNet_mRNA_technicalCovariates.RData', name = 'Coexpression Networks', parentId = CODE$properties$id)
+COEXPP_OBJ <- File('./CoexppNet_mRNA_technicalCovariates_signed.RData', name = 'Coexpression Networks', parentId = CODE$properties$id)
 COEXPP_OBJ <- synStore(COEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
 # Store Results
