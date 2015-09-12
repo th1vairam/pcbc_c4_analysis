@@ -32,6 +32,7 @@ library(Rclusterpp)
 library(circlize)
 library(knit2synapse)
 # library(ComplexHeatmap)
+library(vbsr)
 
 ## Needs the dev branch
 library(rGithubClient)
@@ -40,7 +41,7 @@ library(rGithubClient)
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
-# knitToFolderEntity(file = "./CoexppNet_mRNA_technicalCovariates.Rmd", 
+# knitToFolderEntity(file = "./CoexppNet_mRNA_TechCovar.Rmd", 
 #                    entityName = 'Coexpression Network Analysis mRNA All Technical Covariates Model', 
 #                    parentId = 'syn3256504', 
 #                    overwrite=F)
@@ -205,7 +206,9 @@ plotDendroAndColors(sampleTrees,
                     labels2colors(cbind(tree,COVARIATES)),
                     groupLabels = c('Cluster',colnames(COVARIATES)))
 collectGarbage()
-
+```
+Sample pca to check for outliers
+```{r residual.clustering, fig.height=10, fig.width=10}
 # Find principal components of expression to plot
 PC <- prcomp(EXPR)
 
@@ -225,7 +228,7 @@ p <- ggplot(plotdata, aes(x=PC1, y=PC2))
 p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
 p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + scale_shape_manual(values=1:7) + theme(legend.position="top") 
 p <- p + geom_text(aes(label= labels), size=4, hjust=0)
-print(p)
+p
 ```
 ### Coexpression networks
 ```{r wgcna.power, fig.height=8, fig.width=8}
@@ -262,7 +265,7 @@ for (i in 1:length(plotCols)){
 }
 
 multiplot(plotlist=p, cols=2)
-softPower = 12
+softPower = 18
 collectGarbage()
 save(list=c('powerTables'), file = 'CoexppNet_mRNA_technicalCovariates.RData')
 ```
@@ -305,7 +308,7 @@ plotDendroAndColors(tree, unmergedNetModules.colors, "Dynamic Tree Cut",
                     addGuide = TRUE, guideHang = 0.05)
 ```
 ### Module analysis
-```{r module.analysis}
+```{r module.analysis, fig.height=5, fig.width=10}
 # Merge modules with similar expression profiles
 # Calculate module eigengenes
 unmergedMEs = moduleEigengenes(EXPR, 
@@ -390,7 +393,7 @@ ALL.COMP = do.call(cbind, ALL.COMP)
 ALL.COMP = ALL.COMP[,!duplicated(colnames(ALL.COMP))]
 ```
 Correlation between module eigen genes and molecular traits
-```{r calculate.corr}
+```{r calculate.corr, fig.height=15, fig.width=10}
 # Calculate the correlations
 g = corr.test(mergedMEs[[1]]$data, ALL.COMP, adjust = 'bonferroni')
 
@@ -419,7 +422,7 @@ save(list=c('powerTables', 'Adj', 'TOM','tree', 'unmergedNetModules.colors',
      file = 'CoexppNet_mRNA_technicalCovariates.RData')
 ```
 vbsr between MEs and traits
-```{r vbsr}
+```{r vbsr, fig.height=15, fig.width=10}
 associationStats = sapply(MEs, function(x, ALL.COMP){
   tmp = vbsr(x,ALL.COMP)$z
   names(tmp) = colnames(ALL.COMP)
@@ -443,7 +446,7 @@ parentId = 'syn3256504'
 
 activityName='Coexpression Network Analysis of eXpress aligned mRNA data with technical covariates model'
   
-thisFileName <- 'CoexppNet_mRNA_technicalCovariates.Rmd'
+thisFileName <- 'CoexppNet_mRNA_TechCovar.Rmd'
   
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
