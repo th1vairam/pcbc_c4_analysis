@@ -36,8 +36,7 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 
 synapseLogin()
 
-# source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
-# knitFile2SynapseFolder(file = "./DiffExpAnal_mRNA_mixedEffects_All.Rmd", name = 'Differential Expression Analysis mRNA Mixed Effects All', owner = 'syn4483762', overwrite=F)
+# knit2synapse::knitToFolderEntity(file = "./DiffExpAnal_mRNA_mixedEffects_All.Rmd", entityName = 'Differential Expression Analysis mRNA Mixed Effects All', parentId = 'syn4483762', overwrite=F, knitmd = T)
 
 # source utility files from ../R/lib folder
 file.sources = list.files('../R/lib',pattern="*.R")
