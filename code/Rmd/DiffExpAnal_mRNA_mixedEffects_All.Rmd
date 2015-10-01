@@ -27,6 +27,7 @@ library('data.table')
 library('dplyr')
 library('knitr')
 library('stringr')
+library('plyr')
 
 ## Needs the dev branch
 library(rGithubClient)
@@ -36,7 +37,7 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 
 synapseLogin()
 
-# knit2synapse::knitToFolderEntity(file = "./DiffExpAnal_mRNA_mixedEffects_All.Rmd", entityName = 'Differential Expression Analysis mRNA Mixed Effects All', parentId = 'syn4483762', overwrite=F, knitmd = T)
+# knit2synapse::knitToFolderEntity(file = "./DiffExpAnal_mRNA_mixedEffects_All.Rmd", entityName = 'Differential Expression Analysis mRNA Mixed Effects All', parentId = 'syn3256504', overwrite=F, knitmd = T)
 
 # source utility files from ../R/lib folder
 file.sources = list.files('../R/lib',pattern="*.R")
@@ -422,7 +423,7 @@ kable(tmp)
 
 #### Get pvalue and fold changes of some important genes
 ```{r print.imp.genes}
-FC <- join_all(list(rownameToFirstColumn(DIFFNAME$logFC,'GeneNames'),
+FC <- plyr::join_all(list(rownameToFirstColumn(DIFFNAME$logFC,'GeneNames'),
                     rownameToFirstColumn(GENDER$logFC,'GeneNames'),
                     rownameToFirstColumn(CELL.TYPE.OF.ORIGIN$logFC,'GeneNames'),
                     rownameToFirstColumn(CULT.COND$logFC,'GeneNames'),
@@ -459,7 +460,7 @@ kable(filter(PVAL, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
 ```
 ### Enrichment Analysis
 Perform enrichment analysis for differentiation
-```{r enrichment.analysis, include=FALSE, eval=FALSE}
+```{r enrichment.analysis, include=FALSE, eval=TRUE}
 # Write input files to folder
 inputFolderName <- paste0(getwd(),'/GOElite_input')
 if (file.exists(inputFolderName))
@@ -551,13 +552,13 @@ PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName,
 
 # Store differentially expressed genes in gct format
 write.table(DEXPP.GENES,file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',sep='\t',row.names=F,quote=F)
-DEXPP_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',name = 'Differentialy Expressed Genes gct format',parentId = CODE$properties$id)
+DEXPP_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',name = 'Differentially Expressed Genes gct format',parentId = CODE$properties$id)
 annotations(DEXPP_OBJ) <- list(Pvalue='0.05',Foldchage='0')
 DEXPP_OBJ <- synStore(DEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
   
 # Store differentially expressed genes for comparison
 write.table(SIG.SETS,file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',sep='\t',row.names=F,quote=F)
-SIG.SETS_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',name = 'Differentily Expressed Genes comparison list',parentId = CODE$properties$id)
+SIG.SETS_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',name = '  Differentially Expressed Genes comparison list',parentId = CODE$properties$id)
 annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='0')
 SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 ```
