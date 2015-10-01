@@ -122,7 +122,7 @@ Obtain differentially expressed genes with the following covariates (as obtained
   * Fixed Effects: Cell Line Type, run
   * Random Effects: Donor ID
 * Differentation Stage: EB
-  * Fixed Effects: Gender, Donor Life Stage
+  * Fixed Effects: Gender, Reprogramming Gene Combination,Culture Conditions
   * Random Effects: Donor ID
 * Differentation Stage: ECTO
   * Fixed Effects: run
