@@ -86,9 +86,9 @@ row.names(EXP) = EXP[,1]
 EXP = dplyr::select(EXP,-(ProbeID))
 
 # Get metadata
-METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
+METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '), loadResult=F)
 ALL_USED_IDs[length(ALL_USED_IDs)+1] = METADATA_OBJ@schema
-METADATA = METADATA_OBJ@values
+METADATA = fread(METADATA_OBJ@filePath, data.table=F, header=T)
 ```
 Synapse id of count matrix used for the analysis is `r paste(EXP_ID, EXP_OBJ$properties$versionNumber,sep='.')` and the synapse id of meta data table used for the analysis is `r METADATA_ID` 
 
