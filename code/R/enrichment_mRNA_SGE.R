@@ -134,7 +134,7 @@ gsets = c("Achilles_fitness_decrease", "Achilles_fitness_increase", "Allen_Brain
           "Phosphatase_Substrates_from_DEPOD", "Reactome", "SILAC_Phosphoproteomics", "TF-LOF_Expression_from_GEO", 
           "TargetScan_microRNA", "Tissue_Protein_Expression_from_Human_Proteome_Map", "Tissue_Protein_Expression_from_ProteomicsDB",
           "Transcription_Factor_PPIs", "Virus_Perturbations_from_GEO_down", "Virus_Perturbations_from_GEO_up", "WikiPathways_2015")
-GeneSets = GeneSets = GeneSets[gsets]
+GeneSets = GeneSets[gsets]
 ############################################################################################################
 
 ############################################################################################################
