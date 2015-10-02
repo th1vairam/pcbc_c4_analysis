@@ -14,6 +14,11 @@ library(rGithubClient)
 
 synapseLogin()
 
+# Get github links for provenance
+thisFileName <- 'mergeEnrichmentResults_mRNA_SGE.R'
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", ref="branch", refName='enrich')
+thisFile <- getPermlink(repository = thisRepo, repositoryPath=paste0('code/R/', thisFileName))
+
 # Get all the enrichment files
 All.Files = synQuery('select * from file where parentId == "syn4905034"')
 
@@ -33,8 +38,8 @@ for (class in names(compNames)){
       write.table(results, file = paste(dataRestrictionShort,class,'mRNA',sep="."), sep="\t")
       file = File(path = paste(dataRestrictionShort,class,'mRNA',sep="."), 
                   name = paste(paste(dataRestrictionShort,class,sep="."),'mRNA'),
-                  parentId = parentId)
-      file = synStore(file, used = file.ids, activityName = "Merge enrichmnet results")
+                  parentId = "syn4896411")
+      file = synStore(file, used = file.ids, executed = thisFile, activityName = "Merge enrichmnet results")
     }
   }
 }
