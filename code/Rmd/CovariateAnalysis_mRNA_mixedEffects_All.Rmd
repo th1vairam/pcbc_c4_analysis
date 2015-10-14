@@ -29,13 +29,12 @@ library('knitr')
 library('stringr')
 
 ## Needs the dev branch
-library(rGithubClient)
+library('rGithubClient')
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
-# source('/mnt/Github/knit2synapse-1/R/knitFile2SynapseFolder.R')
-# knitFile2SynapseFolder(file = "./CovariateAnalysis_mRNA_mixedEffects_All.Rmd", name = 'Covariate Analysis mRNA Mixed Effects All', owner = 'syn4483760', overwrite=F)
+# knit2synapse::knitToFolderEntity(file = "./CovariateAnalysis_mRNA_mixedEffects_All.Rmd", entityName = 'Covariate Analysis mRNA Mixed Effects All', parentId = 'syn3256504', overwrite=F, knitmd = TRUE)
 
 synapseLogin()
 
@@ -305,10 +304,10 @@ residualSigCovars[["PC_res"]][[1]]$plotData
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 ### Normalisation (custom/manual design)
-Reperform normalisation with custom design matrix (manually with Diffname short, Gender, Cell Type of Origin Level2, Donor Life Stage, lane, Culture Conditions, run as fixed effects and Donor ID as random effects)
+Reperform normalisation with custom design matrix (manually with Diffname short, Gender, Reprogramming Gene Combination, Cell Type of Origin Level2, Culture Conditions, run as fixed effects and Donor ID as random effects)
 ```{r reperform.normalisation}
 # Post adjusted design matrix
-DM1 = getDesignMatrix(dplyr::select(COVARIATES,Diffname_short,Gender,Cell_Type_of_Origin_Level2,Donor_Life_Stage,lane,Culture_Conditions,run),Intercept = F)
+DM1 = getDesignMatrix(dplyr::select(COVARIATES,Diffname_short,Gender,Reprogramming_Gene_Combination, Cell_Type_of_Origin_Level2, Culture_Conditions,run),Intercept = F)
 DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols]
     
 # Estimate correlation of random effects
