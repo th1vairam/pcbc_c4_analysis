@@ -36,12 +36,11 @@ library(rGithubClient)
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
-
-# devtools::install_github("knit2synapse-1", username = "th1vairam", ref= "dev")
-# knitToFolderEntity(file = "./CovariateAnalysis_methylation_mixedEffects_EachDiffState.Rmd", 
-#                    parentId = 'syn4231339',
-#                    entityName = 'Covariate Analysis Methylation Mixed Effects EachDiffState', 
-#                    overwrite=F)
+# 
+# knit2synapse::knitToFolderEntity(file = "./CovariateAnalysis_methylation_mixedEffects_EachDiffState.Rmd",
+#                                  parentId = 'syn4231339',
+#                                  entityName = 'Covariate Analysis Methylation Mixed Effects EachDiffState', 
+#                                  overwrite=F)
 
 synapseLogin()
 
@@ -371,12 +370,12 @@ thisFileName <- 'CovariateAnalysis_methylation_mixedEffects_EachDiffState.Rmd'
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
                     ref="branch", 
                     refName='methyl')
-
-thisFile <- getPermlink(repository = thisRepo,
+thisFile <- getPermlink(repository = thisRepo, 
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Populate wiki with results
-CODE <- Folder(name = 'Covariate Analysis Methylation Mixed Effects EachDiffState', parentId = parentId)
+CODE <- Folder(name = 'Covariate Analysis Methylation Mixed Effects EachDiffState', 
+               parentId = parentId)
 CODE <- synStore(CODE)
 
 storeFilesInSynapse <- function(COVARIATES, PROC.EXP, POSTADJUSTED.COVARIATES, CODE){
@@ -388,26 +387,26 @@ storeFilesInSynapse <- function(COVARIATES, PROC.EXP, POSTADJUSTED.COVARIATES, C
   
   # Store expression
   EXP <- rownameToFirstColumn(PROC.EXP[[diffstate]],'ProbeIDs')
-  write.table(EXP,
-              file = paste0('./Filtered_Beta_',diffstate,'.tsv'),
-              sep='\t',
-              row.names=F,
-              col.names=T,
+  write.table(EXP, 
+              file = paste0('./Filtered_Beta_',diffstate,'.tsv'), 
+              sep='\t', 
+              row.names=F, 
+              col.names=T, 
               quote=F)
-  EXP_OBJ <- File(paste0('./Filtered_Beta_',diffstate,'.tsv'),
-                  name = paste('Filtered Beta Values',diffstate),
+  EXP_OBJ <- File(paste0('./Filtered_Beta_',diffstate,'.tsv'), 
+                  name = paste('Filtered Beta Values',diffstate), 
                   parentId = CODE$properties$id)
-  EXP_OBJ <- synStore(EXP_OBJ,
+  EXP_OBJ <- synStore(EXP_OBJ, 
                       used = ALL_USED_IDs, 
                       activityName = ActivityName, 
                       executed = thisFile) 
     
   # Covariates Matrix
   COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
-  write.table(COVARIATES,
-              file = paste0('./Adjusted_Methylation_Covariates_',diffstate,'.tsv'),
-              sep='\t',
-              row.names=F,
+  write.table(COVARIATES, 
+              file = paste0('./Adjusted_Methylation_Covariates_',diffstate,'.tsv'), 
+              sep='\t', 
+              row.names=F, 
               col.names=T,
               quote=F)
   COVARIATES_OBJ <- File(paste0('Adjusted_Methylation_Covariates_',diffstate,'.tsv'),
