@@ -23,15 +23,19 @@ library(biomaRt)
 library(tools)
 library(knit2synapse)
 library(igraph)
-
+library(ComplexHeatmap)
 ## Needs the dev branch
 library(rGithubClient)
+
+library(circlize)
+colfunc <- colorRampPalette(c("white", "red"))
 
 ## Requires ggdendro
 # knitToFolderEntity(file = "./AnalyseDiffExp.Rmd", 
 #                    parentId = 'syn4640410',
 #                    entityName = 'Integrated Differential Expression Analysis (Differentiation state specific)', 
-#                    overwrite=F)
+#                    overwrite=F,
+#                    executed = thisFile)
 
 synapseLogin()
 
@@ -250,7 +254,7 @@ tmp$All = rowSums(tmp[,-(1)])
 kable(tmp)
 ```
 
-```{r print.individuals}
+```{r print.at.each.diff.state}
 tmp <- diffExp %>%
   dplyr::select(DiffState, assay, comparison.short, feature) %>%
   unique %>%
@@ -266,29 +270,6 @@ for( name in names(tmp)){
   print(kable(tmp1))
 }
 ```
-#### TF only analysis
-```{r analyse.TFs}
-tmp1 <- diffExp %>%
-  filter(assay == "mRNA") %>%
-  dplyr::select(feature, TF) %>%
-  dplyr::filter(TF == 1) %>%
-  group_by(feature) %>%
-  summarise(count = n()) %>%
-  arrange(desc(count))
-```
-##### In all six comparisons #####
-BCL11A - down regulated in ECTO (by miRNAs hsa-miR-92b-3p,  hsa-miR-448, hsa-miR-486-3p (vs MESO15), hsa-miR-363-3p, hsa-miR-23-3p (vs MESO30), hsa-miR-23b-3p (vs SC))
-FOXC1 - down regulated in SC (no miRNA and methyl regulation)
-GATA3  - down regualted in SC (no miRNA and methyl regualtion)
-HOXA2 - upregulated in EB (miRNA regaulted transition from ECTO - hsa-miR-548ah-5p)
-HOXA5 - upregulated in EB (miRNA regulated transition from MESO5 - hsa-miR-320d)
-HOXD9 - upregulated in EB (miRNA regulated transition from SC - hsa-miR-18a-3p)
-NR5A1 - up regulated in ECTO by both methylation and miRNA  (probeID: cg14143574 for all four diff states, hsa-miR-1910-5p from EB, MESO30 and SC, hsa-miR-24-3p from MESO30, hsa-miR-326 from MESO15)
-
-##### In any five comparisons #####
-KLF5 - upregulated in SC except ECTO (hsa-miR-18a-3p regulation in EB and MESO15, hsa-miR-1305 and hsa-miR-32-3p regulation in MESO30, no regulation of miRNA and methylation against MESO5 and DE)
-NFIB - downregulated in ECTO except MESO15 (hsa-miR-129-5p regulation in DE, EB, MESO30, MESO5, SC and hsa-miR-17-3p regulation in MESO30)
-NR3C1 - downregulated in ECTO except SC (mainly by miRNAs hsa-miR-548ah-5p, hsa-miR-204-5p,hsa-miR-548p, hsa-miR-129-2-3p, hsa-miR-548ah-3p, hsa-miR-500a-5p, hsa-miR-429, hsa-miR-589-3p, hsa-miR-18b-5p, hsa-miR-18a-5p, hsa-miR-378i)
 
 ### Plot expression
 Subset of genes that participate in differential expression (including targets from miRNA and methylation)
@@ -309,20 +290,275 @@ ha = HeatmapAnnotation(df = cov[,'Diffname_short',drop=F], which = "column")
 annotate = as.data.frame(matrix(0,dim(exp1)[1],3))
 rownames(annotate) = rownames(exp1)
 colnames(annotate) = c("TF", "miRNA", "methyl")
-annotate$TF = (rownames(annotate) %in% TFs)*1
-annotate$miRNA = (rownames(annotate) %in% (filter(diffExp, assay == "miRNA") %>% dplyr::select(target) %>% unique %>% unlist))*1
-annotate$methyl = (rownames(annotate) %in% (filter(diffExp, assay == "methyl") %>% dplyr::select(target) %>% unique %>% unlist))*1
-ha1 = HeatmapAnnotation(df = annotate, which = "row")
+annotate$TF = factor((rownames(annotate) %in% TFs)*1)
+annotate$miRNA = factor((rownames(annotate) %in% (filter(diffExp, assay == "miRNA") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+annotate$methyl = factor((rownames(annotate) %in% (filter(diffExp, assay == "methyl") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("1" = "black", "0" = "white"), miRNA = c("1" = "red", "0" = "white"),
+                                                                 methyl = c("1" = "blue", "0" = "white")))
 
-Heatmap(exp1, row_title = 'Genes', column_title = 'Samples', cluster_columns = F, 
-        show_row_names = F, show_column_names = F, top_annotation = ha) + ha1
+Heatmap(exp1, name = "logCPM", row_title = 'Genes', column_title = 'Samples', cluster_columns = F, 
+        col = colorRamp2(seq(0,10, 2), colfunc(6)),
+        show_row_names = T, row_names_side = 'left', show_column_names = F, top_annotation = ha, show_row_hclust = F) + ha1
 ```
+
+#### TF only analysis
+```{r analyse.TFs, fig.height=24, fig.width=15}
+for(i in 1:6){
+  writeLines(paste('Present in',i,'comparisons'))
+  tmp1 <- diffExp %>%
+    filter(assay == "mRNA") %>%
+    dplyr::select(feature, TF) %>%
+    dplyr::filter(TF == 1) %>%
+    group_by(feature) %>%
+    summarise(count = n()) %>%
+    arrange(desc(count)) %>%
+    filter(count == i)
+
+  exp1 = filter(exp, GeneName %in% unique(tmp1$feature));
+  rownames(exp1) = exp1$GeneName
+  exp1 = exp1[tmp1$feature,-(1)]
+
+  cov = fread(synGet('syn4483940')@filePath, data.table=F, header=T)
+  cov = dplyr::arrange(cov, Diffname_short)
+  exp1 = exp1[,cov$UID]
+
+  ha = HeatmapAnnotation(df = cov[,'Diffname_short',drop=F], which = "column")
+
+  annotate = as.data.frame(matrix(0,dim(exp1)[1],3))
+  rownames(annotate) = rownames(exp1)
+  colnames(annotate) = c("TF", "miRNA", "methyl")
+  annotate$TF = factor((rownames(annotate) %in% TFs)*1)
+  annotate$miRNA = factor((rownames(annotate) %in% (filter(diffExp, assay == "miRNA") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+  annotate$methyl = factor((rownames(annotate) %in% (filter(diffExp, assay == "methyl") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+  ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("1" = "black", "0" = "white"), miRNA = c("1" = "red", "0" = "white"),
+                                                                 methyl = c("1" = "blue", "0" = "white")))
+
+  h = Heatmap(exp1, name = "logCPM", row_title = 'Genes', column_title = 'Samples', 
+          cluster_columns = F, cluster_rows = T,
+          col = colorRamp2(seq(0,round(max(exp1)), 2), colfunc(length(seq(0,round(max(exp1)), 2)))),
+          show_row_names = T, row_names_side = 'left', show_column_names = F, 
+          top_annotation = ha, show_row_hclust = F, split = tmp1$count) + ha1
+  
+  draw(h)  
+}
+```
+
+##### In all six comparisons #####
+GATA3  - down regualted in SC (no miRNA and methyl regualtion)
+FOXC1 - down regulated in SC (no miRNA and methyl regulation)
+BCL11A - down regulated in ECTO (by miRNAs hsa-miR-92b-3p,  hsa-miR-448, hsa-miR-486-3p (vs MESO15), hsa-miR-363-3p, hsa-miR-23-3p (vs MESO30), hsa-miR-23b-3p (vs SC))
+HOXA2 - upregulated in EB (miRNA regaulted transition from ECTO - hsa-miR-548ah-5p)
+HOXA5 - upregulated in EB (miRNA regulated transition from MESO5 - hsa-miR-320d)
+HOXD9 - upregulated in EB (miRNA regulated transition from SC - hsa-miR-18a-3p)
+NR5A1 - up regulated in ECTO by both methylation and miRNA  (probeID: cg14143574 for all four diff states, hsa-miR-1910-5p from EB, MESO30 and SC, hsa-miR-24-3p from MESO30, hsa-miR-326 from MESO15)
+
+##### In any five comparisons #####
+KLF5 - downregulated in SC (hsa-miR-18a-3p regulation in EB and MESO15, hsa-miR-1305 and hsa-miR-32-3p regulation in MESO30, no regulation of miRNA and methylation against MESO5 and DE)
+NFIB - downregulated in ECTO (hsa-miR-129-5p regulation in DE, EB, MESO30, MESO5, SC and hsa-miR-17-3p regulation in MESO30)
+NR3C1 - downregulated in ECTO (mainly by miRNAs hsa-miR-548ah-5p, hsa-miR-204-5p,hsa-miR-548p, hsa-miR-129-2-3p, hsa-miR-548ah-3p, hsa-miR-500a-5p, hsa-miR-429, hsa-miR-589-3p, hsa-miR-18b-5p, hsa-miR-18a-5p, hsa-miR-378i)
+RUNX2 - upregulated in EB (hsa-miR-19b-3p with ECTO, hsa-miR-320d with MESO5)
+ZEB1 - down regulated both in SC and EB
+
+#### miRNA affecting mRNA list (Non-TFs)
+```{r analyse.miRNA, fig.height=24, fig.width=15}
+for (i in 1:6){
+  writeLines(paste('Present in',i,'comparisons'))
+  tmp1 <- diffExp %>%
+  filter(assay == "miRNA") %>%
+  dplyr::select(feature, comparison.short) %>%
+  unique %>%
+#   dplyr::filter(TF == 0) %>%
+  group_by(feature) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  filter(count == i)
+
+  mirna.exp = fread(synGet('syn4595977')@filePath, data.table = F, header=T)
+  exp1 = filter(mirna.exp, GeneName %in% unique(tmp1$feature));
+  rownames(exp1) = exp1$GeneName
+  exp1 = exp1[,-(1)]
+
+  cov = fread(synGet('syn4595983')@filePath, data.table=F, header=T)
+  cov = dplyr::arrange(cov, Diffname_short)
+  exp1 = exp1[,cov$UID]
+  
+  ha = HeatmapAnnotation(df = cov[,'Diffname_short',drop=F], which = "column")
+  
+  annotate = as.data.frame(matrix(0,dim(exp1)[1],3))
+  rownames(annotate) = rownames(exp1)
+  colnames(annotate) = c("TF", "miRNA", "methyl")
+  annotate$TF = factor((rownames(annotate) %in% TFs)*1)
+  annotate$miRNA = factor((rownames(annotate) %in% (filter(diffExp, assay == "miRNA") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+  annotate$methyl = factor((rownames(annotate) %in% (filter(diffExp, assay == "methyl") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+  ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("1" = "black", "0" = "white"), miRNA = c("1" = "red", "0" = "white"),
+                                                                   methyl = c("1" = "blue", "0" = "white")))
+
+  h = Heatmap(exp1, name = "logCPM", row_title = 'Genes', column_title = 'Samples', 
+          cluster_columns = F, cluster_rows = T,
+          col = colorRamp2(seq(0,round(max(exp1)), 2), colfunc(length(seq(0,round(max(exp1)), 2)))),
+          show_row_names = T, row_names_side = 'left', show_column_names = F, 
+          top_annotation = ha, show_row_hclust = F) + ha1
+  
+  draw(h)
+}
+```
+
+#### mRNA affected by miRNA
+```{r analyse.mRNA.miRNA, fig.height=24, fig.width=15}
+allExp = data.frame()
+group = c()
+for (i in 1:6){
+  tmp1 <- diffExp %>%
+    filter(assay == "miRNA") %>%
+    dplyr::select(feature, comparison.short) %>%
+    unique %>%
+#     dplyr::filter(TF == 0) %>%
+    group_by(feature) %>%
+    summarise(count = n()) %>%
+    arrange(desc(count)) %>%
+    filter(count == i)
+
+  tmp2 <- diffExp %>%
+    filter(assay == "miRNA", feature %in% tmp1$feature) %>%
+    dplyr::select(target) %>%
+    unique %>% unlist %>% as.character
+
+  exp1 = filter(exp, GeneName %in% tmp2);
+  rownames(exp1) = exp1$GeneName
+  exp1 = exp1[,-(1)]
+
+  allExp = rbind(allExp, exp1)
+  group = c(group, rep(i, dim(exp1)[1]))
+}
+  exp1 = allExp
+  cov = fread(synGet('syn4483940')@filePath, data.table=F, header=T)
+  cov = dplyr::arrange(cov, Diffname_short)
+  exp1 = exp1[,cov$UID]
+  
+  ha = HeatmapAnnotation(df = cov[,'Diffname_short',drop=F], which = "column")
+  
+  annotate = as.data.frame(matrix(0,dim(exp1)[1],3))
+  rownames(annotate) = rownames(exp1)
+  colnames(annotate) = c("TF", "miRNA", "methyl")
+  annotate$TF = factor((rownames(annotate) %in% TFs)*1)
+  annotate$miRNA = factor((rownames(annotate) %in% (filter(diffExp, assay == "miRNA") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+  annotate$methyl = factor((rownames(annotate) %in% (filter(diffExp, assay == "methyl") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+  ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("1" = "black", "0" = "white"), miRNA = c("1" = "red", "0" = "white"),
+                                                                   methyl = c("1" = "blue", "0" = "white")))
+
+  h = Heatmap(exp1, name = "logCPM", row_title = 'Genes', column_title = 'Samples', 
+          cluster_columns = F, cluster_rows = T,
+          col = colorRamp2(seq(0,round(max(exp1)), 2), colfunc(length(seq(0,round(max(exp1)), 2)))),
+          show_row_names = T, row_names_side = 'left', show_column_names = F, 
+          top_annotation = ha, show_row_hclust = F, split = group) + ha1
+  
+  draw(h)
+```
+
+#### Methylation probes affecting mRNA list (Non-TFs)
+```{r analyse.methyl, fig.height=24, fig.width=15}
+methyl.exp = fread(synGet('syn4487642')@filePath, data.table = F, header=T)
+for (i in 1:4){
+  writeLines(paste('Present in',i,'comparisons'))
+  tmp1 <- diffExp %>%
+    filter(assay == "methyl") %>%
+    dplyr::select(feature, comparison.short) %>%
+    unique %>%
+#     dplyr::filter(TF == 0) %>%
+    group_by(feature) %>%
+    summarise(count = n()) %>%
+    arrange(desc(count)) %>%
+    filter(count == i)
+
+  exp1 = filter(methyl.exp, methProbeID %in% unique(tmp1$feature));
+  rownames(exp1) = exp1$methProbeID
+  exp1 = exp1[,-(1)]
+
+  cov = fread(synGet('syn4487669')@filePath, data.table=F, header=T)
+  cov = dplyr::arrange(cov, Diffname_short)
+  exp1 = exp1[,cov$UID]
+  
+  ha = HeatmapAnnotation(df = cov[,'Diffname_short',drop=F], which = "column")
+  
+  h = Heatmap(exp1, name = "Beta", row_title = 'Probes', column_title = 'Samples', 
+          cluster_columns = F, cluster_rows = T,
+          col = colorRamp2(seq(0,1, 0.1), colfunc(length(seq(0,1, 0.1)))),
+          show_row_names = T, row_names_side = 'left', show_column_names = F, 
+          top_annotation = ha, show_row_hclust = F)
+  
+  draw(h)
+}
+```
+
+#### mRNA affected by methylation
+```{r analyse.mRNA.methylation, fig.height=24, fig.width=15}
+allExp = data.frame()
+group = c()
+for (i in 1:4){
+  tmp1 <- diffExp %>%
+    filter(assay == "methyl") %>%
+    dplyr::select(feature, comparison.short) %>%
+    unique %>%
+#     dplyr::filter(TF == 0) %>%
+    group_by(feature) %>%
+    summarise(count = n()) %>%
+    arrange(desc(count)) %>%
+    filter(count == i)
+
+  tmp2 <- diffExp %>%
+    filter(assay == "methyl", feature %in% tmp1$feature) %>%
+    dplyr::select(target) %>%
+    unique %>% unlist %>% as.character
+
+  exp1 = filter(exp, GeneName %in% tmp2);
+  rownames(exp1) = exp1$GeneName
+  exp1 = exp1[,-(1)]
+
+  allExp = rbind(allExp, exp1)
+  group = c(group, rep(i, dim(exp1)[1]))
+}
+  exp1 = allExp
+  cov = fread(synGet('syn4483940')@filePath, data.table=F, header=T)
+  cov = dplyr::arrange(cov, Diffname_short)
+  exp1 = exp1[,cov$UID]
+  
+  ha = HeatmapAnnotation(df = cov[,'Diffname_short',drop=F], which = "column")
+  
+  annotate = as.data.frame(matrix(0,dim(exp1)[1],3))
+  rownames(annotate) = rownames(exp1)
+  colnames(annotate) = c("TF", "miRNA", "methyl")
+  annotate$TF = factor((rownames(annotate) %in% TFs)*1)
+  annotate$miRNA = factor((rownames(annotate) %in% (filter(diffExp, assay == "miRNA") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+  annotate$methyl = factor((rownames(annotate) %in% (filter(diffExp, assay == "methyl") %>% dplyr::select(target) %>% unique %>% unlist))*1)
+  ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("1" = "black", "0" = "white"), miRNA = c("1" = "red", "0" = "white"),
+                                                                   methyl = c("1" = "blue", "0" = "white")))
+
+  h = Heatmap(exp1, name = "logCPM", row_title = 'Genes', column_title = 'Samples', 
+          cluster_columns = F, cluster_rows = T,
+          col = colorRamp2(seq(0,round(max(exp1)), 2), colfunc(length(seq(0,round(max(exp1)), 2)))),
+          show_row_names = T, row_names_side = 'left', show_column_names = F, 
+          top_annotation = ha, show_row_hclust = F, split = group) + ha1
+  
+  draw(h)
+```
+
 #### Store results in synapse
 ```{r synapse.store}
 obj = Folder(name = 'Integrated Differential Expression Analysis (Differentiation state specific)', parentId = 'syn4640410')
 obj = synStore(obj)
 
+thisFileName <- 'AnalyseDiffExp.Rmd'
+  
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='diff_exp')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+
 write.table(diffExp, file = "uniqueSign.tsv", sep = "\t", row.names=F, quote=F)
 objFile = File("uniqueSign.tsv", name = "Integrated Signatures (Differentiation state specific)", parentId = obj$properties$id)
-objFile = synStore(objFile, used = usedIds, activityName = "Integrated Analysis of Differential Expression")
+objFile = synStore(objFile, used = usedIds, activityName = "Integrated Analysis of Differential Expression", executed = thisFile)
 ```
