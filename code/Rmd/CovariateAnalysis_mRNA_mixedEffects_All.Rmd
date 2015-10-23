@@ -377,7 +377,8 @@ residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION,
 # Residualise matrix and add back differentiation stages
 RESID.EXPR = calcResiduals(geneBySampleValues = VOOM.ADJUSTED.GENE_EXPRESSION$E, 
                            samplesByCovariates = VOOM.ADJUSTED.GENE_EXPRESSION$design, 
-                           varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO", "Diffname_shortMESO15", "Diffname_shortMESO30","Diffname_shortMESO5", "Diffname_shortSC"), 
+                           varsToAddBackIn = paste0("Diffname_short", 
+                                                    unique(METADATA$Diffname_short)), 
                            sampleWeights = VOOM.ADJUSTED.GENE_EXPRESSION$weights)
 ```
 ```{r residualSigCovars.manual, fig.width=25, fig.height=12}
