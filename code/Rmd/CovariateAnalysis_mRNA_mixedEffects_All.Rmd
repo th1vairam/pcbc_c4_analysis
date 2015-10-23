@@ -454,11 +454,8 @@ write.table(COUNTS,file = './Processed_CPM_Counts.tsv',sep='\t',
 
 COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed logCPM',
                parentId = CODE$properties$id)
-<<<<<<< HEAD
-synSetAnnotations(COUNTS) <- c(annots, fileType="CPM")
-=======
+
 synSetAnnotations(COUNTS) <- c(annots, fileType="CPM", fileSubType="filtered")
->>>>>>> 3ea9a1bfabc8bf02b259c6e75c97c1b1348542e2
 
 COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, 
                    executed = thisFile)  
@@ -473,11 +470,7 @@ EXPR <- File('./Adjusted_mRNA_Expression.tsv',
              name = 'Adjusted Expression',
              parentId = CODE$properties$id)
 
-<<<<<<< HEAD
-synSetAnnotations(EXPR) <- c(annots, fileType="residuals")
-=======
 synSetAnnotations(EXPR) <- c(annots, fileType="residuals", fileSubType="adjusted")
->>>>>>> 3ea9a1bfabc8bf02b259c6e75c97c1b1348542e2
 
 EXPR <- synStore(EXPR, used = ALL_USED_IDs, activityName = ActivityName,
                  executed = thisFile)  
