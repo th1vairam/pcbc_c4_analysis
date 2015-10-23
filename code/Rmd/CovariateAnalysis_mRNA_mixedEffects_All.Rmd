@@ -348,9 +348,11 @@ residualSigCovars[["PC_res"]][[2]]$plotData
 Reperform normalisation with custom design matrix (manually with Diffname short, Gender, Reprogramming Gene Combination, Cell Type of Origin Level2, Culture Conditions, run as fixed effects and Donor ID as random effects)
 ```{r reperform.normalisation}
 # Post adjusted design matrix
-DM1 = getDesignMatrix(dplyr::select(COVARIATES,Diffname_short,Gender,Reprogramming_Gene_Combination, Cell_Type_of_Origin_Level2, Culture_Conditions,run),Intercept = F)
 DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols]
     
+DM1 = getDesignMatrix(dplyr::select(COVARIATES,
+                                    one_of(postAdjustCovars$fixed)),
+                      Intercept = F)
 # Estimate correlation of random effects
 VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=F)
 correlation <- duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DM1$design, block=COVARIATES$Donor_ID)
