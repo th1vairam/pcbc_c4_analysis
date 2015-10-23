@@ -287,13 +287,14 @@ while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
   postAdjustCovars$fixed = c(postAdjustCovars$fixed,names(which.max(covariatesEffects)))
   loopCount = loopCount + 1
 }
-tmp <- paste('Using following covariates in the final model:', 
-             paste(paste(gsub('_','\\\\_',postAdjustCovars$fixed),
-                         collapse=', '),
-                   'as fixed effects and', 
-                   paste(gsub('_','\\\\_',postAdjustCovars$random),
-                         collapse=', '),
-                   'as random effects'))
+modelStr <- paste(paste(gsub('_','\\\\_',postAdjustCovars$fixed),
+                              collapse=', '),
+                        'as fixed effects and', 
+                        paste(gsub('_','\\\\_',postAdjustCovars$random),
+                              collapse=', '),
+                        'as random effects')
+
+tmp <- paste('Using following covariates in the final model:', modelStr)
 ```
 `r tmp`
 
@@ -424,14 +425,20 @@ p
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices.
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+
+annots <- list(differentiationStage="All", dataType="mRNA", 
+               fixedEffects=postAdjustCovars$fixed, 
+               randomEffects=postAdjustCovars$random, 
+               model=modelStr)
+
 ActivityName <- 'Covariate Analysis of eXpress aligned mRNA data with mixed effects modeling'
   
 thisFileName <- 'CovariateAnalysis_mRNA_mixedEffects_All.Rmd'
   
 # Github link
-thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+thisRepo <- getRepo(repository = "kdaily/pcbc_c4_analysis", 
                     ref="branch", 
-                    refName='mRNA')
+                    refName='thanneer')
 
 thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
@@ -448,6 +455,8 @@ write.table(COUNTS,file = './Processed_CPM_Counts.tsv',sep='\t',
 
 COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed logCPM',
                parentId = CODE$properties$id)
+synSetAnnotations(COUNTS) <- c(annots, fileType="CPM")
+
 COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, 
                    executed = thisFile)  
   
@@ -461,6 +470,8 @@ EXPR <- File('./Adjusted_mRNA_Expression.tsv',
              name = 'Adjusted Expression',
              parentId = CODE$properties$id)
 
+synSetAnnotations(EXPR) <- c(annots, fileType="residuals")
+
 EXPR <- synStore(EXPR, used = ALL_USED_IDs, activityName = ActivityName,
                  executed = thisFile)  
   
@@ -473,6 +484,9 @@ write.table(WEIGHTS,file = './Adjusted_mRNA_Weights.tsv',
 
 WEIGHTS <- File('Adjusted_mRNA_Weights.tsv', name='Adjusted Weights',
                 parentId = CODE$properties$id)
+
+synSetAnnotations(WEIGHTS) <- c(annots, fileType="weights")
+
 WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, 
                     executed = thisFile)
   
@@ -483,6 +497,9 @@ write.table(COVARIATES,file = './Adjusted_mRNA_Covariates.tsv',
 
 COVARIATES <- File('Adjusted_mRNA_Covariates.tsv',name = 'Adjusted Covariates',
                    parentId = CODE$properties$id)
+
+synSetAnnotations(COVARIATES) <- c(annots, fileType="covariates")
+
 COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, 
                        executed = thisFile)
 
@@ -493,6 +510,8 @@ write.table(DESIGN,file = './Adjusted_mRNA_Design.tsv', sep='\t',
 
 DESIGN <- File('Adjusted_mRNA_Design.tsv', name = 'Adjusted Design',
                parentId = CODE$properties$id)
+
+synSetAnnotations(DESIGN) <- c(annots, fileType="design")
 
 DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, 
                    executed = thisFile)
