@@ -424,6 +424,8 @@ p
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices.
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+annots <- list(differentiationStage="All", dataType="mRNA")
+
 ActivityName <- 'Covariate Analysis of eXpress aligned mRNA data with mixed effects modeling'
   
 thisFileName <- 'CovariateAnalysis_mRNA_mixedEffects_All.Rmd'
@@ -448,6 +450,8 @@ write.table(COUNTS,file = './Processed_CPM_Counts.tsv',sep='\t',
 
 COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed logCPM',
                parentId = CODE$properties$id)
+synSetAnnotations(COUNTS) <- c(annots, fileType="CPM", fileSubType="filtered")
+
 COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, 
                    executed = thisFile)  
   
@@ -461,6 +465,8 @@ EXPR <- File('./Adjusted_mRNA_Expression.tsv',
              name = 'Adjusted Expression',
              parentId = CODE$properties$id)
 
+synSetAnnotations(EXPR) <- c(annots, fileType="residuals", fileSubType="adjusted")
+
 EXPR <- synStore(EXPR, used = ALL_USED_IDs, activityName = ActivityName,
                  executed = thisFile)  
   
@@ -473,6 +479,9 @@ write.table(WEIGHTS,file = './Adjusted_mRNA_Weights.tsv',
 
 WEIGHTS <- File('Adjusted_mRNA_Weights.tsv', name='Adjusted Weights',
                 parentId = CODE$properties$id)
+
+synSetAnnotations(WEIGHTS) <- c(annots, fileType="weights")
+
 WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, 
                     executed = thisFile)
   
@@ -483,6 +492,9 @@ write.table(COVARIATES,file = './Adjusted_mRNA_Covariates.tsv',
 
 COVARIATES <- File('Adjusted_mRNA_Covariates.tsv',name = 'Adjusted Covariates',
                    parentId = CODE$properties$id)
+
+synSetAnnotations(COVARIATES) <- c(annots, fileType="covariates")
+
 COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, 
                        executed = thisFile)
 
@@ -493,6 +505,8 @@ write.table(DESIGN,file = './Adjusted_mRNA_Design.tsv', sep='\t',
 
 DESIGN <- File('Adjusted_mRNA_Design.tsv', name = 'Adjusted Design',
                parentId = CODE$properties$id)
+
+synSetAnnotations(DESIGN) <- c(annots, fileType="design")
 
 DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, 
                    executed = thisFile)
