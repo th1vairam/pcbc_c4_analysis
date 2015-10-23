@@ -348,25 +348,33 @@ residualSigCovars[["PC_res"]][[2]]$plotData
 Reperform normalisation with custom design matrix (manually with Diffname short, Gender, Reprogramming Gene Combination, Cell Type of Origin Level2, Culture Conditions, run as fixed effects and Donor ID as random effects)
 ```{r reperform.normalisation}
 # Post adjusted design matrix
-DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols]
-    
 DM1 = getDesignMatrix(dplyr::select(COVARIATES,
                                     one_of(postAdjustCovars$fixed)),
                       Intercept = F)
+
+DM1$design = DM1$design[, linColumnFinder(DM1$design)$indepCols]
+
 # Estimate correlation of random effects
-VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=F)
-correlation <- duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DM1$design, block=COVARIATES$Donor_ID)
+VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, 
+                                     design=DM1$design, plot=F)
+
+correlation <- duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION$E,
+                                    design=DM1$design, block=COVARIATES$Donor_ID)
   
 # Re-calculate voom weights with correlation of random effects
-VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=F,
-                                     block=COVARIATES$Donor_ID, correlation = correlation$cor)
+VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, 
+                                     design=DM1$design, plot=F, 
+                                     block=COVARIATES$Donor_ID, 
+                                     correlation=correlation$cor)
   
 # Re-calculate linear fit using new weights and new design
-VOOM.ADJUSTED.FIT = lmFit(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DM1$design, weights = VOOM.ADJUSTED.GENE_EXPRESSION$weights,
+VOOM.ADJUSTED.FIT = lmFit(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DM1$design, 
+                          weights = VOOM.ADJUSTED.GENE_EXPRESSION$weights,
                           block=COVARIATES$Donor_ID, correlation = correlation$cor)
 
 # Residuals after normalisation
-RESIDUAL.GENE_EXPRESSION = residuals.MArrayLM(VOOM.ADJUSTED.FIT,VOOM.ADJUSTED.GENE_EXPRESSION$E)
+RESIDUAL.GENE_EXPRESSION = residuals.MArrayLM(VOOM.ADJUSTED.FIT,
+                                              VOOM.ADJUSTED.GENE_EXPRESSION$E)
 
 # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
 residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION,
@@ -387,7 +395,7 @@ residualSigCovars[["PC_res"]][[1]]$plotData
 ```{r residualSigCovars.manual.ALL, fig.width=25, fig.height=12}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
-PCA of adjusted expression
+#### PCA of adjusted expression
 ```{r new.design, cache=TRUE, fig.height=8, fig.width=8}
 # Find principal components of expression to plot
 PC <- prcomp(RESID.EXPR)
@@ -407,12 +415,14 @@ plotdata <- merge(plotdata, METADATA, by="UID")
 
 p <- ggplot(plotdata, aes(x=PC1, y=PC2))
 p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
-p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + scale_shape_manual(values=1:7) + theme(legend.position="top") 
+p <- p + theme_bw() + scale_size_manual(values = c(4, 2))
+p <- p + scale_shape_manual(values=1:7)
+p <- p + theme(legend.position="top") 
 p <- p + geom_text(aes(label= labels), size=4, hjust=0)
 p
 ```
 ### Synapse Store
-Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
+Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices.
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
 ActivityName <- 'Covariate Analysis of eXpress aligned mRNA data with mixed effects modeling'
   
@@ -427,40 +437,67 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Populate wiki with results
-CODE <- Folder(name = 'Covariate Analysis mRNA Mixed Effects All',parentId = parentId)
+CODE <- Folder(name = 'Covariate Analysis mRNA Mixed Effects All',
+               parentId = parentId)
 CODE <- synStore(CODE)
 
 # Store counts matrix
 COUNTS <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')
-write.table(COUNTS,file = './Processed_CPM_Counts.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed logCPM',parentId = CODE$properties$id)
-COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
+write.table(COUNTS,file = './Processed_CPM_Counts.tsv',sep='\t',
+            row.names=F, col.names=T, quote=F)
+
+COUNTS <- File('./Processed_CPM_Counts.tsv',name = 'Processed logCPM',
+               parentId = CODE$properties$id)
+COUNTS <- synStore(COUNTS, used = ALL_USED_IDs, activityName = ActivityName, 
+                   executed = thisFile)  
   
 # Adjusted Expression Data
 RESID.EXPR <- rownameToFirstColumn(RESID.EXPR,'GeneName')  
-write.table(RESID.EXPR,file = './Adjusted_mRNA_Expression.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-EXPR <- File('./Adjusted_mRNA_Expression.tsv',name = 'Adjusted Expression',parentId = CODE$properties$id)
-EXPR <- synStore(EXPR, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)  
+
+write.table(RESID.EXPR, file = './Adjusted_mRNA_Expression.tsv',
+            sep='\t', row.names=F, col.names=T, quote=F)
+
+EXPR <- File('./Adjusted_mRNA_Expression.tsv',
+             name = 'Adjusted Expression',
+             parentId = CODE$properties$id)
+
+EXPR <- synStore(EXPR, used = ALL_USED_IDs, activityName = ActivityName,
+                 executed = thisFile)  
   
 # Adjustment Weights 
-WEIGHTS <- cbind(RESID.EXPR$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
+WEIGHTS <- cbind(RESID.EXPR$GeneName, VOOM.ADJUSTED.GENE_EXPRESSION$weights)
 colnames(WEIGHTS) <- colnames(EXPR)  
-write.table(WEIGHTS,file = './Adjusted_mRNA_Weights.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-WEIGHTS <- File('Adjusted_mRNA_Weights.tsv',name = 'Adjusted Weights',parentId = CODE$properties$id)
-WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
+
+write.table(WEIGHTS,file = './Adjusted_mRNA_Weights.tsv',
+            sep='\t', row.names=F, col.names=T, quote=F)
+
+WEIGHTS <- File('Adjusted_mRNA_Weights.tsv', name='Adjusted Weights',
+                parentId = CODE$properties$id)
+WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, 
+                    executed = thisFile)
   
 # Covariates Matrix
 COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
-write.table(COVARIATES,file = './Adjusted_mRNA_Covariates.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-COVARIATES <- File('Adjusted_mRNA_Covariates.tsv',name = 'Adjusted Covariates',parentId = CODE$properties$id)
-COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
+write.table(COVARIATES,file = './Adjusted_mRNA_Covariates.tsv',
+            sep='\t', row.names=F, col.names=T, quote=F)
+
+COVARIATES <- File('Adjusted_mRNA_Covariates.tsv',name = 'Adjusted Covariates',
+                   parentId = CODE$properties$id)
+COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, 
+                       executed = thisFile)
 
 # Design Matrix
-DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design,'UID')
-write.table(DESIGN,file = './Adjusted_mRNA_Design.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-DESIGN <- File('Adjusted_mRNA_Design.tsv',name = 'Adjusted Design',parentId = CODE$properties$id)
-DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = thisFile)
+DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design, 'UID')
+write.table(DESIGN,file = './Adjusted_mRNA_Design.tsv', sep='\t',
+            row.names=F,col.names=T,quote=F)
+
+DESIGN <- File('Adjusted_mRNA_Design.tsv', name = 'Adjusted Design',
+               parentId = CODE$properties$id)
+
+DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, 
+                   executed = thisFile)
 ```
+
 |  *Results*           |  *SynapseID*                                                               |
 |  -------             |   ---------                                                                |
 |  Adjusted Expression |  `r paste(EXPR$properties$id,EXPR$properties$versionNumber,sep='.')`       |
