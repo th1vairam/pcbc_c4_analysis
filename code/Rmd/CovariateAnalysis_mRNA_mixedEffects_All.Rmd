@@ -206,10 +206,13 @@ Correlation between pca of unadjusted mRNA expression and covariates is used to 
 # Find correlation between PC's of gene expression with covariates
 DESIGN = getDesignMat2Fact(DM$design,FactorCovariates)
 colnames(DESIGN) = substr(colnames(DESIGN),1,50)
-preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DESIGN,'NULL design(voom-normalized)', isKeyPlot=TRUE)
+preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DESIGN,
+                                                 'NULL design(voom-normalized)',
+                                                 isKeyPlot=TRUE)
 
 # Find significant covariates
-adjustCovars = designMatVarsToCovars(getCovariatesMap(DM),preAdjustedSigCovars$significantCovars)
+adjustCovars = designMatVarsToCovars(getCovariatesMap(DM),
+                                     preAdjustedSigCovars$significantCovars)
 ```
 Significant covariates to adjust at FDR 0.1 are `r paste(gsub('_','\\\\_',adjustCovars), collapse= ',')`
 ```{r preAdjustedSigCovars.NULL, fig.width=25, fig.height=12}
@@ -228,16 +231,25 @@ postAdjustCovars$random = 'Donor_ID'
 # Assign residual covariates
 residualSigCovars = preAdjustedSigCovars
 
-significantCovars = designMatVarsToCovars(getCovariatesMap(DM), residualSigCovars$significantCovars)
-covariatesEffects = designMat2CovEffects(getCovariatesMap(DM),residualSigCovars$Effects.significantCovars)
-covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars$fixed,postAdjustCovars$random))]
+significantCovars = designMatVarsToCovars(getCovariatesMap(DM), 
+                                          residualSigCovars$significantCovars)
+
+covariatesEffects = designMat2CovEffects(getCovariatesMap(DM),
+                                         residualSigCovars$Effects.significantCovars)
+
+covariatesEffects = covariatesEffects[setdiff(significantCovars,
+                                              c(postAdjustCovars$fixed,
+                                                postAdjustCovars$random))]
 
 postAdjustCovars$fixed = names(which.max(covariatesEffects))
 
 loopCount = 0 
 while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
   print(paste('Using following covariates in the model',
-              paste(paste(postAdjustCovars$fixed,collapse=','),'as fixed effects and', paste(postAdjustCovars$random,collapse=','),'as random effects'),
+              paste(paste(postAdjustCovars$fixed, collapse=', '),
+                    'as fixed effects and', 
+                    paste(postAdjustCovars$random, collapse=', '),
+                    'as random effects'),
               sep=':'))
   
   # Post adjusted design matrix
@@ -275,7 +287,13 @@ while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
   postAdjustCovars$fixed = c(postAdjustCovars$fixed,names(which.max(covariatesEffects)))
   loopCount = loopCount + 1
 }
-tmp <- paste('Using following covariates in the final model', paste(paste(gsub('_','\\\\_',postAdjustCovars$fixed),collapse=','),'as fixed effects and', paste(gsub('_','\\\\_',postAdjustCovars$random),collapse=','),'as random effects'))
+tmp <- paste('Using following covariates in the final model:', 
+             paste(paste(gsub('_','\\\\_',postAdjustCovars$fixed),
+                         collapse=', '),
+                   'as fixed effects and', 
+                   paste(gsub('_','\\\\_',postAdjustCovars$random),
+                         collapse=', '),
+                   'as random effects'))
 ```
 `r tmp`
 
@@ -288,21 +306,31 @@ print(tmp$relations)
 DM1$design = DM1$design[,tmp$indepCols] 
 
 # Recalculate weights with new design
-VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=F)
-correlation <- duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DM1$design, block=COVARIATES$Donor_ID)
+VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, 
+                                     design=DM1$design, plot=F)
+
+correlation <- duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION$E, 
+                                    design=DM1$design, block=COVARIATES$Donor_ID)
 
 # Re-calculate voom weights with correlation of random effects
-VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM1$design, plot=T,
-                                     block=COVARIATES$Donor_ID, correlation = correlation$cor)
+VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, 
+                                     design=DM1$design, plot=T,
+                                     block=COVARIATES$Donor_ID, 
+                                     correlation = correlation$cor)
 
 # Linear model with new weights and design
-VOOM.ADJUSTED.FIT = lmFit(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DM1$design, weights = VOOM.ADJUSTED.GENE_EXPRESSION$weights, block=COVARIATES$Donor_ID, correlation = correlation$cor)  
+VOOM.ADJUSTED.FIT = lmFit(VOOM.ADJUSTED.GENE_EXPRESSION$E, 
+                          design=DM1$design, 
+                          weights = VOOM.ADJUSTED.GENE_EXPRESSION$weights,
+                          block=COVARIATES$Donor_ID, 
+                          correlation = correlation$cor)  
 ```
 ### Sanity Check
 Residualise significant covariates using a linear model and find correlation between PCA of residuals with covariates
 ```{r calculate.residuals, include=FALSE}
 # Residuals after normalisation
-RESIDUAL.GENE_EXPRESSION = residuals.MArrayLM(VOOM.ADJUSTED.FIT,VOOM.ADJUSTED.GENE_EXPRESSION$E)
+RESIDUAL.GENE_EXPRESSION = residuals.MArrayLM(VOOM.ADJUSTED.FIT,
+                                              VOOM.ADJUSTED.GENE_EXPRESSION$E)
 
 # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
 residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, 
