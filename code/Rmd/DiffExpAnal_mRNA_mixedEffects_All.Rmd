@@ -196,11 +196,8 @@ Donor\_ID
 # Post adjusted design matrix
 comparison <- "Diffname_short"
 
-newVars <- rotateVars(postAdjustedCovars, comparison)
-newCovariates <- COVARIATES[, newVars]
-
-DESIGN = getDesignMatrix(newCovariates, Intercept = F)
-DESIGN = DESIGN$design[, linColumnFinder(DESIGN$design)$indepCols]
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
 DIFFNAME <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
                        WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
@@ -210,7 +207,7 @@ save(DIFFNAME, file='DifferentialExpressionDiffName_mixedEffects.RData')
 ```
 Get differentially expressed genes using limma package with following coefficients in the linear model:
 
-`r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=',')`
+`r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=', ')`
 
 Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets1,cache=TRUE}
@@ -224,11 +221,10 @@ kable(tmp)
 ```{r gender, cache=TRUE}
 comparison <- "Gender"
 
-newVars <- rotateVars(postAdjustedCovars, comparison)
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
-newCovariates <- COVARIATES[, newVars]
-
-GENDER <- doDiffExpr(PROC_COUNT = PROC_COUNT, COVARIATES = newCovariates,
+GENDER <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
                      WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
                      comparison=comparison)
 
@@ -249,13 +245,12 @@ kable(tmp)
 ```{r rep.gene.combo, cache=TRUE}
 comparison <- "Reprogramming_Gene_Combination"
 
-newVars <- rotateVars(postAdjustedCovars, comparison)
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
-newCovariates <- COVARIATES[, newVars]
-
-REP.GENE.COMBO <- doDiffExpr(PROC_COUNT = PROC_COUNT, COVARIATES = newCovariates,
-                     WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
-                     comparison=comparison)
+REP.GENE.COMBO <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
+                             WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
+                             comparison=comparison)
 
 save(REP.GENE.COMBO, file='DifferentialExpressionRepGeneCombo.RData')
 ```
@@ -271,14 +266,11 @@ kable(tmp)
 ```{r cell.type.of.origin, cache=TRUE}
 comparison <- "Cell_Type_of_Origin_Level2"
 
-newVars <- rotateVars(postAdjustedCovars, comparison)
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
-newCovariates <- COVARIATES[, newVars]
-
-CELL.TYPE.OF.ORIGIN <- doDiffExpr(PROC_COUNT = PROC_COUNT, 
-                                  COVARIATES = newCovariates,
-                                  WEIGHTS = WEIGHTS,
-                                  block=COVARIATES$Donor_ID,
+CELL.TYPE.OF.ORIGIN <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
+                                  WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
                                   comparison=comparison)
 
 save(CELL.TYPE.OF.ORIGIN, file='DifferentialExpressionCellTypeOfOrigin.RData')
@@ -295,15 +287,12 @@ kable(tmp)
 ```{r culture.conditions, cache=TRUE}
 comparison <- "Culture_Conditions"
 
-newVars <- rotateVars(postAdjustedCovars, comparison)
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
-newCovariates <- COVARIATES[, newVars]
-
-CELL.TYPE.OF.ORIGIN <- doDiffExpr(PROC_COUNT = PROC_COUNT, 
-                                  COVARIATES = newCovariates,
-                                  WEIGHTS = WEIGHTS,
-                                  block=COVARIATES$Donor_ID,
-                                  comparison=comparison)
+CULT.COND <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
+                        WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
+                        comparison=comparison)
 
 save(CULT.COND,file='DifferentialExpressionCultCond.RData')
 ```
@@ -319,12 +308,12 @@ kable(tmp)
 #### Get pvalue and fold changes of some important genes
 ```{r print.imp.genes}
 FC <- plyr::join_all(list(rownameToFirstColumn(DIFFNAME$logFC,'GeneNames'),
-                    rownameToFirstColumn(GENDER$logFC,'GeneNames'),
-                    rownameToFirstColumn(CELL.TYPE.OF.ORIGIN$logFC,'GeneNames'),
-                    rownameToFirstColumn(CULT.COND$logFC,'GeneNames'),
-                    rownameToFirstColumn(REP.GENE.COMBO$logFC,'GeneNames')),
-               by = 'GeneNames',
-               match = 'all')
+                          rownameToFirstColumn(GENDER$logFC,'GeneNames'),
+                          rownameToFirstColumn(CELL.TYPE.OF.ORIGIN$logFC,'GeneNames'),
+                          rownameToFirstColumn(CULT.COND$logFC,'GeneNames'),
+                          rownameToFirstColumn(REP.GENE.COMBO$logFC,'GeneNames')),
+                     by = 'GeneNames',
+match = 'all')
 
 PVAL <- join_all(list(rownameToFirstColumn(DIFFNAME$adj.P.Val,'GeneNames'),
                       rownameToFirstColumn(GENDER$adj.P.Val,'GeneNames'),
