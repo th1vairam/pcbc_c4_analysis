@@ -247,65 +247,17 @@ kable(tmp)
 ```
 #### Reprogramming Gene Combination
 ```{r rep.gene.combo, cache=TRUE}
-# Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Reprogramming_Gene_Combination",
-                                       "Gender", "Diffname_short",
-                                       "Cell_Type_of_Origin_Level2",
-                                       "Culture_Conditions", "run",
-                                       "Donor_Life_Stage")],
-                         Intercept = F)
+comparison <- "Reprogramming_Gene_Combination"
 
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
-    
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN, 
-                                    weights = WEIGHTS, 
-                                    block=COVARIATES$Donor_ID)
+newVars <- rotateVars(postAdjustedCovars, comparison)
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, 
-            block=COVARIATES$Donor_ID, correlation=correlation$cor)
+newCovariates <- COVARIATES[, newVars]
 
-# Make contrast to check differential expression
-CONT.NAMES <- colnames(DESIGN)[grep("Reprogramming_Gene_Combination", colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+REP.GENE.COMBO <- doDiffExpr(PROC_COUNT = PROC_COUNT, COVARIATES = newCovariates,
+                     WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
+                     comparison=comparison)
 
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub("Reprogramming_Gene_Combination",'',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-REP.GENE.COMBO <- list()
-REP.GENE.COMBO$logFC <- data.frame(row.names = rownames(PROC_COUNT))
-REP.GENE.COMBO$adj.P.Val <- data.frame(row.names = rownames(PROC_COUNT))
-REP.GENE.COMBO$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC_COUNT)[1])    
-  REP.GENE.COMBO$logFC[,i] <- tmp[rownames(REP.GENE.COMBO$logFC),'logFC']
-  REP.GENE.COMBO$adj.P.Val[,i] <- tmp[rownames(REP.GENE.COMBO$adj.P.Val),'adj.P.Val'] 
-  
-  REP.GENE.COMBO$SIG.SETS <- rbind(REP.GENE.COMBO$SIG.SETS,
-                             getUpDownGenes(REP.GENE.COMBO$adj.P.Val[,i], REP.GENE.COMBO$logFC[,i], rownames(REP.GENE.COMBO$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-REP.GENE.COMBO$SIG.EXP.POS <- REP.GENE.COMBO$adj.P.Val<=0.05 & REP.GENE.COMBO$logFC >= 0   
-REP.GENE.COMBO$NUM.SIG.EXP.POS <- colSums(REP.GENE.COMBO$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-REP.GENE.COMBO$SIG.EXP.NEG <- REP.GENE.COMBO$adj.P.Val<=0.05 & REP.GENE.COMBO$logFC <= 0
-REP.GENE.COMBO$NUM.SIG.EXP.NEG <- colSums(REP.GENE.COMBO$SIG.EXP.NEG)
-
-save(REP.GENE.COMBO,file='DifferentialExpressionRepGeneCombo.RData')
+save(REP.GENE.COMBO, file='DifferentialExpressionRepGeneCombo.RData')
 ```
 Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=',')` in linear model
 
