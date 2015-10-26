@@ -69,6 +69,13 @@ parentId = 'syn5008933'
 FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
 
 ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
+
+# The variables determined in the covariate analysis step
+postAdjustedCovars <- c("Diffname_short", "Gender", "Cell_Line_Type",
+                        "Reprogramming_Gene_Combination",
+                        "Cell_Type_of_Origin_Level2",
+                        "Culture_Conditions", "run", "Donor_Life_Stage")
+
 ```
 Obtain processed counts, design, weights and covariates matrix from Synapse.
 ```{r getdata, cache=TRUE, include=FALSE}
