@@ -57,7 +57,7 @@ knitr::opts_chunk$set(
 ### Download data
 ```{r setup, include=FALSE}
 # Input Parameters
-PROC.COUNT_ID = 'syn4483934'
+PROCESSED_COUNT_ID = 'syn4483934'
 WEIGHTS_ID = 'syn4483938'
 DESIGN_ID = 'syn4483942'
 COVARIATES_ID = 'syn4483940'
@@ -72,7 +72,7 @@ ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
 Obtain processed counts, design, weights and covariates matrix from synapse.
 ```{r getdata, cache=TRUE, include=FALSE}
 # Get count matrix
-PROC.COUNT_OBJ = synGet(PROC.COUNT_ID)
+PROC.COUNT_OBJ = synGet(PROCESSED_COUNT_ID)
 ALL_USED_IDs = PROC.COUNT_OBJ$properties$id
 PROC.COUNT = fread(getFileLocation(PROC.COUNT_OBJ), data.table=FALSE)
 row.names(PROC.COUNT) = PROC.COUNT[,1]
