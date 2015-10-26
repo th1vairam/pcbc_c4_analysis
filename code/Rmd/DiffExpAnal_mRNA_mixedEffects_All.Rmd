@@ -70,7 +70,7 @@ FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Li
 
 ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
 ```
-Obtain processed counts, design, weights and covariates matrix from synapse.
+Obtain processed counts, design, weights and covariates matrix from Synapse.
 ```{r getdata, cache=TRUE, include=FALSE}
 # Get count matrix
 PROC_COUNT_OBJ = synGet(PROCESSED_COUNT_ID)
