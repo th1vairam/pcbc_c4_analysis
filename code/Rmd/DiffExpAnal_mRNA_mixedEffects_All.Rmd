@@ -83,39 +83,40 @@ doDiffExpr <- function(countMat, designMat, weights, block, comparison) {
   # from the whole covariate matrix
   
   # Calculate correlation between donors
-  correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN,
-                                      weights = WEIGHTS,
+  correlation <- duplicateCorrelation(countMat, design = designMat,
+                                      weights = weights,
                                       block=block)
   
   # Fit linear model using mixed effects design
-  FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, 
+  fit = lmFit(countMat, design = designMat, weights = weights, 
               block=block, correlation = correlation$cor)
   
-  CONT.NAMES2 <- colnames(DESIGN)[grep(comparison, colnames(DESIGN))]
-  CONT.NAMES <- combn(CONT.NAMES, 2)
-  CONT.NAMES <- apply(CONT.NAMES, 2, paste, collapse='-')
+  contrastNames <- colnames(designMat)[grep(comparison, colnames(designMat))]
+  contrastNames <- combn(contrastNames, 2)
+  contrastNames <- apply(contrastNames, 2, paste, collapse='-')
 
-  CONT <- makeContrasts(contrasts=CONT.NAMES, levels=colnames(FIT$coefficients))
+  cont <- makeContrasts(contrasts=contrastNames, 
+                        levels=colnames(fit$coefficients))
   
-  colnames(CONT) <- sapply(colnames(CONT),
+  colnames(cont) <- sapply(colnames(cont),
                            function(x){x <- gsub(comparison, '', x);
                            x <- gsub('-','_vs_',x);
                            x <- paste('All',x,sep='__')})
   
   # Refit contrasts
-  FIT.CONTRAST <- contrasts.fit(FIT,CONT)
+  fitContrast <- contrasts.fit(fit, cont)
   
   # Estimate moderated t-statistics
-  FIT.CONTRAST <- eBayes(FIT.CONTRAST)
+  fitContrast <- eBayes(fitContrast)
   
   # Obtain all the differential expession combinations
   foo <- list()
-  foo$logFC <- data.frame(row.names = rownames(PROC_COUNT))
-  foo$adj.P.Val <- data.frame(row.names = rownames(PROC_COUNT))
+  foo$logFC <- data.frame(row.names = rownames(countMat))
+  foo$adj.P.Val <- data.frame(row.names = rownames(countMat))
   foo$SIG.SETS <- data.frame()
   
-  for (i in colnames(CONT)){
-    tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC_COUNT)[1])    
+  for (i in colnames(cont)){
+    tmp <- topTable(fitContrast, coef=i, number=dim(countMat)[1])    
     foo$logFC[,i] <- tmp[rownames(foo$logFC),'logFC']
     foo$adj.P.Val[,i] <- tmp[rownames(foo$adj.P.Val),'adj.P.Val'] 
     
