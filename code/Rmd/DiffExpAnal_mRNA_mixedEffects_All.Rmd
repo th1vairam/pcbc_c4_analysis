@@ -61,6 +61,11 @@ rotateVars <- function(x, first) {
 }
 
 makeDesignMatrix <- function(covariates, comparison, covariateColOrder=NA) {
+  # Make a design matrix by reordering the column covariates
+  # and column-binding each separate matrix for each column together
+  # with complete listing of dummy variables (no reference levels)
+  # and also remove and linearly dependent columns
+  
   vars <- ifelse(is.na(covariateColOrder), 
                  colnames(covariates),
                  covariateColOrder)
@@ -72,7 +77,11 @@ makeDesignMatrix <- function(covariates, comparison, covariateColOrder=NA) {
 
   DESIGN
 }
-doDiffExpr <- function(PROC_COUNT, DESIGN, WEIGHTS, block, comparison) {
+
+doDiffExpr <- function(countMat, designMat, weights, block, comparison) {
+  # Helper function to do all pairwise differential expressions on a single covariate
+  # from the whole covariate matrix
+  
   # Calculate correlation between donors
   correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN,
                                       weights = WEIGHTS,
