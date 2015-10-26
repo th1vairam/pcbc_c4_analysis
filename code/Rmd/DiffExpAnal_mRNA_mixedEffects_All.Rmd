@@ -57,16 +57,17 @@ knitr::opts_chunk$set(
 ### Download data
 ```{r setup, include=FALSE}
 # Input Parameters
-PROCESSED_COUNT_ID = 'syn4483934'
-WEIGHTS_ID = 'syn4483938'
-DESIGN_ID = 'syn4483942'
-COVARIATES_ID = 'syn4483940'
+PROCESSED_COUNT_ID = 'syn5011095'
+WEIGHTS_ID = 'syn5011147'
+DESIGN_ID = 'syn5011151'
+COVARIATES_ID = 'syn5011149'
 
 SYNAPSE_STORE = T
-parentId = 'syn3256504'
+parentId = 'syn5008933'
 
 # Specify factor and continuous covariates pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
+
 ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
 ```
 Obtain processed counts, design, weights and covariates matrix from synapse.
