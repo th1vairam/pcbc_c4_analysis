@@ -197,12 +197,13 @@ Donor\_ID
 comparison <- "Diffname_short"
 
 newVars <- rotateVars(postAdjustedCovars, comparison)
+newCovariates <- COVARIATES[, newVars]
 
-DESIGN = getDesignMatrix(COVARIATES[, newVars], Intercept = F)
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
+DESIGN = getDesignMatrix(newCovariates, Intercept = F)
+DESIGN = DESIGN$design[, linColumnFinder(DESIGN$design)$indepCols]
 
-DIFFNAME <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN, 
-                       WEIGHTS = WEIGHTS, COVARIATES = COVARIATES, 
+DIFFNAME <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
+                       WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
                        comparison=comparison)
 
 save(DIFFNAME, file='DifferentialExpressionDiffName_mixedEffects.RData')
