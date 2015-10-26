@@ -72,11 +72,11 @@ ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
 Obtain processed counts, design, weights and covariates matrix from synapse.
 ```{r getdata, cache=TRUE, include=FALSE}
 # Get count matrix
-PROC.COUNT_OBJ = synGet(PROCESSED_COUNT_ID)
-ALL_USED_IDs = PROC.COUNT_OBJ$properties$id
-PROC.COUNT = fread(getFileLocation(PROC.COUNT_OBJ), data.table=FALSE)
-row.names(PROC.COUNT) = PROC.COUNT[,1]
-PROC.COUNT = as.matrix(PROC.COUNT[,-(1)])
+PROC_COUNT_OBJ = synGet(PROCESSED_COUNT_ID)
+ALL_USED_IDs = PROC_COUNT_OBJ$properties$id
+PROC_COUNT = fread(getFileLocation(PROC_COUNT_OBJ), data.table=FALSE)
+row.names(PROC_COUNT) = PROC_COUNT[,1]
+PROC_COUNT = as.matrix(PROC_COUNT[,-(1)])
 
 # Get sample weights
 WEIGHTS_OBJ = synGet(WEIGHTS_ID)
@@ -84,7 +84,7 @@ ALL_USED_IDs = c(ALL_USED_IDs, WEIGHTS_OBJ$properties$id)
 WEIGHTS = fread(getFileLocation(WEIGHTS_OBJ), data.table=FALSE)
 row.names(WEIGHTS) = WEIGHTS[,1]
 WEIGHTS = as.matrix(WEIGHTS[,-(1)])
-colnames(WEIGHTS) = colnames(PROC.COUNT)
+colnames(WEIGHTS) = colnames(PROC_COUNT)
 
 # Get design matrix
 DESIGN_OBJ = synGet(DESIGN_ID)
