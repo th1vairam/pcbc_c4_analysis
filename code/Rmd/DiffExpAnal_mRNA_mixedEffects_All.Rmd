@@ -115,9 +115,9 @@ Synapse IDs of used data:
 ### Differential expression analysis
 Obtain differentially expressed genes with the following covariates (as obtained from covariates analysis) in the model: 
 #### Fixed Effects
-Diffname_short, Gender, Cell_Line_Type, Reprogramming_Gene_Combination, Cell_Type_of_Origin_Level2, Culture_Conditions, run, Donor_Life_Stage
+Diffname\_short, Gender, Cell\_Line\_Type, Reprogramming\_Gene\_Combination, Cell\_Type\_of\_Origin\_Level2, Culture\_Conditions, run, Donor\_Life\_Stage
 #### Random Effects
-Donor ID
+Donor\_ID
 #### Differentiation stages
 ```{r diffstate, cache=TRUE, include=FALSE}
 # Post adjusted design matrix
