@@ -222,69 +222,24 @@ kable(tmp)
 ```
 #### Gender
 ```{r gender, cache=TRUE}
-# Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Gender","Diffname_short",
-                                       "Reprogramming_Gene_Combination",
-                                       "Cell_Type_of_Origin_Level2",
-                                       "Culture_Conditions", "run", 
-                                       "Donor_Life_Stage")],
-                         Intercept = F)
+comparison <- "Gender"
 
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
-    
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN,
-                                    weights = WEIGHTS, block=COVARIATES$Donor_ID)
+newVars <- rotateVars(postAdjustedCovars, comparison)
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, 
-            block=COVARIATES$Donor_ID, correlation = correlation2$cor)
+newCovariates <- COVARIATES[, newVars]
 
-# Make contrast to check differential expression
-CONT.NAMES2 <- colnames(DESIGN)[grep('Gender', colnames(DESIGN2))]
-CONT.NAMES <- combn(CONT.NAMES, 2)
-CONT.NAMES <- apply(CONT.NAMES, 2, paste, collapse='-')
+GENDER <- doDiffExpr(PROC_COUNT = PROC_COUNT, COVARIATES = newCovariates,
+                     WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
+                     comparison=comparison)
 
-CONT <- makeContrasts(contrasts=CONT.NAMES, levels=colnames(FIT$coefficients))
-
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub('Gender','',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-  
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-GENDER <- list()
-GENDER$logFC <- data.frame(row.names = rownames(PROC_COUNT))
-GENDER$adj.P.Val <- data.frame(row.names = rownames(PROC_COUNT))
-GENDER$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC_COUNT)[1])    
-  GENDER$logFC[,i] <- tmp[rownames(GENDER$logFC),'logFC']
-  GENDER$adj.P.Val[,i] <- tmp[rownames(GENDER$adj.P.Val),'adj.P.Val'] 
-  
-  GENDER$SIG.SETS <- rbind(GENDER$SIG.SETS,
-                             getUpDownGenes(GENDER$adj.P.Val[,i], GENDER$logFC[,i], rownames(GENDER$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-GENDER$SIG.EXP.POS <- GENDER$adj.P.Val<=0.05 & GENDER$logFC >= 0
-GENDER$NUM.SIG.EXP.POS <- colSums(GENDER$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-GENDER$SIG.EXP.NEG <- GENDER$adj.P.Val<=0.05 & GENDER$logFC <= 0
-GENDER$NUM.SIG.EXP.NEG <- colSums(GENDER$SIG.EXP.NEG)
-
-save(GENDER,file='DifferentialExpressionGender_mixedEffects.RData')
+save(GENDER, file='DifferentialExpressionGender_mixedEffects.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse = ',')` in linear model
+Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-Number of differentially expressed genes at FDR <= 0.05 and absolute logFC >= 0 or logFC <= 0
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse = ',')`
+
+Number of differentially expressed genes at FDR <= 0.05 and absolute logFC >= 0 or logFC <= 0:
+
 ```{r significant.sets2,cache=TRUE}
 tmp <- cbind(as.data.frame(GENDER$NUM.SIG.EXP.POS),as.data.frame(GENDER$NUM.SIG.EXP.NEG))
 colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
