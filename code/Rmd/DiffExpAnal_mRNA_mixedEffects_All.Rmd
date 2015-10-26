@@ -333,31 +333,28 @@ colnames(tmp) <- c('NUMBER OF UP REG. GENES', 'NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
 
-#### Get pvalue and fold changes of some important genes
 ```{r print.imp.genes}
-FC <- plyr::join_all(list(rownameToFirstColumn(DIFFNAME$logFC,'GeneNames'),
-                          rownameToFirstColumn(GENDER$logFC,'GeneNames'),
-                          rownameToFirstColumn(CELL.TYPE.OF.ORIGIN$logFC,'GeneNames'),
-                          rownameToFirstColumn(CULT.COND$logFC,'GeneNames'),
-                          rownameToFirstColumn(REP.GENE.COMBO$logFC,'GeneNames')),
-                     by = 'GeneNames',
-match = 'all')
+allFC <- llply(list(DIFFNAME$logFC, GENDER$logFC, CELL.TYPE.OF.ORIGIN$logFC,
+                    CULT.COND$logFC, REP.GENE.COMBO$logFC),
+               rownameToFirstColumn, colname="GeneNames")
 
-PVAL <- join_all(list(rownameToFirstColumn(DIFFNAME$adj.P.Val,'GeneNames'),
-                      rownameToFirstColumn(GENDER$adj.P.Val,'GeneNames'),
-                      rownameToFirstColumn(CELL.TYPE.OF.ORIGIN$adj.P.Val,'GeneNames'),
-                      rownameToFirstColumn(CULT.COND$adj.P.Val,'GeneNames'),
-                      rownameToFirstColumn(REP.GENE.COMBO$adj.P.Val,'GeneNames')),
-                 by = 'GeneNames',
-                 match = 'all')
+FC <- plyr::join_all(allFC, by = 'GeneNames', match = 'all')
 
-SIG <- join_all(list(rownameToFirstColumn(DIFFNAME$SIG.EXP.POS+DIFFNAME$SIG.EXP.NEG,'GeneNames'),
-                     rownameToFirstColumn(GENDER$SIG.EXP.POS+GENDER$SIG.EXP.NEG,'GeneNames'),
-                     rownameToFirstColumn(CELL.TYPE.OF.ORIGIN$SIG.EXP.POS+CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG,'GeneNames'),
-                     rownameToFirstColumn(CULT.COND$SIG.EXP.POS+CULT.COND$SIG.EXP.NEG,'GeneNames'),
-                     rownameToFirstColumn(REP.GENE.COMBO$SIG.EXP.POS+REP.GENE.COMBO$SIG.EXP.NEG,'GeneNames')),
-                by = 'GeneNames',
-                match = 'all')
+allPVal <- llply(list(DIFFNAME$adj.P.Val, GENDER$adj.P.Val, 
+                      CELL.TYPE.OF.ORIGIN$adj.P.Val,
+                      CULT.COND$adj.P.Val, REP.GENE.COMBO$adj.P.Val),
+                 rownameToFirstColumn, colname="GeneNames")
+
+PVAL <- join_all(allPVal, by = 'GeneNames', match = 'all')
+
+allSig <- llply(list(DIFFNAME$SIG.EXP.POS + DIFFNAME$SIG.EXP.NEG,
+                     GENDER$SIG.EXP.POS + GENDER$SIG.EXP.NEG,
+                     CELL.TYPE.OF.ORIGIN$SIG.EXP.POS + CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG,
+                     CULT.COND$SIG.EXP.POS + CULT.COND$SIG.EXP.NEG,
+                     REP.GENE.COMBO$SIG.EXP.POS + REP.GENE.COMBO$SIG.EXP.NEG),
+                rownameToFirstColumn, colname="GeneNames")
+
+SIG <- join_all(allSig, by = 'GeneNames', match = 'all')
 
 SIG.SETS <- rbind(DIFFNAME$SIG.SETS,
                   GENDER$SIG.SETS,
