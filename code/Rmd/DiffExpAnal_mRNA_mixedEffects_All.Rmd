@@ -114,12 +114,19 @@ Synapse IDs of used data:
 
 ### Differential expression analysis
 Obtain differentially expressed genes with the following covariates (as obtained from covariates analysis) in the model: 
-* Fixed Effects: Diffname short, Gender, Reprogramming Gene Combination, Cell Type of Origin Level2, Culture Conditions, run
-* Random Effects: Donor ID
+#### Fixed Effects
+Diffname_short, Gender, Cell_Line_Type, Reprogramming_Gene_Combination, Cell_Type_of_Origin_Level2, Culture_Conditions, run, Donor_Life_Stage
+#### Random Effects
+Donor ID
 #### Differentiation stages
 ```{r diffstate, cache=TRUE, include=FALSE}
 # Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Diffname_short","Gender","Reprogramming_Gene_Combination","Cell_Type_of_Origin_Level2","Culture_Conditions","run")], Intercept = F)
+DESIGN = getDesignMatrix(COVARIATES[,c("Diffname_short","Gender","Cell_Line_Type",
+                                       "Reprogramming_Gene_Combination",
+                                       "Cell_Type_of_Origin_Level2",
+                                       "Culture_Conditions","run", "Donor_Life_Stage")], 
+                         Intercept = F)
+
 DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
     
 # Calculate correlation between donors
