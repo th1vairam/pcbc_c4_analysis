@@ -213,8 +213,8 @@ comparison <- "Diffname_short"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-DIFFNAME <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
-                       WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
+DIFFNAME <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                       weights=WEIGHTS, block=COVARIATES$Donor_ID,
                        comparison=comparison)
 
 save(DIFFNAME, file='DifferentialExpressionDiffName_mixedEffects.RData')
@@ -238,9 +238,9 @@ comparison <- "Gender"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-GENDER <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
-                     WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
-                     comparison=comparison)
+GENDER <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                       weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                       comparison=comparison)
 
 save(GENDER, file='DifferentialExpressionGender_mixedEffects.RData')
 ```
@@ -251,8 +251,10 @@ Get differentially expressed genes using limma package with following co-efficie
 Number of differentially expressed genes at FDR <= 0.05 and absolute logFC >= 0 or logFC <= 0:
 
 ```{r significant.sets2,cache=TRUE}
-tmp <- cbind(as.data.frame(GENDER$NUM.SIG.EXP.POS),as.data.frame(GENDER$NUM.SIG.EXP.NEG))
-colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
+tmp <- cbind(as.data.frame(GENDER$NUM.SIG.EXP.POS),
+             as.data.frame(GENDER$NUM.SIG.EXP.NEG))
+
+colnames(tmp) <- c('NUMBER OF UP REG. GENES', 'NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
 #### Reprogramming Gene Combination
@@ -262,17 +264,21 @@ comparison <- "Reprogramming_Gene_Combination"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-REP.GENE.COMBO <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
-                             WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
+REP.GENE.COMBO <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                             weights=WEIGHTS, block=COVARIATES$Donor_ID,
                              comparison=comparison)
 
 save(REP.GENE.COMBO, file='DifferentialExpressionRepGeneCombo.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=',')` in linear model
+Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=',')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets6,cache=TRUE}
-tmp <- cbind(as.data.frame(REP.GENE.COMBO$NUM.SIG.EXP.POS),as.data.frame(REP.GENE.COMBO$NUM.SIG.EXP.NEG))
+tmp <- cbind(as.data.frame(REP.GENE.COMBO$NUM.SIG.EXP.POS),
+             as.data.frame(REP.GENE.COMBO$NUM.SIG.EXP.NEG))
+
 colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
@@ -283,18 +289,22 @@ comparison <- "Cell_Type_of_Origin_Level2"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-CELL.TYPE.OF.ORIGIN <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
-                                  WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
+CELL.TYPE.OF.ORIGIN <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                                  weights=WEIGHTS, block=COVARIATES$Donor_ID,
                                   comparison=comparison)
 
 save(CELL.TYPE.OF.ORIGIN, file='DifferentialExpressionCellTypeOfOrigin.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapes= ',')` in linear model
+Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapes= ',')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets3,cache=TRUE}
-tmp <- cbind(as.data.frame(CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.POS),as.data.frame(CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.NEG))
-colnames(tmp) <- c('NUMBER OF UP. REG. GENES','NUMBER OF DOWN REG. GENES')
+tmp <- cbind(as.data.frame(CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.POS),
+             as.data.frame(CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.NEG))
+
+colnames(tmp) <- c('NUMBER OF UP. REG. GENES', 'NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
 #### Culture Conditions
@@ -304,18 +314,22 @@ comparison <- "Culture_Conditions"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-CULT.COND <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN,
-                        WEIGHTS = WEIGHTS, block=COVARIATES$Donor_ID,
-                        comparison=comparison)
+CULT.COND <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                                  weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                                  comparison=comparison)
 
 save(CULT.COND,file='DifferentialExpressionCultCond.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=',')` in linear model
+Get differentially expressed genes using limma package with following co-efficients  in the linear model:
 
-Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=',')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets5,cache=TRUE}
-tmp <- cbind(as.data.frame(CULT.COND$NUM.SIG.EXP.POS),as.data.frame(CULT.COND$NUM.SIG.EXP.NEG))
-colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
+tmp <- cbind(as.data.frame(CULT.COND$NUM.SIG.EXP.POS),
+             as.data.frame(CULT.COND$NUM.SIG.EXP.NEG))
+
+colnames(tmp) <- c('NUMBER OF UP REG. GENES', 'NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
 
