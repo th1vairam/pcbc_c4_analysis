@@ -176,7 +176,9 @@ DIFFNAME$NUM.SIG.EXP.NEG <- colSums(DIFFNAME$SIG.EXP.NEG)
 
 save(DIFFNAME,file='DifferentialExpressionDiffName_mixedEffects.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=',')` in linear model
+Get differentially expressed genes using limma package with following coefficients in the linear model:
+
+`r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=',')`
 
 Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0
 ```{r significant.sets1,cache=TRUE}
