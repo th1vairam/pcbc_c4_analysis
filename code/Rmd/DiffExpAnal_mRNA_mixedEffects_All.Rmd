@@ -54,6 +54,66 @@ knitr::opts_chunk$set(
   tidy = FALSE,
   cache = FALSE)
 ```
+```{r fxns, include=FALSE}
+rotateVars <- function(x, first) {
+  others <- setdiff(x, first)
+  c(first, others)
+}
+
+doDiffExpr <- function(PROC_COUNT, DESIGN, WEIGHTS, COVARIATES, comparison) {
+  # Calculate correlation between donors
+  correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN,
+                                      weights = WEIGHTS, block=COVARIATES$Donor_ID)
+  
+  # Fit linear model using mixed effects design
+  FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, 
+              block=COVARIATES$Donor_ID, correlation = correlation2$cor)
+  
+  CONT.NAMES2 <- colnames(DESIGN)[grep(comparison, colnames(DESIGN2))]
+  CONT.NAMES <- combn(CONT.NAMES, 2)
+  CONT.NAMES <- apply(CONT.NAMES, 2, paste, collapse='-')
+
+  CONT <- makeContrasts(contrasts=CONT.NAMES, levels=colnames(FIT$coefficients))
+  
+  colnames(CONT) <- sapply(colnames(CONT),
+                           function(x){x <- gsub(comparison, '', x);
+                           x <- gsub('-','_vs_',x);
+                           x <- paste('All',x,sep='__')})
+  
+  # Refit contrasts
+  FIT.CONTRAST <- contrasts.fit(FIT,CONT)
+  
+  # Estimate moderated t-statistics
+  FIT.CONTRAST <- eBayes(FIT.CONTRAST)
+  
+  # Obtain all the differential expession combinations
+  foo <- list()
+  foo$logFC <- data.frame(row.names = rownames(PROC_COUNT))
+  foo$adj.P.Val <- data.frame(row.names = rownames(PROC_COUNT))
+  foo$SIG.SETS <- data.frame()
+  
+  for (i in colnames(CONT)){
+    tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC_COUNT)[1])    
+    foo$logFC[,i] <- tmp[rownames(foo$logFC),'logFC']
+    foo$adj.P.Val[,i] <- tmp[rownames(foo$adj.P.Val),'adj.P.Val'] 
+    
+    foo$SIG.SETS <- rbind(foo$SIG.SETS,
+                             getUpDownGenes(foo$adj.P.Val[,i], foo$logFC[,i], 
+                                            rownames(foo$logFC), i, FC_CUTOFF = 0))
+  }
+  
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
+  foo$SIG.EXP.POS <- foo$adj.P.Val<=0.05 & foo$logFC >= 0
+  foo$NUM.SIG.EXP.POS <- colSums(foo$SIG.EXP.POS)
+  
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
+  foo$SIG.EXP.NEG <- foo$adj.P.Val<=0.05 & foo$logFC <= 0
+  foo$NUM.SIG.EXP.NEG <- colSums(foo$SIG.EXP.NEG)
+  
+  foo  
+}
+```
+
 ### Download data
 ```{r setup, include=FALSE}
 # Input Parameters
