@@ -154,13 +154,6 @@ row.names(WEIGHTS) = WEIGHTS[,1]
 WEIGHTS = as.matrix(WEIGHTS[,-(1)])
 colnames(WEIGHTS) = colnames(PROC_COUNT)
 
-# Get design matrix
-DESIGN_OBJ = synGet(DESIGN_ID)
-ALL_USED_IDs = c(ALL_USED_IDs, DESIGN_OBJ$properties$id)
-DESIGN = fread(getFileLocation(DESIGN_OBJ), data.table=FALSE)
-row.names(DESIGN) = DESIGN[,1]
-DESIGN = as.matrix(DESIGN[,-(1)])
-
 # Get sample weights
 COVARIATES_OBJ = synGet(COVARIATES_ID)
 ALL_USED_IDs = c(ALL_USED_IDs, COVARIATES_OBJ$properties$id)
@@ -182,95 +175,64 @@ Synapse IDs of used data:
 ### Differential expression analysis
 Obtain differentially expressed genes with the following covariates (as obtained from covariates analysis) in the model: 
 #### Fixed Effects
-Diffname\_short, Gender, Cell\_Line\_Type, Reprogramming\_Gene\_Combination, Cell\_Type\_of\_Origin\_Level2, Culture\_Conditions, run, Donor\_Life\_Stage
+`r paste(postAdjustedCovars, collapse=", ")`
 #### Random Effects
 Donor\_ID
 #### Differentiation stages
 ```{r diffstate, cache=TRUE, include=FALSE}
 # Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Diffname_short","Gender","Cell_Line_Type",
-                                       "Reprogramming_Gene_Combination",
-                                       "Cell_Type_of_Origin_Level2",
-                                       "Culture_Conditions","run", "Donor_Life_Stage")], 
-                         Intercept = F)
+comparison <- "Diffname_short"
 
+newVars <- rotateVars(postAdjustedCovars, comparison)
+
+DESIGN = getDesignMatrix(COVARIATES[, newVars], Intercept = F)
 DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
-    
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+DIFFNAME <- doDiffExpr(PROC_COUNT = PROC_COUNT, DESIGN = DESIGN, 
+                       WEIGHTS = WEIGHTS, COVARIATES = COVARIATES, 
+                       comparison=comparison)
 
-# Make contrast to check differential expression between different differentiation stages
-CONT.NAMES <- colnames(DESIGN)[grep('Diffname_short',colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
-
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub('Diffname_short','',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-  
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-DIFFNAME <- list()
-DIFFNAME$logFC <- data.frame(row.names = rownames(PROC_COUNT))
-DIFFNAME$adj.P.Val <- data.frame(row.names = rownames(PROC_COUNT))
-DIFFNAME$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC_COUNT)[1])    
-  DIFFNAME$logFC[,i] <- tmp[rownames(DIFFNAME$logFC),'logFC']
-  DIFFNAME$adj.P.Val[,i] <- tmp[rownames(DIFFNAME$adj.P.Val),'adj.P.Val'] 
-  
-  DIFFNAME$SIG.SETS <- rbind(DIFFNAME$SIG.SETS,
-                             getUpDownGenes(DIFFNAME$adj.P.Val[,i], DIFFNAME$logFC[,i], rownames(DIFFNAME$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-DIFFNAME$SIG.EXP.POS <- DIFFNAME$adj.P.Val<=0.05 & DIFFNAME$logFC >= 0
-DIFFNAME$NUM.SIG.EXP.POS <- colSums(DIFFNAME$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-DIFFNAME$SIG.EXP.NEG <- DIFFNAME$adj.P.Val<=0.05 & DIFFNAME$logFC <= 0
-DIFFNAME$NUM.SIG.EXP.NEG <- colSums(DIFFNAME$SIG.EXP.NEG)
-
-save(DIFFNAME,file='DifferentialExpressionDiffName_mixedEffects.RData')
+save(DIFFNAME, file='DifferentialExpressionDiffName_mixedEffects.RData')
 ```
 Get differentially expressed genes using limma package with following coefficients in the linear model:
 
 `r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=',')`
 
-Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets1,cache=TRUE}
-tmp <- cbind(as.data.frame(DIFFNAME$NUM.SIG.EXP.POS),as.data.frame(DIFFNAME$NUM.SIG.EXP.NEG))
+tmp <- cbind(as.data.frame(DIFFNAME$NUM.SIG.EXP.POS),
+             as.data.frame(DIFFNAME$NUM.SIG.EXP.NEG))
+
 colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
-#### Gender 
+#### Gender
 ```{r gender, cache=TRUE}
 # Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Gender","Diffname_short","Reprogramming_Gene_Combination","Cell_Type_of_Origin_Level2","Culture_Conditions","run")], Intercept = F)
+DESIGN = getDesignMatrix(COVARIATES[,c("Gender","Diffname_short",
+                                       "Reprogramming_Gene_Combination",
+                                       "Cell_Type_of_Origin_Level2",
+                                       "Culture_Conditions", "run", 
+                                       "Donor_Life_Stage")],
+                         Intercept = F)
+
 DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
     
 # Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
+correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN,
+                                    weights = WEIGHTS, block=COVARIATES$Donor_ID)
 
 # Fit linear model using mixed effects design
-FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, 
+            block=COVARIATES$Donor_ID, correlation = correlation2$cor)
 
 # Make contrast to check differential expression
-CONT.NAMES <- colnames(DESIGN)[grep('Gender',colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+CONT.NAMES2 <- colnames(DESIGN)[grep('Gender', colnames(DESIGN2))]
+CONT.NAMES <- combn(CONT.NAMES, 2)
+CONT.NAMES <- apply(CONT.NAMES, 2, paste, collapse='-')
 
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
+CONT <- makeContrasts(contrasts=CONT.NAMES, levels=colnames(FIT$coefficients))
+
 colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub('Gender','',x);
                                                     x <- gsub('-','_vs_',x);
                                                     x <- paste('All',x,sep='__')})
@@ -317,17 +279,26 @@ kable(tmp)
 #### Reprogramming Gene Combination
 ```{r rep.gene.combo, cache=TRUE}
 # Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Reprogramming_Gene_Combination","Gender","Diffname_short","Cell_Type_of_Origin_Level2","Culture_Conditions","run")], Intercept = F)
+DESIGN = getDesignMatrix(COVARIATES[,c("Reprogramming_Gene_Combination",
+                                       "Gender", "Diffname_short",
+                                       "Cell_Type_of_Origin_Level2",
+                                       "Culture_Conditions", "run",
+                                       "Donor_Life_Stage")],
+                         Intercept = F)
+
 DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
     
 # Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
+correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN, 
+                                    weights = WEIGHTS, 
+                                    block=COVARIATES$Donor_ID)
 
 # Fit linear model using mixed effects design
-FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, 
+            block=COVARIATES$Donor_ID, correlation=correlation$cor)
 
 # Make contrast to check differential expression
-CONT.NAMES <- colnames(DESIGN)[grep("Reprogramming_Gene_Combination",colnames(DESIGN))]
+CONT.NAMES <- colnames(DESIGN)[grep("Reprogramming_Gene_Combination", colnames(DESIGN))]
 CONT.NAMES <- combn(CONT.NAMES,2)
 CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
 
