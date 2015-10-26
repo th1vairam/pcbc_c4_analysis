@@ -291,56 +291,19 @@ tmp <- cbind(as.data.frame(CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.POS),as.data.frame(CE
 colnames(tmp) <- c('NUMBER OF UP. REG. GENES','NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
-#### Culture conditions
+#### Culture Conditions
 ```{r culture.conditions, cache=TRUE}
-# Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Culture_Conditions","Diffname_short","Gender", "Reprogramming_Gene_Combination","Cell_Type_of_Origin_Level2","run")], Intercept = F)
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
-    
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
+comparison <- "Culture_Conditions"
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+newVars <- rotateVars(postAdjustedCovars, comparison)
 
-# Make contrast to check differential expression
-CONT.NAMES <- colnames(DESIGN)[grep("Culture_Conditions",colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+newCovariates <- COVARIATES[, newVars]
 
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub("Culture_Conditions",'',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-CULT.COND <- list()
-CULT.COND$logFC <- data.frame(row.names = rownames(PROC_COUNT))
-CULT.COND$adj.P.Val <- data.frame(row.names = rownames(PROC_COUNT))
-CULT.COND$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC_COUNT)[1])    
-  CULT.COND$logFC[,i] <- tmp[rownames(CULT.COND$logFC),'logFC']
-  CULT.COND$adj.P.Val[,i] <- tmp[rownames(CULT.COND$adj.P.Val),'adj.P.Val'] 
-  
-  CULT.COND$SIG.SETS <- rbind(CULT.COND$SIG.SETS,
-                             getUpDownGenes(CULT.COND$adj.P.Val[,i], CULT.COND$logFC[,i], rownames(CULT.COND$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-CULT.COND$SIG.EXP.POS <- CULT.COND$adj.P.Val<=0.05 & CULT.COND$logFC >= 0   
-CULT.COND$NUM.SIG.EXP.POS <- colSums(CULT.COND$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-CULT.COND$SIG.EXP.NEG <- CULT.COND$adj.P.Val<=0.05 & CULT.COND$logFC <= 0
-CULT.COND$NUM.SIG.EXP.NEG <- colSums(CULT.COND$SIG.EXP.NEG)
+CELL.TYPE.OF.ORIGIN <- doDiffExpr(PROC_COUNT = PROC_COUNT, 
+                                  COVARIATES = newCovariates,
+                                  WEIGHTS = WEIGHTS,
+                                  block=COVARIATES$Donor_ID,
+                                  comparison=comparison)
 
 save(CULT.COND,file='DifferentialExpressionCultCond.RData')
 ```
