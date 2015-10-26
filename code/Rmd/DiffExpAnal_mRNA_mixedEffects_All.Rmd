@@ -269,56 +269,19 @@ kable(tmp)
 ```
 #### Cell Type of Origin Level2
 ```{r cell.type.of.origin, cache=TRUE}
-# Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Cell_Type_of_Origin_Level2","Diffname_short","Gender", "Reprogramming_Gene_Combination","Culture_Conditions","run")], Intercept = F)
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
+comparison <- "Cell_Type_of_Origin_Level2"
 
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
+newVars <- rotateVars(postAdjustedCovars, comparison)
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+newCovariates <- COVARIATES[, newVars]
 
-# Make contrast to check differential expression
-CONT.NAMES <- colnames(DESIGN)[grep('Cell_Type_of_Origin_Level2',colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+CELL.TYPE.OF.ORIGIN <- doDiffExpr(PROC_COUNT = PROC_COUNT, 
+                                  COVARIATES = newCovariates,
+                                  WEIGHTS = WEIGHTS,
+                                  block=COVARIATES$Donor_ID,
+                                  comparison=comparison)
 
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub('Cell_Type_of_Origin_Level2','',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-CELL.TYPE.OF.ORIGIN <- list()
-CELL.TYPE.OF.ORIGIN$logFC <- data.frame(row.names = rownames(PROC_COUNT))
-CELL.TYPE.OF.ORIGIN$adj.P.Val <- data.frame(row.names = rownames(PROC_COUNT))
-CELL.TYPE.OF.ORIGIN$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC_COUNT)[1])    
-  CELL.TYPE.OF.ORIGIN$logFC[,i] <- tmp[rownames(CELL.TYPE.OF.ORIGIN$logFC),'logFC']
-  CELL.TYPE.OF.ORIGIN$adj.P.Val[,i] <- tmp[rownames(CELL.TYPE.OF.ORIGIN$adj.P.Val),'adj.P.Val'] 
-  
-  CELL.TYPE.OF.ORIGIN$SIG.SETS <- rbind(CELL.TYPE.OF.ORIGIN$SIG.SETS,
-                             getUpDownGenes(CELL.TYPE.OF.ORIGIN$adj.P.Val[,i], CELL.TYPE.OF.ORIGIN$logFC[,i], rownames(CELL.TYPE.OF.ORIGIN$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-CELL.TYPE.OF.ORIGIN$SIG.EXP.POS <- CELL.TYPE.OF.ORIGIN$adj.P.Val<=0.05 & CELL.TYPE.OF.ORIGIN$logFC >= 0   
-CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.POS <- colSums(CELL.TYPE.OF.ORIGIN$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG <- CELL.TYPE.OF.ORIGIN$adj.P.Val<=0.05 & CELL.TYPE.OF.ORIGIN$logFC <= 0   
-CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.NEG <- colSums(CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG)
-
-save(CELL.TYPE.OF.ORIGIN,file='DifferentialExpressionCellTypeOfOrigin.RData')
+save(CELL.TYPE.OF.ORIGIN, file='DifferentialExpressionCellTypeOfOrigin.RData')
 ```
 Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapes= ',')` in linear model
 
