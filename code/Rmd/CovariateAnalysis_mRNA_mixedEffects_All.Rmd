@@ -4,7 +4,7 @@ author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
 ---
-```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE, cache=FALSE}
 ## It is assumed your working directory is where this file is
 
 # Clear R console screen output
