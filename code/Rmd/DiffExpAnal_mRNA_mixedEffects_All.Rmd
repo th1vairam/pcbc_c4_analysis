@@ -196,11 +196,15 @@ Synapse IDs of used data:
 | Covariates (subset) | `r paste(COVARIATES_OBJ$properties$id,COVARIATES_OBJ$properties$versionNumber,sep='.')` |
 
 ### Differential expression analysis
-Obtain differentially expressed genes with the following covariates (as obtained from covariates analysis) in the model: 
-#### Fixed Effects
-`r paste(postAdjustedCovars, collapse=", ")`
-#### Random Effects
-Donor\_ID
+For each covariate, we fit a linear model using `limma` using only the variables obtained from the covariate analysis:
+
+* Fixed Effects<br/>
+  `r paste(postAdjustedCovars, collapse=", ")`
+* Random Effects<br/>
+  Donor\\_ID
+
+The design matrix is formed by including all variables for each factor encoded as dummy variables, reordered so the variable of interest for comparison is first. With this formulation and the available data, many design matrices are degenerate. Hence, we also remove any columns that are linear combinations of other columns. Because of this, models between separate covariates (separate columns in the covariate matrix) cannot be compared, as each comparison is performed with a separately defined model.
+
 #### Differentiation stages
 ```{r diffstate, cache=TRUE, include=FALSE}
 # Post adjusted design matrix
