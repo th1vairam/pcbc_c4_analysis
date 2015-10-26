@@ -369,8 +369,8 @@ kable(filter(FC, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
 print('Adjusted Pvalue:')
 kable(filter(PVAL, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
 ```
-### Store files in synapse
-Store logFC, adjusted pvalue and differentially expressed genes
+### Store files in Synapse
+Store logFC, adjusted p-values and differentially expressed genes.
 ```{r synapse.store, include = FALSE, eval=TRUE}
 activityName='Differential Expression Analysis of eXpress aligned mRNA data with mixed effects model'
   
@@ -385,30 +385,51 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Create folder to tore the results and populate analysis wiki
-CODE <- Folder(name = 'Differential Expression Analysis mRNA Mixed Effects All',parentId = parentId)
+CODE <- Folder(name = 'Differential Expression Analysis mRNA Mixed Effects All',
+               parentId = parentId)
 CODE <- synStore(CODE)
       
 # Store logFC
-write.table(FC,file='./DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',sep='\t',row.names=F,quote=F)
-FC_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',name = 'logFC',parentId = CODE$properties$id)
-FC_OBJ <- synStore(FC_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+write.table(FC, file='./DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',
+            sep='\t',row.names=F,quote=F)
+
+FC_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',
+               name = 'logFC', parentId = CODE$properties$id)
+FC_OBJ <- synStore(FC_OBJ, used = ALL_USED_IDs, activityName = activityName, 
+                   executed=thisFile)
     
 # Store adjusted pvalue
-write.table(PVAL,file='./DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',sep='\t',row.names=F,quote=F)
-PVAL_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',name = 'Adjusted Pvalue',parentId = CODE$properties$id)
-PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+write.table(PVAL,file='./DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',
+            sep='\t',row.names=F,quote=F)
+
+PVAL_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',
+                 name = 'Adjusted Pvalue', parentId = CODE$properties$id)
+PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, 
+                     activityName = activityName, executed=thisFile)
 
 # Store differentially expressed genes in gct format
-write.table(DEXPP.GENES,file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',sep='\t',row.names=F,quote=F)
-DEXPP_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',name = 'Differentially Expressed Genes gct format',parentId = CODE$properties$id)
-annotations(DEXPP_OBJ) <- list(Pvalue='0.05',Foldchage='0')
-DEXPP_OBJ <- synStore(DEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+write.table(DEXPP.GENES,file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',
+            sep='\t',row.names=F,quote=F)
+DEXPP_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',
+                  name = 'Differentially Expressed Genes gct format',
+                  parentId = CODE$properties$id)
+
+synSetAnnotations(DEXPP_OBJ) <- list(dataType="mRNA", fileType="gct", q=0.05, fc=0)
+
+DEXPP_OBJ <- synStore(DEXPP_OBJ, used = ALL_USED_IDs, 
+                      activityName = activityName, executed=thisFile)
   
 # Store differentially expressed genes for comparison
-write.table(SIG.SETS,file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',sep='\t',row.names=F,quote=F)
-SIG.SETS_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',name = '  Differentially Expressed Genes comparison list',parentId = CODE$properties$id)
-annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='0')
-SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+write.table(SIG.SETS, file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',
+            sep='\t', row.names=F, quote=F)
+
+SIG.SETS_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',
+                     name = 'Differentially Expressed Genes comparison list',
+                     parentId = CODE$properties$id)
+
+synSetAnnotations(SIG.SETS_OBJ) <- list(q=0.05, fc=0)
+SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, 
+                         activityName = activityName, executed=thisFile)
 ```
 |  *Results*                                                      |  *SynapseID*                    |
 |  -------                                                        |   ---------                     |
