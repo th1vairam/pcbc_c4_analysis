@@ -60,16 +60,29 @@ rotateVars <- function(x, first) {
   c(first, others)
 }
 
-doDiffExpr <- function(PROC_COUNT, DESIGN, WEIGHTS, COVARIATES, comparison) {
+makeDesignMatrix <- function(covariates, comparison, covariateColOrder=NA) {
+  vars <- ifelse(is.na(covariateColOrder), 
+                 colnames(covariates),
+                 covariateColOrder)
+  
+  newVars <- rotateVars(vars, comparison)
+  
+  DESIGN = getDesignMatrix(covariates[, newVars], Intercept = F)
+  DESIGN = DESIGN$design[, linColumnFinder(DESIGN$design)$indepCols]
+
+  DESIGN
+}
+doDiffExpr <- function(PROC_COUNT, DESIGN, WEIGHTS, block, comparison) {
   # Calculate correlation between donors
   correlation <- duplicateCorrelation(PROC_COUNT, design = DESIGN,
-                                      weights = WEIGHTS, block=COVARIATES$Donor_ID)
+                                      weights = WEIGHTS,
+                                      block=block)
   
   # Fit linear model using mixed effects design
   FIT = lmFit(PROC_COUNT, design = DESIGN, weights = WEIGHTS, 
-              block=COVARIATES$Donor_ID, correlation = correlation2$cor)
+              block=block, correlation = correlation$cor)
   
-  CONT.NAMES2 <- colnames(DESIGN)[grep(comparison, colnames(DESIGN2))]
+  CONT.NAMES2 <- colnames(DESIGN)[grep(comparison, colnames(DESIGN))]
   CONT.NAMES <- combn(CONT.NAMES, 2)
   CONT.NAMES <- apply(CONT.NAMES, 2, paste, collapse='-')
 
