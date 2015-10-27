@@ -191,16 +191,15 @@ Synapse IDs of used data:
 | **Name**            | **SynapseID**|
 | Processed logCPM    | `r paste(PROC_COUNT_OBJ$properties$id,PROC_COUNT_OBJ$properties$versionNumber,sep='.')` |
 | Sample Weights      | `r paste(WEIGHTS_OBJ$properties$id,WEIGHTS_OBJ$properties$versionNumber,sep='.')` |
-| Design Matrix       | `r paste(DESIGN_OBJ$properties$id,DESIGN_OBJ$properties$versionNumber,sep='.')` |
 | Covariates (subset) | `r paste(COVARIATES_OBJ$properties$id,COVARIATES_OBJ$properties$versionNumber,sep='.')` |
 
 ### Differential expression analysis
 For each covariate, we fit a linear model using `limma` using only the variables obtained from the covariate analysis:
 
 * Fixed Effects<br/>
-  `r paste(postAdjustedCovars, collapse=", ")`
+  `r paste(gsub('_','\\\\_', postAdjustedCovars), collapse=", ")`
 * Random Effects<br/>
-  Donor\\_ID
+  Donor\_ID
 
 The design matrix is formed by including all variables for each factor encoded as dummy variables, reordered so the variable of interest for comparison is first. With this formulation and the available data, many design matrices are degenerate. Hence, we also remove any columns that are linear combinations of other columns. Because of this, models between separate covariates (separate columns in the covariate matrix) cannot be compared, as each comparison is performed with a separately defined model.
 
@@ -244,7 +243,7 @@ save(GENDER, file='DifferentialExpressionGender_mixedEffects.RData')
 ```
 Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse = ',')`
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse = ', ')`
 
 Number of differentially expressed genes at FDR <= 0.05 and absolute logFC >= 0 or logFC <= 0:
 
@@ -295,7 +294,7 @@ save(REP.GENE.COMBO, file='DifferentialExpressionRepGeneCombo.RData')
 ```
 Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=',')`
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=', ')`
 
 Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets6,cache=TRUE}
@@ -320,7 +319,7 @@ save(CELL.TYPE.OF.ORIGIN, file='DifferentialExpressionCellTypeOfOrigin.RData')
 ```
 Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapes= ',')`
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapes= ', ')`
 
 Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets3,cache=TRUE}
@@ -345,7 +344,7 @@ save(CULT.COND,file='DifferentialExpressionCultCond.RData')
 ```
 Get differentially expressed genes using limma package with following co-efficients  in the linear model:
 
-`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=',')`
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=', ')`
 
 Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets5,cache=TRUE}
