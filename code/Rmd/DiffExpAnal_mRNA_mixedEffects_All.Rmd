@@ -463,18 +463,6 @@ PVAL_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',
 PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, 
                      activityName = activityName, executed=thisFile)
 
-# Store differentially expressed genes in gct format
-write.table(DEXPP.GENES,file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',
-            sep='\t',row.names=F,quote=F)
-DEXPP_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',
-                  name = 'Differentially Expressed Genes gct format',
-                  parentId = CODE$properties$id)
-
-synSetAnnotations(DEXPP_OBJ) <- list(dataType="mRNA", fileType="gct", q=0.05, fc=0)
-
-DEXPP_OBJ <- synStore(DEXPP_OBJ, used = ALL_USED_IDs, 
-                      activityName = activityName, executed=thisFile)
-  
 # Store differentially expressed genes for comparison
 write.table(SIG.SETS, file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',
             sep='\t', row.names=F, quote=F)
