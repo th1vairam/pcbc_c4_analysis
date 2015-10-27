@@ -2,7 +2,6 @@
 title: "Differential expression analysis for eXpress aligned mRNA data with mixed effects modeling"
 author: "Thanneer Perumal"
 date: "`r date()`"
-output: html_document
 ---
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
 ## It is assumed your working directory is where this file is
@@ -207,7 +206,6 @@ The design matrix is formed by including all variables for each factor encoded a
 
 #### Differentiation stages
 ```{r diffstate, cache=TRUE, include=FALSE}
-# Post adjusted design matrix
 comparison <- "Diffname_short"
 
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
@@ -255,6 +253,31 @@ tmp <- cbind(as.data.frame(GENDER$NUM.SIG.EXP.POS),
              as.data.frame(GENDER$NUM.SIG.EXP.NEG))
 
 colnames(tmp) <- c('NUMBER OF UP REG. GENES', 'NUMBER OF DOWN REG. GENES')
+kable(tmp)
+```
+#### Cell line type
+```{r celllinetype, cache=TRUE, include=FALSE}
+comparison <- "Cell_Line_Type"
+
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
+
+CELL.LINE.TYPE <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                             weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                             comparison=comparison)
+
+save(CELL.LINE.TYPE, file='DifferentialExpressionCellLineType_mixedEffects.RData')
+```
+Get differentially expressed genes using limma package with following coefficients in the linear model:
+
+`r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=', ')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
+```{r significant.celllinetype,cache=TRUE}
+tmp <- cbind(as.data.frame(CELL.LINE.TYPE$NUM.SIG.EXP.POS),
+             as.data.frame(CELL.LINE.TYPE$NUM.SIG.EXP.NEG))
+
+colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
 #### Reprogramming Gene Combination
@@ -332,35 +355,69 @@ tmp <- cbind(as.data.frame(CULT.COND$NUM.SIG.EXP.POS),
 colnames(tmp) <- c('NUMBER OF UP REG. GENES', 'NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
+#### Donor stage
+```{r donorlifestage, cache=TRUE, include=FALSE}
+comparison <- "Donor_Life_Stage"
+
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
+
+DONOR.LIFE.STAGE <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                               weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                               comparison=comparison)
+
+save(DONOR.LIFE.STAGE, file='DifferentialExpressionDonorLifeStage_mixedEffects.RData')
+```
+Get differentially expressed genes using limma package with following coefficients in the linear model:
+
+`r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=', ')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
+```{r significant.donorlifestage,cache=TRUE}
+tmp <- cbind(as.data.frame(DONOR.LIFE.STAGE$NUM.SIG.EXP.POS),
+             as.data.frame(DONOR.LIFE.STAGE$NUM.SIG.EXP.NEG))
+
+colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
+kable(tmp)
+```
 
 ```{r print.imp.genes}
-allFC <- llply(list(DIFFNAME$logFC, GENDER$logFC, CELL.TYPE.OF.ORIGIN$logFC,
-                    CULT.COND$logFC, REP.GENE.COMBO$logFC),
+allFC <- llply(list(DIFFNAME$logFC, GENDER$logFC, CELL.LINE.TYPE$logFC,
+                    CELL.TYPE.OF.ORIGIN$logFC,
+                    CULT.COND$logFC, REP.GENE.COMBO$logFC,
+                    DONOR.LIFE.STAGE$logFC),
                rownameToFirstColumn, colname="GeneNames")
 
 FC <- plyr::join_all(allFC, by = 'GeneNames', match = 'all')
 
 allPVal <- llply(list(DIFFNAME$adj.P.Val, GENDER$adj.P.Val, 
+                      CELL.LINE.TYPE$adj.P.Val,
                       CELL.TYPE.OF.ORIGIN$adj.P.Val,
-                      CULT.COND$adj.P.Val, REP.GENE.COMBO$adj.P.Val),
+                      CULT.COND$adj.P.Val, REP.GENE.COMBO$adj.P.Val,
+                      DONOR.LIFE.STAGE$adj.P.Val),
                  rownameToFirstColumn, colname="GeneNames")
 
 PVAL <- join_all(allPVal, by = 'GeneNames', match = 'all')
 
 allSig <- llply(list(DIFFNAME$SIG.EXP.POS + DIFFNAME$SIG.EXP.NEG,
                      GENDER$SIG.EXP.POS + GENDER$SIG.EXP.NEG,
+                     CELL.LINE.TYPE$SIG.EXP.POS + CELL.LINE.TYPE$SIG.EXP.NEG,
                      CELL.TYPE.OF.ORIGIN$SIG.EXP.POS + CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG,
                      CULT.COND$SIG.EXP.POS + CULT.COND$SIG.EXP.NEG,
-                     REP.GENE.COMBO$SIG.EXP.POS + REP.GENE.COMBO$SIG.EXP.NEG),
+                     REP.GENE.COMBO$SIG.EXP.POS + REP.GENE.COMBO$SIG.EXP.NEG,
+                     DONOR.LIFE.STAGE$SIG.EXP.POS + DONOR.LIFE.STAGE$SIG.EXP.NEG
+                     ),
                 rownameToFirstColumn, colname="GeneNames")
 
 SIG <- join_all(allSig, by = 'GeneNames', match = 'all')
 
 SIG.SETS <- rbind(DIFFNAME$SIG.SETS,
+                  CELL.LINE.TYPE$SIG.SETS,
                   GENDER$SIG.SETS,
                   CELL.TYPE.OF.ORIGIN$SIG.SETS,                  
                   CULT.COND$SIG.SETS,
-                  REP.GENE.COMBO$SIG.SETS)
+                  REP.GENE.COMBO$SIG.SETS,
+                  DONOR.LIFE.STAGE$SIG.SETS)
 ```
 #### Important genes
 ```{r}
