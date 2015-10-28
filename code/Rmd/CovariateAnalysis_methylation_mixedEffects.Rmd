@@ -11,28 +11,22 @@ output: html_document
 cat("\014")  
 
 # Load required libraries
-library('synapseClient')
+library('data.table')
+library('plyr')
+library('dplyr')
+library('psych')
+
 library('RColorBrewer')
 library('ggplot2')
-library('gplots')
+
 library('limma')
-library('edgeR')
-library('ctv')
-library('psych')
-library('reshape2')
-library('vcd')
-library('erer')
-library('fpc')
-library('data.table')
-library('dplyr')
-library('plyr')
+library('minfi')
+
 library('knitr')
 library('stringr')
-library('minfi')
+library('synapseClient')
 library('knit2synapse')
-
-## Needs the dev branch
-library(rGithubClient)
+library('rGithubClient') ## Needs the dev branch
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
@@ -46,9 +40,9 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 synapseLogin()
 
 # source utility files from ../R/lib folder
-file.sources = list.files('../R/lib',pattern="*.R")
-file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
-tmp = sapply(file.sources,source,.GlobalEnv)
+# These should be moved to a package - very fragile way to do this!
+file.sources = list.files('../R/lib',pattern="*.R$", full.names=TRUE)
+tmp = sapply(file.sources, source,.GlobalEnv)
 
 options(xtable.type="html")
 
@@ -111,18 +105,23 @@ rownames(METADATA) = METADATA$UID
 * Remove samples with no Diffname short
 * Remove somatic samples and samples with no Cell Type
 * Remove samples with abnornal or no C4 Karyotype Result
+* Remove private samples (if any)
 ```{r filtering, echo=TRUE}
 #### Pre processing mRNA expression counts and metadata ####
-metadata_filtered <- 
-  METADATA %>%
+metadata_keep <- METADATA %>% 
+  filter(UID %in% colnames(EXP))
+
+metadata_filtered <- metadata_keep %>%
   filter(Diffname_short != "") %>%
   filter(UID != "H9P50") %>%
   filter(UID %in% colnames(EXP)) %>%
   filter(Cell_Type == "PSC") %>%
-  filter(C4_Karyotype_Result != "abnormal")
+  filter(C4_Karyotype_Result != "abnormal") %>%
+  filter(public)
 
-REMOVED_UID <- setdiff(colnames(EXP), metadata_filtered$UID)
-METADATA <- METADATA[metadata_filtered$UID,]
+REMOVED_UID <- setdiff(metadata_keep$UID, metadata_filtered$UID)
+METADATA <- metadata_filtered
+rownames(METADATA) <- metadata_filtered$UID
 EXP <- EXP[, METADATA$UID]
 ```
 The following `r length(REMOVED_UID)` samples were removed:
