@@ -319,7 +319,7 @@ save(CELL.TYPE.OF.ORIGIN, file='DifferentialExpressionCellTypeOfOrigin.RData')
 ```
 Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapes= ', ')`
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse= ', ')`
 
 Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets3,cache=TRUE}
