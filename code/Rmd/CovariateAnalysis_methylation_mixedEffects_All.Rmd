@@ -32,7 +32,7 @@ library('rGithubClient') ## Needs the dev branch
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 # devtools::install_github("knit2synapse-1", username = "th1vairam", ref= "dev")
-# knitToFolderEntity(file = "./CovariateAnalysis_methylation_mixedEffects.Rmd", 
+# knitToFolderEntity(file = "./CovariateAnalysis_methylation_mixedEffects_All.Rmd", 
 #                    parentId = 'syn4231339',
 #                    entityName = 'Covariate Analysis Methylation Mixed Effects All', 
 #                    overwrite=F)
@@ -280,7 +280,7 @@ p
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache=FALSE}
 ActivityName <- 'Covariate analysis of minfi curated methylation data with mixed effects modeling'
   
-thisFileName <- 'CovariateAnalysis_methylation_mixedEffects.Rmd'
+thisFileName <- 'CovariateAnalysis_methylation_mixedEffects_All.Rmd'
   
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
