@@ -20,13 +20,13 @@ library('ctv')
 library('psych')
 library('reshape2')
 library('vcd')
-library('erer')
+# library('erer')
 library('fpc')
 library('data.table')
+library('plyr')
 library('dplyr')
 library('knitr')
 library('stringr')
-library('plyr')
 
 ## Needs the dev branch
 library(rGithubClient)
@@ -479,7 +479,6 @@ SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs,
 |  -------                                                        |   ---------                     |
 |  Log fold change                                                |  `r paste(FC_OBJ$properties$id,FC_OBJ$properties$versionNumber,sep='.')`           |
 |  Adjusted pvalues                                               |  `r paste(PVAL_OBJ$properties$id,PVAL_OBJ$properties$versionNumber,sep='.')`         |
-|  Differentially expressed genes (gct format)                    |  `r paste(DEXPP_OBJ$properties$id,DEXPP_OBJ$properties$versionNumber,sep='.')`        |
 |  Differentially expressed genes (with fold change and pvalue)   |  `r paste(SIG.SETS_OBJ$properties$id,SIG.SETS_OBJ$properties$versionNumber,sep='.')` |
 
 ### Executed: Source code
