@@ -2,7 +2,6 @@
 title: "Differential expression analysis for eXpress aligned mRNA data with mixed effects modeling"
 author: "Thanneer Perumal"
 date: "`r date()`"
-output: html_document
 ---
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
 ## It is assumed your working directory is where this file is
@@ -21,13 +20,13 @@ library('ctv')
 library('psych')
 library('reshape2')
 library('vcd')
-library('erer')
+# library('erer')
 library('fpc')
 library('data.table')
+library('plyr')
 library('dplyr')
 library('knitr')
 library('stringr')
-library('plyr')
 
 ## Needs the dev branch
 library(rGithubClient)
@@ -37,7 +36,7 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 
 synapseLogin()
 
-# knit2synapse::knitToFolderEntity(file = "./DiffExpAnal_mRNA_mixedEffects_All.Rmd", entityName = 'Differential Expression Analysis mRNA Mixed Effects All', parentId = 'syn3256504', overwrite=F, knitmd = T)
+# knit2synapse::knitToFolderEntity(file = "./DiffExpAnal_mRNA_mixedEffects_All.Rmd", entityName = 'Differential Expression Analysis mRNA Mixed Effects All', parentId = 'syn5008933', overwrite=F, knitmd = T)
 
 # source utility files from ../R/lib folder
 file.sources = list.files('../R/lib',pattern="*.R")
@@ -54,29 +53,120 @@ knitr::opts_chunk$set(
   tidy = FALSE,
   cache = FALSE)
 ```
+```{r fxns, include=FALSE}
+rotateVars <- function(x, first) {
+  others <- setdiff(x, first)
+  c(first, others)
+}
+
+makeDesignMatrix <- function(covariates, comparison, covariateColOrder=NA) {
+  # Make a design matrix by reordering the column covariates
+  # and column-binding each separate matrix for each column together
+  # with complete listing of dummy variables (no reference levels)
+  # and also remove and linearly dependent columns
+  
+  vars <- ifelse(is.na(covariateColOrder), 
+                 colnames(covariates),
+                 covariateColOrder)
+  
+  newVars <- rotateVars(vars, comparison)
+  
+  DESIGN = getDesignMatrix(covariates[, newVars], Intercept = F)
+  DESIGN = DESIGN$design[, linColumnFinder(DESIGN$design)$indepCols]
+
+  DESIGN
+}
+
+doDiffExpr <- function(countMat, designMat, weights, block, comparison) {
+  # Helper function to do all pairwise differential expressions on a single covariate
+  # from the whole covariate matrix
+  
+  # Calculate correlation between donors
+  correlation <- duplicateCorrelation(countMat, design = designMat,
+                                      weights = weights,
+                                      block=block)
+  
+  # Fit linear model using mixed effects design
+  fit = lmFit(countMat, design = designMat, weights = weights, 
+              block=block, correlation = correlation$cor)
+  
+  contrastNames <- colnames(designMat)[grep(comparison, colnames(designMat))]
+  contrastNames <- combn(contrastNames, 2)
+  contrastNames <- apply(contrastNames, 2, paste, collapse='-')
+
+  cont <- makeContrasts(contrasts=contrastNames, 
+                        levels=colnames(fit$coefficients))
+  
+  colnames(cont) <- sapply(colnames(cont),
+                           function(x){x <- gsub(comparison, '', x);
+                           x <- gsub('-','_vs_',x);
+                           x <- paste('All',x,sep='__')})
+  
+  # Refit contrasts
+  fitContrast <- contrasts.fit(fit, cont)
+  
+  # Estimate moderated t-statistics
+  fitContrast <- eBayes(fitContrast)
+  
+  # Obtain all the differential expession combinations
+  foo <- list()
+  foo$logFC <- data.frame(row.names = rownames(countMat))
+  foo$adj.P.Val <- data.frame(row.names = rownames(countMat))
+  foo$SIG.SETS <- data.frame()
+  
+  for (i in colnames(cont)){
+    tmp <- topTable(fitContrast, coef=i, number=dim(countMat)[1])    
+    foo$logFC[,i] <- tmp[rownames(foo$logFC),'logFC']
+    foo$adj.P.Val[,i] <- tmp[rownames(foo$adj.P.Val),'adj.P.Val'] 
+    
+    foo$SIG.SETS <- rbind(foo$SIG.SETS,
+                             getUpDownGenes(foo$adj.P.Val[,i], foo$logFC[,i], 
+                                            rownames(foo$logFC), i, FC_CUTOFF = 0))
+  }
+  
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
+  foo$SIG.EXP.POS <- foo$adj.P.Val<=0.05 & foo$logFC >= 0
+  foo$NUM.SIG.EXP.POS <- colSums(foo$SIG.EXP.POS)
+  
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
+  foo$SIG.EXP.NEG <- foo$adj.P.Val<=0.05 & foo$logFC <= 0
+  foo$NUM.SIG.EXP.NEG <- colSums(foo$SIG.EXP.NEG)
+  
+  foo  
+}
+```
+
 ### Download data
 ```{r setup, include=FALSE}
 # Input Parameters
-PROC.COUNT_ID = 'syn4483934'
-WEIGHTS_ID = 'syn4483938'
-DESIGN_ID = 'syn4483942'
-COVARIATES_ID = 'syn4483940'
+PROCESSED_COUNT_ID = 'syn5011095'
+WEIGHTS_ID = 'syn5011147'
+DESIGN_ID = 'syn5011151'
+COVARIATES_ID = 'syn5011149'
 
 SYNAPSE_STORE = T
-parentId = 'syn3256504'
+parentId = 'syn5008933'
 
-# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+# Specify factor and continuous covariates pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
+
 ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
+
+# The variables determined in the covariate analysis step
+postAdjustedCovars <- c("Diffname_short", "Gender", "Cell_Line_Type",
+                        "Reprogramming_Gene_Combination",
+                        "Cell_Type_of_Origin_Level2",
+                        "Culture_Conditions", "run", "Donor_Life_Stage")
+
 ```
-Obtain processed counts, design, weights and covariates matrix from synapse.
+Obtain processed counts, design, weights and covariates matrix from Synapse.
 ```{r getdata, cache=TRUE, include=FALSE}
 # Get count matrix
-PROC.COUNT_OBJ = synGet(PROC.COUNT_ID)
-ALL_USED_IDs = PROC.COUNT_OBJ$properties$id
-PROC.COUNT = fread(getFileLocation(PROC.COUNT_OBJ), data.table=FALSE)
-row.names(PROC.COUNT) = PROC.COUNT[,1]
-PROC.COUNT = as.matrix(PROC.COUNT[,-(1)])
+PROC_COUNT_OBJ = synGet(PROCESSED_COUNT_ID)
+ALL_USED_IDs = PROC_COUNT_OBJ$properties$id
+PROC_COUNT = fread(getFileLocation(PROC_COUNT_OBJ), data.table=FALSE)
+row.names(PROC_COUNT) = PROC_COUNT[,1]
+PROC_COUNT = as.matrix(PROC_COUNT[,-(1)])
 
 # Get sample weights
 WEIGHTS_OBJ = synGet(WEIGHTS_ID)
@@ -84,14 +174,7 @@ ALL_USED_IDs = c(ALL_USED_IDs, WEIGHTS_OBJ$properties$id)
 WEIGHTS = fread(getFileLocation(WEIGHTS_OBJ), data.table=FALSE)
 row.names(WEIGHTS) = WEIGHTS[,1]
 WEIGHTS = as.matrix(WEIGHTS[,-(1)])
-colnames(WEIGHTS) = colnames(PROC.COUNT)
-
-# Get design matrix
-DESIGN_OBJ = synGet(DESIGN_ID)
-ALL_USED_IDs = c(ALL_USED_IDs, DESIGN_OBJ$properties$id)
-DESIGN = fread(getFileLocation(DESIGN_OBJ), data.table=FALSE)
-row.names(DESIGN) = DESIGN[,1]
-DESIGN = as.matrix(DESIGN[,-(1)])
+colnames(WEIGHTS) = colnames(PROC_COUNT)
 
 # Get sample weights
 COVARIATES_OBJ = synGet(COVARIATES_ID)
@@ -106,467 +189,296 @@ COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
 ```
 Synapse IDs of used data:
 | **Name**            | **SynapseID**|
-| Processed logCPM    | `r paste(PROC.COUNT_OBJ$properties$id,PROC.COUNT_OBJ$properties$versionNumber,sep='.')` |
+| Processed logCPM    | `r paste(PROC_COUNT_OBJ$properties$id,PROC_COUNT_OBJ$properties$versionNumber,sep='.')` |
 | Sample Weights      | `r paste(WEIGHTS_OBJ$properties$id,WEIGHTS_OBJ$properties$versionNumber,sep='.')` |
-| Design Matrix       | `r paste(DESIGN_OBJ$properties$id,DESIGN_OBJ$properties$versionNumber,sep='.')` |
 | Covariates (subset) | `r paste(COVARIATES_OBJ$properties$id,COVARIATES_OBJ$properties$versionNumber,sep='.')` |
 
 ### Differential expression analysis
-Obtain differentially expressed genes with the following covariates (as obtained from covariates analysis) in the model: 
-* Fixed Effects: Diffname short, Gender, Reprogramming Gene Combination, Cell Type of Origin Level2, Culture Conditions, run
-* Random Effects: Donor ID
+For each covariate, we fit a linear model using `limma` using only the variables obtained from the covariate analysis:
+
+* Fixed Effects<br/>
+  `r paste(gsub('_','\\\\_', postAdjustedCovars), collapse=", ")`
+* Random Effects<br/>
+  Donor\_ID
+
+The design matrix is formed by including all variables for each factor encoded as dummy variables, reordered so the variable of interest for comparison is first. With this formulation and the available data, many design matrices are degenerate. Hence, we also remove any columns that are linear combinations of other columns. Because of this, models between separate covariates (separate columns in the covariate matrix) cannot be compared, as each comparison is performed with a separately defined model.
+
 #### Differentiation stages
 ```{r diffstate, cache=TRUE, include=FALSE}
-# Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Diffname_short","Gender","Reprogramming_Gene_Combination","Cell_Type_of_Origin_Level2","Culture_Conditions","run")], Intercept = F)
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
-    
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
+comparison <- "Diffname_short"
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
-# Make contrast to check differential expression between different differentiation stages
-CONT.NAMES <- colnames(DESIGN)[grep('Diffname_short',colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+DIFFNAME <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                       weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                       comparison=comparison)
 
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub('Diffname_short','',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-  
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-DIFFNAME <- list()
-DIFFNAME$logFC <- data.frame(row.names = rownames(PROC.COUNT))
-DIFFNAME$adj.P.Val <- data.frame(row.names = rownames(PROC.COUNT))
-DIFFNAME$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC.COUNT)[1])    
-  DIFFNAME$logFC[,i] <- tmp[rownames(DIFFNAME$logFC),'logFC']
-  DIFFNAME$adj.P.Val[,i] <- tmp[rownames(DIFFNAME$adj.P.Val),'adj.P.Val'] 
-  
-  DIFFNAME$SIG.SETS <- rbind(DIFFNAME$SIG.SETS,
-                             getUpDownGenes(DIFFNAME$adj.P.Val[,i], DIFFNAME$logFC[,i], rownames(DIFFNAME$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-DIFFNAME$SIG.EXP.POS <- DIFFNAME$adj.P.Val<=0.05 & DIFFNAME$logFC >= 0
-DIFFNAME$NUM.SIG.EXP.POS <- colSums(DIFFNAME$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-DIFFNAME$SIG.EXP.NEG <- DIFFNAME$adj.P.Val<=0.05 & DIFFNAME$logFC <= 0
-DIFFNAME$NUM.SIG.EXP.NEG <- colSums(DIFFNAME$SIG.EXP.NEG)
-
-save(DIFFNAME,file='DifferentialExpressionDiffName_mixedEffects.RData')
+save(DIFFNAME, file='DifferentialExpressionDiffName_mixedEffects.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=',')` in linear model
+Get differentially expressed genes using limma package with following coefficients in the linear model:
 
-Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0
+`r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=', ')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets1,cache=TRUE}
-tmp <- cbind(as.data.frame(DIFFNAME$NUM.SIG.EXP.POS),as.data.frame(DIFFNAME$NUM.SIG.EXP.NEG))
+tmp <- cbind(as.data.frame(DIFFNAME$NUM.SIG.EXP.POS),
+             as.data.frame(DIFFNAME$NUM.SIG.EXP.NEG))
+
 colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
-#### Gender 
+#### Gender
 ```{r gender, cache=TRUE}
-# Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Gender","Diffname_short","Reprogramming_Gene_Combination","Cell_Type_of_Origin_Level2","Culture_Conditions","run")], Intercept = F)
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
-    
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
+comparison <- "Gender"
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
-# Make contrast to check differential expression
-CONT.NAMES <- colnames(DESIGN)[grep('Gender',colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+GENDER <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                       weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                       comparison=comparison)
 
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub('Gender','',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-  
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-GENDER <- list()
-GENDER$logFC <- data.frame(row.names = rownames(PROC.COUNT))
-GENDER$adj.P.Val <- data.frame(row.names = rownames(PROC.COUNT))
-GENDER$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC.COUNT)[1])    
-  GENDER$logFC[,i] <- tmp[rownames(GENDER$logFC),'logFC']
-  GENDER$adj.P.Val[,i] <- tmp[rownames(GENDER$adj.P.Val),'adj.P.Val'] 
-  
-  GENDER$SIG.SETS <- rbind(GENDER$SIG.SETS,
-                             getUpDownGenes(GENDER$adj.P.Val[,i], GENDER$logFC[,i], rownames(GENDER$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-GENDER$SIG.EXP.POS <- GENDER$adj.P.Val<=0.05 & GENDER$logFC >= 0
-GENDER$NUM.SIG.EXP.POS <- colSums(GENDER$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-GENDER$SIG.EXP.NEG <- GENDER$adj.P.Val<=0.05 & GENDER$logFC <= 0
-GENDER$NUM.SIG.EXP.NEG <- colSums(GENDER$SIG.EXP.NEG)
-
-save(GENDER,file='DifferentialExpressionGender_mixedEffects.RData')
+save(GENDER, file='DifferentialExpressionGender_mixedEffects.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse = ',')` in linear model
+Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-Number of differentially expressed genes at FDR <= 0.05 and absolute logFC >= 0 or logFC <= 0
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse = ', ')`
+
+Number of differentially expressed genes at FDR <= 0.05 and absolute logFC >= 0 or logFC <= 0:
+
 ```{r significant.sets2,cache=TRUE}
-tmp <- cbind(as.data.frame(GENDER$NUM.SIG.EXP.POS),as.data.frame(GENDER$NUM.SIG.EXP.NEG))
+tmp <- cbind(as.data.frame(GENDER$NUM.SIG.EXP.POS),
+             as.data.frame(GENDER$NUM.SIG.EXP.NEG))
+
+colnames(tmp) <- c('NUMBER OF UP REG. GENES', 'NUMBER OF DOWN REG. GENES')
+kable(tmp)
+```
+#### Cell line type
+```{r celllinetype, cache=TRUE, include=FALSE}
+comparison <- "Cell_Line_Type"
+
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
+
+CELL.LINE.TYPE <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                             weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                             comparison=comparison)
+
+save(CELL.LINE.TYPE, file='DifferentialExpressionCellLineType_mixedEffects.RData')
+```
+Get differentially expressed genes using limma package with following coefficients in the linear model:
+
+`r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=', ')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
+```{r significant.celllinetype,cache=TRUE}
+tmp <- cbind(as.data.frame(CELL.LINE.TYPE$NUM.SIG.EXP.POS),
+             as.data.frame(CELL.LINE.TYPE$NUM.SIG.EXP.NEG))
+
 colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
 #### Reprogramming Gene Combination
 ```{r rep.gene.combo, cache=TRUE}
-# Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Reprogramming_Gene_Combination","Gender","Diffname_short","Cell_Type_of_Origin_Level2","Culture_Conditions","run")], Intercept = F)
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
-    
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
+comparison <- "Reprogramming_Gene_Combination"
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
-# Make contrast to check differential expression
-CONT.NAMES <- colnames(DESIGN)[grep("Reprogramming_Gene_Combination",colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+REP.GENE.COMBO <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                             weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                             comparison=comparison)
 
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub("Reprogramming_Gene_Combination",'',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-REP.GENE.COMBO <- list()
-REP.GENE.COMBO$logFC <- data.frame(row.names = rownames(PROC.COUNT))
-REP.GENE.COMBO$adj.P.Val <- data.frame(row.names = rownames(PROC.COUNT))
-REP.GENE.COMBO$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC.COUNT)[1])    
-  REP.GENE.COMBO$logFC[,i] <- tmp[rownames(REP.GENE.COMBO$logFC),'logFC']
-  REP.GENE.COMBO$adj.P.Val[,i] <- tmp[rownames(REP.GENE.COMBO$adj.P.Val),'adj.P.Val'] 
-  
-  REP.GENE.COMBO$SIG.SETS <- rbind(REP.GENE.COMBO$SIG.SETS,
-                             getUpDownGenes(REP.GENE.COMBO$adj.P.Val[,i], REP.GENE.COMBO$logFC[,i], rownames(REP.GENE.COMBO$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-REP.GENE.COMBO$SIG.EXP.POS <- REP.GENE.COMBO$adj.P.Val<=0.05 & REP.GENE.COMBO$logFC >= 0   
-REP.GENE.COMBO$NUM.SIG.EXP.POS <- colSums(REP.GENE.COMBO$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-REP.GENE.COMBO$SIG.EXP.NEG <- REP.GENE.COMBO$adj.P.Val<=0.05 & REP.GENE.COMBO$logFC <= 0
-REP.GENE.COMBO$NUM.SIG.EXP.NEG <- colSums(REP.GENE.COMBO$SIG.EXP.NEG)
-
-save(REP.GENE.COMBO,file='DifferentialExpressionRepGeneCombo.RData')
+save(REP.GENE.COMBO, file='DifferentialExpressionRepGeneCombo.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=',')` in linear model
+Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=', ')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets6,cache=TRUE}
-tmp <- cbind(as.data.frame(REP.GENE.COMBO$NUM.SIG.EXP.POS),as.data.frame(REP.GENE.COMBO$NUM.SIG.EXP.NEG))
+tmp <- cbind(as.data.frame(REP.GENE.COMBO$NUM.SIG.EXP.POS),
+             as.data.frame(REP.GENE.COMBO$NUM.SIG.EXP.NEG))
+
 colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
 #### Cell Type of Origin Level2
 ```{r cell.type.of.origin, cache=TRUE}
-# Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Cell_Type_of_Origin_Level2","Diffname_short","Gender", "Reprogramming_Gene_Combination","Culture_Conditions","run")], Intercept = F)
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
+comparison <- "Cell_Type_of_Origin_Level2"
 
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+CELL.TYPE.OF.ORIGIN <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                                  weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                                  comparison=comparison)
 
-# Make contrast to check differential expression
-CONT.NAMES <- colnames(DESIGN)[grep('Cell_Type_of_Origin_Level2',colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
-
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub('Cell_Type_of_Origin_Level2','',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-CELL.TYPE.OF.ORIGIN <- list()
-CELL.TYPE.OF.ORIGIN$logFC <- data.frame(row.names = rownames(PROC.COUNT))
-CELL.TYPE.OF.ORIGIN$adj.P.Val <- data.frame(row.names = rownames(PROC.COUNT))
-CELL.TYPE.OF.ORIGIN$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC.COUNT)[1])    
-  CELL.TYPE.OF.ORIGIN$logFC[,i] <- tmp[rownames(CELL.TYPE.OF.ORIGIN$logFC),'logFC']
-  CELL.TYPE.OF.ORIGIN$adj.P.Val[,i] <- tmp[rownames(CELL.TYPE.OF.ORIGIN$adj.P.Val),'adj.P.Val'] 
-  
-  CELL.TYPE.OF.ORIGIN$SIG.SETS <- rbind(CELL.TYPE.OF.ORIGIN$SIG.SETS,
-                             getUpDownGenes(CELL.TYPE.OF.ORIGIN$adj.P.Val[,i], CELL.TYPE.OF.ORIGIN$logFC[,i], rownames(CELL.TYPE.OF.ORIGIN$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-CELL.TYPE.OF.ORIGIN$SIG.EXP.POS <- CELL.TYPE.OF.ORIGIN$adj.P.Val<=0.05 & CELL.TYPE.OF.ORIGIN$logFC >= 0   
-CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.POS <- colSums(CELL.TYPE.OF.ORIGIN$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG <- CELL.TYPE.OF.ORIGIN$adj.P.Val<=0.05 & CELL.TYPE.OF.ORIGIN$logFC <= 0   
-CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.NEG <- colSums(CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG)
-
-save(CELL.TYPE.OF.ORIGIN,file='DifferentialExpressionCellTypeOfOrigin.RData')
+save(CELL.TYPE.OF.ORIGIN, file='DifferentialExpressionCellTypeOfOrigin.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapes= ',')` in linear model
+Get differentially expressed genes using limma package with following co-efficients in the linear model:
 
-Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse= ', ')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets3,cache=TRUE}
-tmp <- cbind(as.data.frame(CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.POS),as.data.frame(CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.NEG))
-colnames(tmp) <- c('NUMBER OF UP. REG. GENES','NUMBER OF DOWN REG. GENES')
+tmp <- cbind(as.data.frame(CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.POS),
+             as.data.frame(CELL.TYPE.OF.ORIGIN$NUM.SIG.EXP.NEG))
+
+colnames(tmp) <- c('NUMBER OF UP. REG. GENES', 'NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
-#### Culture conditions
+#### Culture Conditions
 ```{r culture.conditions, cache=TRUE}
-# Post adjusted design matrix
-DESIGN = getDesignMatrix(COVARIATES[,c("Culture_Conditions","Diffname_short","Gender", "Reprogramming_Gene_Combination","Cell_Type_of_Origin_Level2","run")], Intercept = F)
-DESIGN = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
-    
-# Calculate correlation between donors
-correlation <- duplicateCorrelation(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID)
+comparison <- "Culture_Conditions"
 
-# Fit linear model using mixed effects design
-FIT = lmFit(PROC.COUNT, design = DESIGN, weights = WEIGHTS, block=COVARIATES$Donor_ID, correlation = correlation$cor)
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
 
-# Make contrast to check differential expression
-CONT.NAMES <- colnames(DESIGN)[grep("Culture_Conditions",colnames(DESIGN))]
-CONT.NAMES <- combn(CONT.NAMES,2)
-CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
-
-CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
-colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub("Culture_Conditions",'',x);
-                                                    x <- gsub('-','_vs_',x);
-                                                    x <- paste('All',x,sep='__')})
-
-# Refit contrasts
-FIT.CONTRAST <- contrasts.fit(FIT,CONT)
-
-# Estimate moderated t-statistics
-FIT.CONTRAST <- eBayes(FIT.CONTRAST)
-  
-# Obtain all the differential expession combinations
-CULT.COND <- list()
-CULT.COND$logFC <- data.frame(row.names = rownames(PROC.COUNT))
-CULT.COND$adj.P.Val <- data.frame(row.names = rownames(PROC.COUNT))
-CULT.COND$SIG.SETS <- data.frame()
-
-for (i in colnames(CONT)){
-  tmp <- topTable(FIT.CONTRAST, coef=i, number=dim(PROC.COUNT)[1])    
-  CULT.COND$logFC[,i] <- tmp[rownames(CULT.COND$logFC),'logFC']
-  CULT.COND$adj.P.Val[,i] <- tmp[rownames(CULT.COND$adj.P.Val),'adj.P.Val'] 
-  
-  CULT.COND$SIG.SETS <- rbind(CULT.COND$SIG.SETS,
-                             getUpDownGenes(CULT.COND$adj.P.Val[,i], CULT.COND$logFC[,i], rownames(CULT.COND$logFC), i, FC_CUTOFF = 0))
-}
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-CULT.COND$SIG.EXP.POS <- CULT.COND$adj.P.Val<=0.05 & CULT.COND$logFC >= 0   
-CULT.COND$NUM.SIG.EXP.POS <- colSums(CULT.COND$SIG.EXP.POS)
-
-# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-CULT.COND$SIG.EXP.NEG <- CULT.COND$adj.P.Val<=0.05 & CULT.COND$logFC <= 0
-CULT.COND$NUM.SIG.EXP.NEG <- colSums(CULT.COND$SIG.EXP.NEG)
+CULT.COND <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                                  weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                                  comparison=comparison)
 
 save(CULT.COND,file='DifferentialExpressionCultCond.RData')
 ```
-Get differentially expressed genes using limma package with following co-efficients `r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=',')` in linear model
+Get differentially expressed genes using limma package with following co-efficients  in the linear model:
 
-Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0
+`r paste(gsub('_','\\\\_',colnames(DESIGN)), collapse=', ')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
 ```{r significant.sets5,cache=TRUE}
-tmp <- cbind(as.data.frame(CULT.COND$NUM.SIG.EXP.POS),as.data.frame(CULT.COND$NUM.SIG.EXP.NEG))
+tmp <- cbind(as.data.frame(CULT.COND$NUM.SIG.EXP.POS),
+             as.data.frame(CULT.COND$NUM.SIG.EXP.NEG))
+
+colnames(tmp) <- c('NUMBER OF UP REG. GENES', 'NUMBER OF DOWN REG. GENES')
+kable(tmp)
+```
+#### Donor stage
+```{r donorlifestage, cache=TRUE, include=FALSE}
+comparison <- "Donor_Life_Stage"
+
+DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
+                           covariateColOrder = postAdjustedCovars)
+
+DONOR.LIFE.STAGE <- doDiffExpr(countMat=PROC_COUNT, designMat=DESIGN,
+                               weights=WEIGHTS, block=COVARIATES$Donor_ID,
+                               comparison=comparison)
+
+save(DONOR.LIFE.STAGE, file='DifferentialExpressionDonorLifeStage_mixedEffects.RData')
+```
+Get differentially expressed genes using limma package with following coefficients in the linear model:
+
+`r paste(gsub('_','\\\\_',colnames(DESIGN)),collapse=', ')`
+
+Number of differentially expressed genes at FDR <= 0.05 and logFC >= 0 or logFC <= 0:
+```{r significant.donorlifestage,cache=TRUE}
+tmp <- cbind(as.data.frame(DONOR.LIFE.STAGE$NUM.SIG.EXP.POS),
+             as.data.frame(DONOR.LIFE.STAGE$NUM.SIG.EXP.NEG))
+
 colnames(tmp) <- c('NUMBER OF UP REG. GENES','NUMBER OF DOWN REG. GENES')
 kable(tmp)
 ```
 
-#### Get pvalue and fold changes of some important genes
 ```{r print.imp.genes}
-FC <- plyr::join_all(list(rownameToFirstColumn(DIFFNAME$logFC,'GeneNames'),
-                    rownameToFirstColumn(GENDER$logFC,'GeneNames'),
-                    rownameToFirstColumn(CELL.TYPE.OF.ORIGIN$logFC,'GeneNames'),
-                    rownameToFirstColumn(CULT.COND$logFC,'GeneNames'),
-                    rownameToFirstColumn(REP.GENE.COMBO$logFC,'GeneNames')),
-               by = 'GeneNames',
-               match = 'all')
+allFC <- llply(list(DIFFNAME$logFC, GENDER$logFC, CELL.LINE.TYPE$logFC,
+                    CELL.TYPE.OF.ORIGIN$logFC,
+                    CULT.COND$logFC, REP.GENE.COMBO$logFC,
+                    DONOR.LIFE.STAGE$logFC),
+               rownameToFirstColumn, colname="GeneNames")
 
-PVAL <- join_all(list(rownameToFirstColumn(DIFFNAME$adj.P.Val,'GeneNames'),
-                      rownameToFirstColumn(GENDER$adj.P.Val,'GeneNames'),
-                      rownameToFirstColumn(CELL.TYPE.OF.ORIGIN$adj.P.Val,'GeneNames'),
-                      rownameToFirstColumn(CULT.COND$adj.P.Val,'GeneNames'),
-                      rownameToFirstColumn(REP.GENE.COMBO$adj.P.Val,'GeneNames')),
-                 by = 'GeneNames',
-                 match = 'all')
+FC <- plyr::join_all(allFC, by = 'GeneNames', match = 'all')
 
-SIG <- join_all(list(rownameToFirstColumn(DIFFNAME$SIG.EXP.POS+DIFFNAME$SIG.EXP.NEG,'GeneNames'),
-                     rownameToFirstColumn(GENDER$SIG.EXP.POS+GENDER$SIG.EXP.NEG,'GeneNames'),
-                     rownameToFirstColumn(CELL.TYPE.OF.ORIGIN$SIG.EXP.POS+CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG,'GeneNames'),
-                     rownameToFirstColumn(CULT.COND$SIG.EXP.POS+CULT.COND$SIG.EXP.NEG,'GeneNames'),
-                     rownameToFirstColumn(REP.GENE.COMBO$SIG.EXP.POS+REP.GENE.COMBO$SIG.EXP.NEG,'GeneNames')),
-                by = 'GeneNames',
-                match = 'all')
+allPVal <- llply(list(DIFFNAME$adj.P.Val, GENDER$adj.P.Val, 
+                      CELL.LINE.TYPE$adj.P.Val,
+                      CELL.TYPE.OF.ORIGIN$adj.P.Val,
+                      CULT.COND$adj.P.Val, REP.GENE.COMBO$adj.P.Val,
+                      DONOR.LIFE.STAGE$adj.P.Val),
+                 rownameToFirstColumn, colname="GeneNames")
+
+PVAL <- join_all(allPVal, by = 'GeneNames', match = 'all')
+
+allSig <- llply(list(DIFFNAME$SIG.EXP.POS + DIFFNAME$SIG.EXP.NEG,
+                     GENDER$SIG.EXP.POS + GENDER$SIG.EXP.NEG,
+                     CELL.LINE.TYPE$SIG.EXP.POS + CELL.LINE.TYPE$SIG.EXP.NEG,
+                     CELL.TYPE.OF.ORIGIN$SIG.EXP.POS + CELL.TYPE.OF.ORIGIN$SIG.EXP.NEG,
+                     CULT.COND$SIG.EXP.POS + CULT.COND$SIG.EXP.NEG,
+                     REP.GENE.COMBO$SIG.EXP.POS + REP.GENE.COMBO$SIG.EXP.NEG,
+                     DONOR.LIFE.STAGE$SIG.EXP.POS + DONOR.LIFE.STAGE$SIG.EXP.NEG
+                     ),
+                rownameToFirstColumn, colname="GeneNames")
+
+SIG <- join_all(allSig, by = 'GeneNames', match = 'all')
 
 SIG.SETS <- rbind(DIFFNAME$SIG.SETS,
+                  CELL.LINE.TYPE$SIG.SETS,
                   GENDER$SIG.SETS,
                   CELL.TYPE.OF.ORIGIN$SIG.SETS,                  
                   CULT.COND$SIG.SETS,
-                  REP.GENE.COMBO$SIG.SETS)
-
+                  REP.GENE.COMBO$SIG.SETS,
+                  DONOR.LIFE.STAGE$SIG.SETS)
+```
+#### Important genes
+```{r}
 print('Fold change:')
 kable(filter(FC, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
 print('Adjusted Pvalue:')
 kable(filter(PVAL, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
 ```
-### Enrichment Analysis
-Perform enrichment analysis for differentiation
-```{r enrichment.analysis, include=FALSE, eval=TRUE}
-# Write input files to folder
-inputFolderName <- paste0(getwd(),'/GOElite_input')
-if (file.exists(inputFolderName))
-  unlink(inputFolderName, recursive = T, force = T)
-dir.create(inputFolderName, showWarnings = TRUE, recursive = FALSE)
-
-# Function to write input files for GO-Elite
-writeInputFiles <- function(cont.name, FC, PVAL, inputFolderName){
-  input <- FC[(FC[,cont.name]>=1 & PVAL[,cont.name]<=0.05),c('GeneNames',cont.name),drop=F]
-  input <- dplyr::mutate(input,SystemCode = 'Sy')
-  input <- input[,c(1,3,2)]
-  colnames(input)[3] <- 'logFC'
-  
-  Genes <- cbind(paste(str_replace_all(cont.name,'[^[:alnum:]]','_'),'up',sep='_'),
-                 paste(input$GeneNames,collapse=','))
-  
-  FName <- paste(str_replace_all(cont.name,'[^[:alnum:]]','_'),'up','txt',sep='.')    
-  FName <- write.table(input,paste(inputFolderName,FName,sep='/'),sep='\t',row.names = F,col.names = T, quote=F)
-  
-  input <- FC[(FC[,cont.name]<=-1 & PVAL[,cont.name]<=0.05),c('GeneNames',cont.name),drop=F]
-  input <- dplyr::mutate(input,SystemCode = 'Sy')
-  input <- input[,c(1,3,2)]
-  colnames(input)[3] <- 'logFC'
-  
-  Genes <- rbind(Genes,cbind(paste(str_replace_all(cont.name,'[^[:alnum:]]','_'),'down',sep='_'),
-                             paste(input$GeneNames,collapse=',')))
-  
-  FName <- paste(str_replace_all(cont.name,'[^[:alnum:]]','_'),'down','txt',sep='.')  
-  FName <- write.table(input,paste(inputFolderName,FName,sep='/'),sep='\t',row.names = F,col.names = T, quote=F)
-  
-  return(Genes)
-}
-DEXPP.GENES <- lapply(colnames(FC)[-(1)],writeInputFiles, FC, PVAL, inputFolderName)
-DEXPP.GENES <- plyr::ldply(DEXPP.GENES) 
-colnames(DEXPP.GENES) <- c('Contrast.Names','Gene.Symbols')
-
-# Write denominator file to folder
-denominatorFolderName <- paste0(getwd(),'/GOElite_denominator')
-if (file.exists(denominatorFolderName))
-  unlink(denominatorFolderName, recursive = T, force = T)
-dir.create(denominatorFolderName, showWarnings = TRUE, recursive = FALSE)
-tmp <- FC[,c('GeneNames'),drop=F] 
-tmp <- dplyr::mutate(tmp,SystemCode = 'Sy')
-FName <- 'Denominaor.txt'
-write.table(tmp,paste(denominatorFolderName,FName,sep='/'),sep='\t',row.names = F,col.names = T, quote=F)
-
-# Create output dir
-outputFolderName <- paste0(getwd(),'/GOElite_output')
-if (file.exists(outputFolderName))
-  unlink(outputFolderName, recursive = T, force = T)
-dir.create(outputFolderName, showWarnings = TRUE, recursive = FALSE)
-
-# system(paste('python',
-#              '/mnt/data/GO-Elite_v.1.2.5-Py/GO_Elite.py',
-#              '--species','Hs',
-#              '--version','EnsMart72Plus',
-#              '--input', inputFolderName,
-#              '--denom',denominatorFolderName,
-#              '--output',outputFolderName))
-```
-### Store files in synapse
-Store logFC, adjusted pvalue and differentially expressed genes
+### Store files in Synapse
+Store logFC, adjusted p-values and differentially expressed genes.
 ```{r synapse.store, include = FALSE, eval=TRUE}
 activityName='Differential Expression Analysis of eXpress aligned mRNA data with mixed effects model'
   
 thisFileName <- 'DiffExpAnal_mRNA_mixedEffects_All.Rmd'
   
 # Github link
-thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+thisRepo <- getRepo(repository = "kdaily/pcbc_c4_analysis", 
                     ref="branch", 
-                    refName='mRNA')
+                    refName='thanneer')
 
 thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Create folder to tore the results and populate analysis wiki
-CODE <- Folder(name = 'Differential Expression Analysis mRNA Mixed Effects All',parentId = parentId)
+CODE <- Folder(name = 'Differential Expression Analysis mRNA Mixed Effects All',
+               parentId = parentId)
 CODE <- synStore(CODE)
       
 # Store logFC
-write.table(FC,file='./DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',sep='\t',row.names=F,quote=F)
-FC_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',name = 'logFC',parentId = CODE$properties$id)
-FC_OBJ <- synStore(FC_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+write.table(FC, file='./DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',
+            sep='\t',row.names=F,quote=F)
+
+FC_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',
+               name = 'logFC', parentId = CODE$properties$id)
+FC_OBJ <- synStore(FC_OBJ, used = ALL_USED_IDs, activityName = activityName, 
+                   executed=thisFile)
     
 # Store adjusted pvalue
-write.table(PVAL,file='./DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',sep='\t',row.names=F,quote=F)
-PVAL_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',name = 'Adjusted Pvalue',parentId = CODE$properties$id)
-PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+write.table(PVAL,file='./DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',
+            sep='\t',row.names=F,quote=F)
 
-# Store differentially expressed genes in gct format
-write.table(DEXPP.GENES,file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',sep='\t',row.names=F,quote=F)
-DEXPP_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.gct',name = 'Differentially Expressed Genes gct format',parentId = CODE$properties$id)
-annotations(DEXPP_OBJ) <- list(Pvalue='0.05',Foldchage='0')
-DEXPP_OBJ <- synStore(DEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
-  
+PVAL_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',
+                 name = 'Adjusted Pvalue', parentId = CODE$properties$id)
+PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, 
+                     activityName = activityName, executed=thisFile)
+
 # Store differentially expressed genes for comparison
-write.table(SIG.SETS,file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',sep='\t',row.names=F,quote=F)
-SIG.SETS_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',name = '  Differentially Expressed Genes comparison list',parentId = CODE$properties$id)
-annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='0')
-SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+write.table(SIG.SETS, file='./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',
+            sep='\t', row.names=F, quote=F)
+
+SIG.SETS_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_All_diffGenes.tsv',
+                     name = 'Differentially Expressed Genes comparison list',
+                     parentId = CODE$properties$id)
+
+synSetAnnotations(SIG.SETS_OBJ) <- list(q=0.05, fc=0)
+SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, 
+                         activityName = activityName, executed=thisFile)
 ```
 |  *Results*                                                      |  *SynapseID*                    |
 |  -------                                                        |   ---------                     |
 |  Log fold change                                                |  `r paste(FC_OBJ$properties$id,FC_OBJ$properties$versionNumber,sep='.')`           |
 |  Adjusted pvalues                                               |  `r paste(PVAL_OBJ$properties$id,PVAL_OBJ$properties$versionNumber,sep='.')`         |
-|  Differentially expressed genes (gct format)                    |  `r paste(DEXPP_OBJ$properties$id,DEXPP_OBJ$properties$versionNumber,sep='.')`        |
 |  Differentially expressed genes (with fold change and pvalue)   |  `r paste(SIG.SETS_OBJ$properties$id,SIG.SETS_OBJ$properties$versionNumber,sep='.')` |
 
 ### Executed: Source code
