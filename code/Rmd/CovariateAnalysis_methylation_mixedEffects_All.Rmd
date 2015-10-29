@@ -117,7 +117,7 @@ metadata_filtered <- metadata_keep %>%
   filter(UID %in% colnames(EXP)) %>%
   filter(Cell_Type == "PSC") %>%
   filter(C4_Karyotype_Result != "abnormal") %>%
-  filter(public)
+  filter(public == "true")
 
 REMOVED_UID <- setdiff(metadata_keep$UID, metadata_filtered$UID)
 METADATA <- metadata_filtered
