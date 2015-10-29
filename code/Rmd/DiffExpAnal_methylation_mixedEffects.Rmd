@@ -45,9 +45,9 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 synapseLogin()
 
 # source utility files from ../R/lib folder
-file.sources = list.files('../R/lib',pattern="*.R")
-file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
-tmp = sapply(file.sources,source,.GlobalEnv)
+# These should be moved to a package - very fragile way to do this!
+file.sources = list.files('../R/lib',pattern="*.R$", full.names=TRUE)
+tmp = sapply(file.sources, source,.GlobalEnv)
 
 options(xtable.type="html")
 
