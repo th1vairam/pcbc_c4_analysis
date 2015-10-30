@@ -210,7 +210,7 @@ for (i in 1:length(plotCols)){
 }
 
 multiplot(plotlist=p, cols=2)
-softPower = 7
+softPower = 18
 collectGarbage()
 save(list=c('powerTables'), file = 'CoexppNet_methyl_signed.RData')
 ```
