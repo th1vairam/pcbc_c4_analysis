@@ -215,7 +215,7 @@ collectGarbage()
 save(list=c('powerTables'), file = 'CoexppNet_methyl_signed.RData')
 ```
 Beta is chosen to be `r softPower`
-```{r wgcna.adj, fig.width=15, fig.height=10}
+```{r wgcna.adj, fig.width=15, fig.height=10, include=FALSE}
 # We set the minimum module size relatively high
 minModuleSize = 100;
 
@@ -247,7 +247,7 @@ for (i in 1:length(unmergedNetModules$blockGenes)){
   }
 ```
 ### Module analysis
-```{r module.analysis, fig.height=5, fig.width=10}
+```{r module.analysis, fig.height=10, fig.width=15}
 # Merge modules with similar expression profiles
 # Calculate module eigengenes
 unmergedMEs = moduleEigengenes(EXP, 
@@ -268,7 +268,9 @@ plot(METree,
      xlab = "", 
      sub = "")
 abline(h=0.15, col = "red")
+```
 
+```{r merge.modules, fig.height=20, fig.width=22}
 # Merge modules
 mergedNetModules = mergeCloseModules(fixDataStructure(EXP), unmergedNetModules.colors, cutHeight = 0.2, verbose = 3)
 
@@ -344,7 +346,7 @@ save(list=c('powerTables', 'unmergedNetModules', 'unmergedNetModules.colors',
      file = 'CoexppNet_methyl_signed.RData')
 ```
 vbsr between MEs and traits
-```{r vbsr, fig.height=28, fig.width=15}
+```{r vbsr, fig.height=15, fig.width=18}
 associationStats = sapply(MEs, function(x, ALL.COMP){
   tmp = vbsr(x,ALL.COMP)$z
   names(tmp) = colnames(ALL.COMP)
@@ -358,10 +360,11 @@ p = mapply(function(cols, name){
   p = ggplot(tmp, aes(x=MEs,y=Trait)) + geom_tile(aes(fill = Zscores), colour = "white") + 
     scale_fill_gradient2(low = "green", high = "red", limits = c(min(tmp$Zscores),max(tmp$Zscores)))
   p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + ggtitle(name)
+  print(p)
   return(list(p))
 }, comprisonList, names(comprisonList))
 
-multiplot(plotlist=p, cols=1)
+# multiplot(plotlist=p, cols=1)
 
 save(list=c('powerTables', 'unmergedNetModules', 'unmergedNetModules.colors',
             'mergedNetModules.colors', 'mergedMEs','g','ALL.COMP','associationStats','p'), 
@@ -393,7 +396,7 @@ COEXPP_OBJ <- File('./CoexppNet_methyl_signed.RData', name = 'Coexpression Netwo
 COEXPP_OBJ <- synStore(COEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
 # Store Results
-MOD = data.frame(GeneNames = colnames(EXPR) , merged = mergedNetModules.colors, unmerged = unmergedNetModules.colors)
+MOD = data.frame(GeneNames = colnames(EXP) , merged = mergedNetModules.colors, unmerged = unmergedNetModules.colors)
 write.table(MOD, file='modules.tsv', sep='\t', quote=F, row.names=F)
 MOD_OBJ <- File('modules.tsv', name = 'Coexpression Network Modules', parentId = CODE$properties$id)
 MOD_OBJ <- synStore(MOD_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
