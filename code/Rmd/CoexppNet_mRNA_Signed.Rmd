@@ -164,7 +164,7 @@ Initial normalisation usign voom (with NULL design)
 VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, plot=T)
 ```
 Sample clustering to check for outliers
-```{r sample.pc, fig.height=15, fig.width=15}
+```{r sample.pc, fig.height=8, fig.width=8}
 # Find principal components of expression to plot
 PC <- prcomp(VOOM.GENE_EXPRESSION$E, scale=T)
 
@@ -183,11 +183,10 @@ p <- p + geom_text(aes(label= labels), size=4, hjust=0)
 p
 ```
 
-```{r sample.clustering, fig.height=15, fig.width=25}
+```{r sample.clustering, fig.height=12, fig.width=20}
 sampleTrees = flashClust::hclust(dist(t(VOOM.GENE_EXPRESSION$E)), method = "average")
 tree = cutreeStatic(sampleTrees, cutHeight = 200, minSize=3)
 
-sizeGrWindow(12,10);
 plotDendroAndColors(sampleTrees, 
                     labels2colors(cbind(tree,COVARIATES)),
                     groupLabels = c('Cluster',colnames(COVARIATES)))
@@ -207,7 +206,7 @@ powerTables = pickSoftThreshold(t(VOOM.GENE_EXPRESSION$E),
                                 powerVector=powers,
                                 corFnc = 'bicor',
                                 networkType = 'signed',
-                                blockSize = 10000,
+                                blockSize = 20000,
                                 verbose = 2)[[2]]
 collectGarbage();
 
@@ -215,7 +214,7 @@ collectGarbage();
 colors = c("black", "red")
 
 # Will plot these columns of the returned scale free analysis tables
-plotCols = c(2,5,6,7)
+plotCols = c(4,5,6,7)
 colNames = c("Scale Free Topology Model Fit", "Mean connectivity", "Median connectivity", "Max connectivity");
 
 # Plot the quantities in the chosen columns vs. the soft thresholding power
@@ -240,7 +239,7 @@ minModuleSize = 30;
 
 # Get blockwise modules 
 unmergedNetModules = blockwiseModules(EXPR,
-                       maxBlocksize = 10000,
+                       maxBlocksize = 20000,
                        corType = "bicor",
                        power = softPower,
                        networkType = "signed",
@@ -390,33 +389,6 @@ save(list=c('powerTables', 'unmergedNetModules', 'unmergedNetModules.colors',
      file = 'CoexppNet_mRNA_signed.RData')
 ```
 
-```{r compare.covars, fig.height=10, fig.width=15}
-# Set up variables to contain the module-trait correlations
-DESIGN = getDesignMatrix(COVARIATES, Intercept = F)
-
-# Calculate the correlations
-g = corr.test(mergedMEs[[1]]$data, DESIGN$design)
-
-moduleTraitCor = g$r
-moduleTraitPvalue = melt(g$p)
-moduleTraitPvalue$value = p.adjust(moduleTraitPvalue$value, 'bonferroni')
-moduleTraitPvalue = cast(moduleTraitPvalue, X1~X2)
-rownames(moduleTraitPvalue) = moduleTraitPvalue$X1
-moduleTraitPvalue = moduleTraitPvalue[,-(1)]
-moduleTraitCor[moduleTraitPvalue > 0.05] = 0
-
-moduleTraitCor = moduleTraitCor[, colSums(moduleTraitCor) != 0]
-
-Heatmap(moduleTraitCor, 
-        column_title = 'Covariates', 
-        row_title = 'Module Eigengene', 
-        name = 'Correlation',
-        col = colorRamp2(c(-1,0,1), c("green", "white", "red")))
-
-save(list=c('powerTables', 'Adj', 'TOM', 'tree', 'unmergedNetModules',
-            'mergedMEs','mergedNetModules','moduleTraitCor', 'moduleTraitPvalue'), 
-     file = 'CoexppNet_mRNA_signed.RData')
-```
 ### Synapse Store
 ```{r synapse.store, cache=FALSE, include=FALSE}
 parentId = 'syn5008933'
@@ -440,4 +412,10 @@ CODE <- synStore(CODE)
 # Store Results
 COEXPP_OBJ <- File('./CoexppNet_mRNA_signed.RData', name = 'Coexpression Networks', parentId = CODE$properties$id)
 COEXPP_OBJ <- synStore(COEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+
+# Store Results
+MOD = data.frame(GeneNames = colnames(EXPR) , merged = mergedNetModules.colors, unmerged = unmergedNetModules.colors)
+write.table(MOD, file='modules.tsv', sep='\t', quote=F, row.names=F)
+MOD_OBJ <- File('modules.tsv', name = 'Coexpression Network Modules', parentId = CODE$properties$id)
+MOD_OBJ <- synStore(MOD_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 ```
