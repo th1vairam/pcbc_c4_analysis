@@ -330,7 +330,7 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Populate wiki with results
-CODE <- Folder(name = 'CovariateAnalysis_splicing_mixedEffects_All.Rmd',parentId = parentId)
+CODE <- Folder(name = 'Covariate Analysis Splicing Mixed Effects All',parentId = parentId)
 CODE <- synStore(CODE)
 
 # Store PSI matrix
