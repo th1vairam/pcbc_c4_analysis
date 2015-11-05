@@ -3,7 +3,7 @@ title: "Differential splicing analysis for Alt-Analyze data with mixed effects m
 author: "Thanneer Perumal"
 date: "`r date()`"
 ---
-```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE, cache=FALSE}
 ## It is assumed your working directory is where this file is
 
 # Clear R console screen output
@@ -49,7 +49,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = FALSE)
+  cache = TRUE)
 ```
 
 ```{r fxns, include=FALSE}
@@ -132,11 +132,11 @@ doDiffExpr <- function(countMat, designMat, weights, block, comparison) {
   
   # Get number of significantly differentialy spliced junctions with adj.P.Val <= 0.05 and logFC >= 0
   foo$SIG.EXP.POS <- foo$adj.P.Val<=0.05 & foo$logFC >= 0
-  foo$NUM.SIG.EXP.POS <- colSums(foo$SIG.EXP.POS)
+  foo$NUM.SIG.EXP.POS <- colSums(foo$SIG.EXP.POS, na.rm = T)
   
   # Get number of significantly differentialy spliced junctions with adj.P.Val <= 0.05 and logFC <= 0
   foo$SIG.EXP.NEG <- foo$adj.P.Val<=0.05 & foo$logFC <= 0
-  foo$NUM.SIG.EXP.NEG <- colSums(foo$SIG.EXP.NEG)
+  foo$NUM.SIG.EXP.NEG <- colSums(foo$SIG.EXP.NEG, na.rm = T)
   
   return(foo)
 }
@@ -145,7 +145,7 @@ doDiffExpr <- function(countMat, designMat, weights, block, comparison) {
 ### Download data
 ```{r setup, include=FALSE}
 # Input Parameters
-PROCESSED_PSI_ID = 'syn5048714'
+PSI_ID = 'syn4991632' # Unprocessed file from alt-analyse pipeline
 DESIGN_ID = 'syn5048721'
 COVARIATES_ID = 'syn5048719'
 
@@ -164,18 +164,19 @@ postAdjustedCovars <- c("Diffname_short", "Cell_Line_Type", "Gender",
                         "Reprogramming_Gene_Combination",
                         "Culture_Conditions", "run")
 ```
-Obtain processed PSI, design, and covariates matrix from Synapse.
+Obtain raw PSI, design, and covariates matrix from Synapse.
 ```{r getdata, cache=TRUE, include=FALSE}
 # Get PSI matrix
-PROC_PSI_OBJ = synGet(PROCESSED_PSI_ID)
-ALL_USED_IDs = PROC_PSI_OBJ$properties$id
-PROC_PSI = fread(getFileLocation(PROC_PSI_OBJ), data.table=FALSE)
+PSI_OBJ = synGet(PSI_ID)
+ALL_USED_IDs = PSI_OBJ$properties$id
+PSI = fread(getFileLocation(PSI_OBJ), data.table=FALSE)
 
-# Seperate PROC_PSI and PROC_PSI annotation
-PSI.ANNOT = dplyr::select(PROC_PSI,  one_of(c("Symbol", "Description", "Minor-Isoform", "Major Isoform", "AltExons", "PME",
+# Seperate PSI and PSI annotation
+PSI.ANNOT = dplyr::select(PSI,  one_of(c("Symbol", "Description", "Minor-Isoform", "Major Isoform", "AltExons", "PME",
                                         "dPSI", "rho", "Max Inclusion PSI", "Coordinates", "feature")))
-PROC_PSI = PROC_PSI[, setdiff(colnames(PROC_PSI), colnames(PSI.ANNOT))]
-rownames(PROC_PSI) = PSI.ANNOT$"Minor-Isoform"
+PSI = PSI[, setdiff(colnames(PSI), colnames(PSI.ANNOT))]
+rownames(PSI) = PSI.ANNOT$"Minor-Isoform"
+colnames(PSI) = gsub('.bed','', colnames(PSI))
 
 # Get sample covariates
 COVARIATES_OBJ = synGet(COVARIATES_ID)
@@ -183,6 +184,8 @@ ALL_USED_IDs = c(ALL_USED_IDs, COVARIATES_OBJ$properties$id)
 COVARIATES = fread(getFileLocation(COVARIATES_OBJ), data.table=FALSE)
 row.names(COVARIATES) = COVARIATES[,1]
 COVARIATES = COVARIATES[,-(1)]
+
+PSI = PSI[, rownames(COVARIATES)]
 
 # Convert factor covariates to factors
 FactorCovariates = intersect(colnames(COVARIATES), FactorCovariates)
@@ -192,7 +195,7 @@ COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
 ```
 Synapse IDs of used data:
   | **Name**            | **SynapseID** |
-  | Processed PSI       | `r paste(PROC_PSI_OBJ$properties$id,PROC_PSI_OBJ$properties$versionNumber,sep='.')` |
+  | PSI                 | `r paste(PSI_OBJ$properties$id, PSI_OBJ$properties$versionNumber,sep='.')` |
   | Covariates (subset) | `r paste(COVARIATES_OBJ$properties$id,COVARIATES_OBJ$properties$versionNumber,sep='.')` |
   
 ### Differential splicing analysis
@@ -212,9 +215,12 @@ comparison <- "Diffname_short"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-DIFFNAME <- doDiffExpr(countMat=PROC_PSI, designMat=DESIGN,
-                       weights=NULL, block=COVARIATES$Donor_ID,
-                       comparison=comparison)
+DIFFNAME <- doDiffExpr(countMat = PSI, designMat = DESIGN,
+                       weights = NULL, block = COVARIATES$Donor_ID,
+                       comparison = comparison)
+
+# Rename columns
+DIFFNAME$SIG.SETS = DIFFNAME$SIG.SETS %>% plyr::rename(c("GeneSymbol" = "Minor-Isoform")) %>% left_join(PSI.ANNOT)
 ```
 Get differentially spliced junctions using limma package with following coefficients in the linear model:
   
@@ -235,9 +241,13 @@ comparison <- "Cell_Line_Type"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-CELL.LINE.TYPE <- doDiffExpr(countMat=PROC_PSI, designMat=DESIGN,
+CELL.LINE.TYPE <- doDiffExpr(countMat=PSI, designMat=DESIGN,
                              weights=NULL, block=COVARIATES$Donor_ID,
                              comparison=comparison)
+
+# Rename columns
+CELL.LINE.TYPE$SIG.SETS = CELL.LINE.TYPE$SIG.SETS %>% plyr::rename(c("GeneSymbol" = "Minor-Isoform")) %>% left_join(PSI.ANNOT)
+
 ```
 Get differentially spliced junctions using limma package with following coefficients in the linear model:
   
@@ -258,9 +268,12 @@ comparison <- "Gender"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-GENDER <- doDiffExpr(countMat=PROC_PSI, designMat=DESIGN,
+GENDER <- doDiffExpr(countMat=PSI, designMat=DESIGN,
                      weights=NULL, block=COVARIATES$Donor_ID,
                      comparison=comparison)
+
+# Rename columns
+GENDER$SIG.SETS = GENDER$SIG.SETS %>% plyr::rename(c("GeneSymbol" = "Minor-Isoform")) %>% left_join(PSI.ANNOT)
 ```
 Get differentially spliced junctions using limma package with following co-efficients in the linear model:
   
@@ -281,9 +294,12 @@ comparison <- "Cell_Type_of_Origin_Level2"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-CELL.TYPE.OF.ORIGIN <- doDiffExpr(countMat=PROC_PSI, designMat=DESIGN,
+CELL.TYPE.OF.ORIGIN <- doDiffExpr(countMat=PSI, designMat=DESIGN,
                                   weights=NULL, block=COVARIATES$Donor_ID,
                                   comparison=comparison)
+
+# Rename columns
+CELL.TYPE.OF.ORIGIN$SIG.SETS = CELL.TYPE.OF.ORIGIN$SIG.SETS %>% plyr::rename(c("GeneSymbol" = "Minor-Isoform")) %>% left_join(PSI.ANNOT)
 ```
 Get differentially spliced junctions using limma package with following co-efficients in the linear model:
   
@@ -304,9 +320,12 @@ comparison <- "Donor_Life_Stage"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-DONOR.LIFE.STAGE <- doDiffExpr(countMat=PROC_PSI, designMat=DESIGN,
+DONOR.LIFE.STAGE <- doDiffExpr(countMat=PSI, designMat=DESIGN,
                                weights=NULL, block=COVARIATES$Donor_ID,
                                comparison=comparison)
+
+# Rename columns
+DONOR.LIFE.STAGE$SIG.SETS = DONOR.LIFE.STAGE$SIG.SETS %>% plyr::rename(c("GeneSymbol" = "Minor-Isoform")) %>% left_join(PSI.ANNOT)
 ```
 Get differentially spliced junctions using limma package with following coefficients in the linear model:
   
@@ -327,9 +346,12 @@ comparison <- "Reprogramming_Gene_Combination"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-REP.GENE.COMBO <- doDiffExpr(countMat=PROC_PSI, designMat=DESIGN,
+REP.GENE.COMBO <- doDiffExpr(countMat=PSI, designMat=DESIGN,
                              weights=NULL, block=COVARIATES$Donor_ID,
                              comparison=comparison)
+
+# Rename columns
+REP.GENE.COMBO$SIG.SETS = REP.GENE.COMBO$SIG.SETS %>% plyr::rename(c("GeneSymbol" = "Minor-Isoform")) %>% left_join(PSI.ANNOT)
 ```
 Get differentially spliced junctions using limma package with following co-efficients in the linear model:
   
@@ -350,9 +372,12 @@ comparison <- "Culture_Conditions"
 DESIGN <- makeDesignMatrix(covariates=COVARIATES, comparison = comparison, 
                            covariateColOrder = postAdjustedCovars)
 
-CULT.COND <- doDiffExpr(countMat=PROC_PSI, designMat=DESIGN,
+CULT.COND <- doDiffExpr(countMat=PSI, designMat=DESIGN,
                         weights=NULL, block=COVARIATES$Donor_ID,
                         comparison=comparison)
+
+# Rename columns
+CULT.COND$SIG.SETS = CULT.COND$SIG.SETS %>% plyr::rename(c("GeneSymbol" = "Minor-Isoform")) %>% left_join(PSI.ANNOT)
 ```
 Get differentially spliced junctions using limma package with following co-efficients  in the linear model:
   
@@ -375,9 +400,10 @@ allFC <- llply(list(DIFFNAME$logFC,
                     CULT.COND$logFC, 
                     REP.GENE.COMBO$logFC,
                     DONOR.LIFE.STAGE$logFC),
-               rownameToFirstColumn, colname="GeneNames")
+               rownameToFirstColumn, colname = "Minor-Isoform") 
 
-FC <- plyr::join_all(allFC, by = 'GeneNames', match = 'all')
+FC <- plyr::join_all(allFC, by = 'Minor-Isoform', match = 'all') %>%
+  left_join(PSI.ANNOT)
 
 allPVal <- llply(list(DIFFNAME$adj.P.Val, 
                       GENDER$adj.P.Val, 
@@ -386,9 +412,10 @@ allPVal <- llply(list(DIFFNAME$adj.P.Val,
                       CULT.COND$adj.P.Val, 
                       REP.GENE.COMBO$adj.P.Val,
                       DONOR.LIFE.STAGE$adj.P.Val),
-                 rownameToFirstColumn, colname="GeneNames")
+                 rownameToFirstColumn, colname="Minor-Isoform")
 
-PVAL <- join_all(allPVal, by = 'GeneNames', match = 'all')
+PVAL <- join_all(allPVal, by = 'Minor-Isoform', match = 'all') %>%
+  left_join(PSI.ANNOT)
 
 allSig <- llply(list(DIFFNAME$SIG.EXP.POS + DIFFNAME$SIG.EXP.NEG,
                      GENDER$SIG.EXP.POS + GENDER$SIG.EXP.NEG,
@@ -397,9 +424,10 @@ allSig <- llply(list(DIFFNAME$SIG.EXP.POS + DIFFNAME$SIG.EXP.NEG,
                      CULT.COND$SIG.EXP.POS + CULT.COND$SIG.EXP.NEG,
                      REP.GENE.COMBO$SIG.EXP.POS + REP.GENE.COMBO$SIG.EXP.NEG,
                      DONOR.LIFE.STAGE$SIG.EXP.POS + DONOR.LIFE.STAGE$SIG.EXP.NEG),
-                rownameToFirstColumn, colname="GeneNames")
+                rownameToFirstColumn, colname="Minor-Isoform")
 
-SIG <- join_all(allSig, by = 'GeneNames', match = 'all')
+SIG <- join_all(allSig, by = 'Minor-Isoform', match = 'all') %>%
+  left_join(PSI.ANNOT)
 
 SIG.SETS <- rbindlist(list(DIFFNAME$SIG.SETS,
                            CELL.LINE.TYPE$SIG.SETS,
@@ -415,7 +443,7 @@ Store logFC, adjusted p-values and differentially spliced junctions.
 ```{r synapse.store, include = FALSE, eval=TRUE}
 activityName='Differential splicing analysis of alt-analyse PSI with mixed effects model'
 
-thisFileName <- './DiffExpAnal_splicing_mixedEffects_All.Rmd'
+thisFileName <- 'DiffExpAnal_splicing_mixedEffects_All.Rmd'
 
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 

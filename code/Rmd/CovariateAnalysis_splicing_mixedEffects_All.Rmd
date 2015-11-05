@@ -1,5 +1,5 @@
 ---
-title: "Covariate Analysis for splicing data from Alt-Analyse pipeline with mixed effect modeling"
+title: "Covariate Analysis for splicing data from alt-analyse pipeline with mixed effect modeling"
 author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
