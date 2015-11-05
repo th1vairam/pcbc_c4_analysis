@@ -64,7 +64,7 @@ SYNAPSE_STORE = T
 parentId = 'syn4991628'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
-FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
+FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
 ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
 ```
 Synapse id of PSI matrix used for the analysis is `r PSI_ID` and the synapse id of meta data table used for the analysis is `r METADATA_ID`. 
@@ -141,7 +141,6 @@ retainedJunctions = lapply(METADATA.tmp, function(metadata, psi){
 retainedJunctions = unique(unlist(retainedJunctions))
 
 PSI = PSI[retainedJunctions,,drop=F]
-PSI[is.na(PSI)] = 0
 ```
 `r dim(PSI)[1]` junctions and `r dim(PSI)[2]` samples are considered for the analysis
 
@@ -164,7 +163,8 @@ ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
 Clustering of initial PSI
 ```{r decompse.normalise.data, fig.height=8, fig.width=8}
 # Find principal components of PSI to plot
-PC <- prcomp(PSI, scale = T)
+PSI.tmp = PSI; PSI.tmp[is.na(PSI.tmp)] = 0
+PC <- prcomp(PSI.tmp, scale = T)
 
 # Plot first 2 PCs
 plotdata <- data.frame(UID=rownames(PC$rotation), 
@@ -189,15 +189,12 @@ DM = getDesignMatrix(COVARIATES, Intercept = F)
 # Find correlation between PC's of PSI with covariates
 DESIGN = getDesignMat2Fact(DM$design,FactorCovariates)
 colnames(DESIGN) = substr(colnames(DESIGN),1,50)
-preAdjustedSigCovars = runPCAandPlotCorrelations(PSI, DESIGN,'NULL design(voom-normalized)', isKeyPlot=TRUE)
+preAdjustedSigCovars = runPCAandPlotCorrelations(PSI.tmp, DESIGN,'NULL design(voom-normalized)', isKeyPlot=TRUE)
 
 # Find significant covariates
 adjustCovars = designMatVarsToCovars(getCovariatesMap(DM),preAdjustedSigCovars$significantCovars)
 ```
 Significant covariates to adjust at FDR 0.1 are `r paste(gsub('_','\\\\_',adjustCovars), collapse= ',')`
-```{r preAdjustedSigCovars.NULL, fig.width=25, fig.height=12}
-preAdjustedSigCovars[["PC_res"]][[1]]$plotData
-```
 ```{r preAdjustedSigCovars.NULL.ALL, fig.width=25, fig.height=12}
 preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 ```
@@ -240,7 +237,9 @@ while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 100){
   residCovars <- setdiff(c(FactorCovariates,ContCovariates), postAdjustCovars$fixed)
   
   # Find PC of residual PSI and significant covariates that are highly correlated with PCs
-  residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.PSI, 
+  RESIDUAL.PSI.tmp = RESIDUAL.PSI; 
+  RESIDUAL.PSI.tmp[is.na(RESIDUAL.PSI.tmp)] = runif(sum(is.na(RESIDUAL.PSI.tmp)))*1e-100 # replace NAs with small random numbers
+  residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.PSI.tmp, 
                                                 dplyr::select(DESIGN,-starts_with('Donor_ID')),
                                                 'all adjusted design',
                                                 isKeyPlot=TRUE)
@@ -278,7 +277,9 @@ Residualise significant covariates using a linear model and find correlation bet
 RESIDUAL.PSI = residuals.MArrayLM(ADJUSTED.FIT,PSI)
 
 # Find PC of residual PSI and significant covariates that are highly correlated with PCs
-residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.PSI, 
+RESIDUAL.PSI.tmp = RESIDUAL.PSI; 
+RESIDUAL.PSI.tmp[is.na(RESIDUAL.PSI.tmp)] = runif(sum(is.na(RESIDUAL.PSI.tmp)))*1e-100 # replace NAs with small random numbers
+residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.PSI.tmp, 
                                               dplyr::select(DESIGN,-starts_with('Donor_ID')),
                                               'residual matrix of all adjusted design',
                                               isKeyPlot=TRUE)
@@ -288,16 +289,15 @@ varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO"
                     "Diffname_shortMESO15", "Diffname_shortMESO30","Diffname_shortMESO5", "Diffname_shortSC")
 RESIDUAL.PSI = RESIDUAL.PSI + ADJUSTED.FIT$coefficients[,varsToAddBackIn] %*% t(DM1$design[,varsToAddBackIn])
 ```
-```{r residualSigCovars.manual, fig.width=25, fig.height=12}
-residualSigCovars[["PC_res"]][[1]]$plotData
-```
 ```{r residualSigCovars.manual.ALL, fig.width=25, fig.height=12}
 residualSigCovars[["PC_res"]][[2]]$plotData
 ```
 PCA of adjusted PSI
 ```{r new.design, cache=TRUE, fig.height=8, fig.width=8}
 # Find principal components of PSI to plot
-PC <- prcomp(RESIDUAL.PSI)
+RESIDUAL.PSI.tmp = RESIDUAL.PSI; 
+RESIDUAL.PSI.tmp[is.na(RESIDUAL.PSI.tmp)] = runif(sum(is.na(RESIDUAL.PSI.tmp)))*1e-100 # replace NAs with small random numbers
+PC <- prcomp(RESIDUAL.PSI.tmp, scale = T)
 
 # Plot first 2 PCs
 plotdata <- data.frame(UID=rownames(PC$rotation), 
