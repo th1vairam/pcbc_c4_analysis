@@ -268,14 +268,14 @@ performDiffExpAnal <- function(diffState, psiCovariates){
                comparison,
                ' at FDR <= 0.05 and logFC >= 0 or logFC <= 0:\n'))
 
-    tmp <- data.frame('No. OF UP REG. SPLICE JN.' = t(diffExp[[comparison]]$NUM.SIG.EXP.POS),
-                      'No. OF DOWN REG. SPLICE JN.' = t(diffExp[[comparison]]$NUM.SIG.EXP.NEG))
-    
-    if (dim(tmp)[1] != 0){      
-      print(kable(tmp))
-    } else {
-      cat('Not feasible to calculate \n')
-    }
+#     tmp <- data.frame('No. OF UP REG. SPLICE JN.' = t(diffExp[[comparison]]$NUM.SIG.EXP.POS),
+#                       'No. OF DOWN REG. SPLICE JN.' = t(diffExp[[comparison]]$NUM.SIG.EXP.NEG))
+#     
+#     if (dim(tmp)[1] != 0){      
+#       print(kable(tmp))
+#     } else {
+#       cat('Not feasible to calculate \n')
+#     }
   }
     
   allFC <- llply(lapply(diffExp, function(x){return(x$logFC)}),
