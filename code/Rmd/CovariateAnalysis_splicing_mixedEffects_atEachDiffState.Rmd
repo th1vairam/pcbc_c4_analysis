@@ -474,7 +474,7 @@ storeFilesInSynapse <- function(covariates, preadjustedPSI, postadjustedPSI, cod
                              activityName = ActivityName, executed = thisFile)
   
   # Design Matrix
-  DESIGN <- preadjustedPSI[[diffstate]]$DM
+  DESIGN <- preadjustedPSI[[diffstate]]$DM$design
   DESIGN <- rownameToFirstColumn(DESIGN, 'UID')
   
   write.table(DESIGN,
