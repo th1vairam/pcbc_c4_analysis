@@ -64,7 +64,7 @@ parentId = 'syn4991628'
 FactorCovariates = c('Diffname_short', 'run', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
 ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
 ```
-The alt-analyse derived PSI matrix used: (`r COUNT_ID`). 
+The alt-analyse derived processed PSI matrix used: (`r PROC.PSI_ID`). 
 
 The metadata comes from the table `r METADATA_ID`. 
 
