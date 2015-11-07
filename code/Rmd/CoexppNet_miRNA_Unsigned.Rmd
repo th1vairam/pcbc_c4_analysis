@@ -104,8 +104,6 @@ Initial normalisation usign voom (with NULL design)
 ```{r initial.voom.normalisation}
 # Initial normalisation of gene expression
 VOOM.GENE_EXPRESSION = voom(COUNT, design=NULL, plot=T)
-FIT = lmFit(VOOM.GENE_EXPRESSION)
-EXPR = residuals.MArrayLM(FIT, VOOM.GENE_EXPRESSION)
 EXPR = VOOM.GENE_EXPRESSION$E
 ```
 Sample clustering to check for outliers
@@ -312,7 +310,7 @@ save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 
 ```
 vbsr between MEs and traits
 ```{r vbsr, fig.height=15, fig.width=18}
-associationStats = sapply(MEs, function(x, ALL.COMP){
+associationStats = sapply(MEs.merged, function(x, ALL.COMP){
   tmp = vbsr(x,ALL.COMP)$z
   names(tmp) = colnames(ALL.COMP)
   return(tmp)
