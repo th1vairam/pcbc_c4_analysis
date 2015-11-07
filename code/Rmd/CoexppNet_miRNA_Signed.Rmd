@@ -92,7 +92,10 @@ COUNT = (2^(COUNT))-0.5
 ### Covariates
 ```{r covariates.clustering}
 # Convert factor covariates to factors
+FactorCovariates = intersect(colnames(COVARIATES), FactorCovariates)
 COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
+
+ContCovariates = intersect(colnames(COVARIATES), ContCovariates)
 COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
 ```
 ### Normalisation (with NULL)
@@ -329,8 +332,6 @@ save(list=c('powerTables', 'unmergedNetModules', 'unmergedNetModules.colors',
 
 ### Synapse Store
 ```{r synapse.store, cache=FALSE, include=FALSE}
-parentId = 'syn5008933'
-
 activityName = 'Coexpression Network Analysis of eXpress aligned miRNA data with NULL model'
 
 thisFileName <- 'CoexppNet_miRNA_Signed.Rmd'
@@ -366,8 +367,8 @@ ME_OBJ <- synStore(ME_OBJ, used = ALL_USED_IDs, activityName = activityName, exe
 
 |  *Results*           |  *SynapseID*                                                               |
 |  -------             |   ---------                                                                |
-|  Modules             |  `r paste(MOD$properties$id,MOD$properties$versionNumber,sep='.')`         |
-|  Module Eigen miRNAs |  `r paste(MEs$properties$id,MEs$properties$versionNumber,sep='.')`         |
+|  Modules             |  `r paste(MOD_OBJ$properties$id,MOD_OBJ$properties$versionNumber,sep='.')` |
+|  Module Eigen miRNAs |  `r paste(ME_OBJ$properties$id,ME_OBJ$properties$versionNumber,sep='.')`   |
 
 ### Executed: Source code
 `r paste0('[Source R Markdown](',print(thisFile),')')`
