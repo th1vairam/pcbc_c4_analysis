@@ -80,7 +80,7 @@ COUNT_OBJ = synGet(COUNT_ID)
 ALL_USED_IDs = COUNT_OBJ$properties$id
 COUNT = fread(getFileLocation(COUNT_OBJ), data.table=FALSE)
 row.names(COUNT) = COUNT[,1]
-COUNT = COUNT[1:500,-(1)]
+COUNT = COUNT[,-(1)]
 
 # Get metadata
 METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
