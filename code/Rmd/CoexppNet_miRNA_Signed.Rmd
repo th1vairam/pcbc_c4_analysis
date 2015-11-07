@@ -354,7 +354,7 @@ CODE <- Folder(name = 'Coexpression Network Analysis miRNA Signed',parentId = pa
 CODE <- synStore(CODE)
 
 # Store Results
-COEXPP_OBJ <- File('./CoexppNet_miRNA_Signed.RData', name = 'Coexpression Networks (RData file)', parentId = CODE$properties$id)
+COEXPP_OBJ <- File('./CoexppNet_miRNA_signed.RData', name = 'Coexpression Networks (RData file)', parentId = CODE$properties$id)
 COEXPP_OBJ <- synStore(COEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
 # Store Module Files
