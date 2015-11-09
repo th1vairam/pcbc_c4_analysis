@@ -189,7 +189,7 @@ COVARIATES.CORRELATION = lapply(COVARIATES, covariateCorrelation)
 ```
 ### Normalisation (with NULL)
 Initial normalisation usign voom (with NULL design)
-```{r initial.voom.normalisation, cache=FALSE}
+```{r initial.voom.normalisation}
 initialVoomNormalisation <- function(covariates, processed_counts){
   
   diffState = unique(covariates$Diffname_short)
@@ -256,7 +256,7 @@ PCA.GENE.EXPRESSION = lapply(COVARIATES, plotPCAGeneExpression, VOOM.GENE.EXPRES
 
 ### Significant Covariates
 Correlation between pca of unadjusted mRNA expression and covariates is used to find significant covariates
-```{r preAdjusted.covariates, fig.width=25, fig.height=12, cache=FALSE}
+```{r preAdjusted.covariates, fig.width=25, fig.height=12}
 plotGeneCovariatesCorrelation <- function(covariates, voomExpr){
   diffState = unique(covariates$Diffname_short)
   
@@ -303,7 +303,7 @@ PREADJUSTED.COVARIATES = lapply(COVARIATES, plotGeneCovariatesCorrelation,
 
 ### Normalisation (iterative)
 Since many covariates are correlated, re-normalising COVARIATES with an iterative design matrix. All effects are considered as fixed effects, except Donor_ID which is a random effect.
-```{r iterative.adjusted.voom.normalisation, fig.width=25, fig.height=12, cache=FALSE}
+```{r iterative.adjusted.voom.normalisation, fig.width=25, fig.height=12}
 iterativeNormalisation <- function(covariates, processedCounts, voomExpr,
                                    preadjustedCovariates) {  
   diffState = unique(covariates$Diffname_short)
@@ -426,7 +426,7 @@ VOOM.GENE.EXPRESSION.POSTADJUSTED = lapply(COVARIATES, iterativeNormalisation,
 
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
-```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache=FALSE}
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cahce=FALSE}
 ActivityName <- 'Covariate Analysis of eXpress aligned mRNA data at each diff state with mixed effects'
   
 thisFileName <- 'CovariateAnalysis_mRNA_mixedEffects_EachDiffState.Rmd'
@@ -452,7 +452,7 @@ storeFilesInSynapse <- function(covariates, processedCounts,
   covariates = covariates[,sapply(covariates, function(x) length(levels(x))) > 1]    
   
   # Store Covariates Matrix
-  covariates <- rownameToFirstColumn(covariates[, postAdjustedCovars[[diffState]]$postAdjustCovars], 'UID')
+  covariates <- rownameToFirstColumn(covariates, 'UID')
   write.table(covariates,
               file = paste0('./Filtered_mRNA_Covariates_',diffState,'.tsv'),
               sep='\t', row.names=F, col.names=T, quote=F)
