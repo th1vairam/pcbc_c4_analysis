@@ -170,7 +170,7 @@ SOURCE.FOLDER_ID = 'syn5015149'
 ALL.FILES = synQuery(paste0('select Diffname_short,id,fileType from file where parentId == "',SOURCE.FOLDER_ID,'"'))
 
 SYNAPSE_STORE = T
-parentId = 'syn4991628'
+parentId = 'syn5008933'
 
 # Specify factor and continuous covariates pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
