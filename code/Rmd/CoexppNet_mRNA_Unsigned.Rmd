@@ -1,5 +1,5 @@
 ---
-title: "Coexpression Network Analysis for eXpress aligned mRNA data with NULL voom model (Unadjusted, Signed)"
+title: "Coexpression Network Analysis for eXpress aligned mRNA data with NULL voom model (Unadjusted, Unsigned)"
 author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
@@ -35,8 +35,8 @@ library(rGithubClient) ## Needs the dev branch
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
-# knitToFolderEntity(file = "./CoexppNet_mRNA_Signed.Rmd", 
-#                    entityName = 'Coexpression Network Analysis mRNA No Adjustments Signed', 
+# knitToFolderEntity(file = "./CoexppNet_mRNA_Unsigned.Rmd", 
+#                    entityName = 'Coexpression Network Analysis mRNA No Adjustments Unsigned', 
 #                    parentId = 'syn5008933', 
 #                    overwrite=F)
 
@@ -208,7 +208,7 @@ correlationMatrix = psych::cor.wt(t(VOOM.GENE_EXPRESSION$E), w = t(VOOM.GENE_EXP
 # Call the network topology analysis function
 powerTables = pickSoftThreshold.fromSimilarity(correlationMatrix$r,
                                                powerVector=powers,
-                                               networkType = 'signed',
+                                               networkType = 'unsigned',
                                                blockSize = 20000,
                                                verbose = 2)[[2]]
 collectGarbage();
@@ -230,9 +230,9 @@ for (i in 1:length(plotCols)){
 }
 
 multiplot(plotlist=p, cols=2)
-softPower = 12
+softPower = 6
 collectGarbage()
-save(list=c('powerTables'), file = 'CoexppNet_mRNA_signed.RData')
+save(list=c('powerTables'), file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 Beta is chosen to be `r softPower`
 ```{r wgcna.adj, fig.width=15, fig.height=10}
@@ -244,7 +244,7 @@ datExpr = t(VOOM.GENE_EXPRESSION$weights * VOOM.GENE_EXPRESSION$E )
 dataCluster = projectiveKMeans(datExpr, verbose = 3, indent = 0)
 
 # Calculate weighted correlation
-adjacency = abs(0.5+0.5*correlationMatrix$r)^softPower 
+adjacency = abs(correlationMatrix$r)^softPower 
 
 # Turn adjacency into topological overlap
 TOM = list()
@@ -260,7 +260,7 @@ for (cluster in unique(dataCluster$clusters)){
   ind = which(dataCluster$clusters == cluster)
   
   # Turn adjacency into topological overlap
-  TOM[[cluster]] = TOMsimilarity(adjacency[ind,ind], TOMType = "signed", verbose = 3);
+  TOM[[cluster]] = TOMsimilarity(adjacency[ind,ind], TOMType = "unsigned", verbose = 3);
   dissTOM[[cluster]] = 1-TOM[[cluster]]
   
   # Call the hierarchical clustering function
@@ -299,7 +299,7 @@ table(dynamicColorLabels)
 
 save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
             'dynamicModLabels', 'dynamicColorLabels'), 
-     file = 'CoexppNet_mRNA_signed.RData')
+     file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 Dendrogram tree of gene clustering
 ```{r dendro.modules, fig.height=12, fig.width=20}
@@ -330,7 +330,7 @@ abline(h=0.1, col = "red")
 
 save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
             'dynamicModLabels', 'dynamicColorLabels', 'MEs', 'MEDiss', 'METree'), 
-     file = 'CoexppNet_mRNA_signed.RData')
+     file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 
 ```{r merge.modules, fig.height=20, fig.width=22}
@@ -356,7 +356,7 @@ ggheatmap.show(ggheatmap(tmp1))
 save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
             'dynamicModLabels', 'dynamicColorLabels', 'MEs', 'MEDiss', 'METree', 'mergedNetModules', 'dynamicColorLabels.merged', 
             'MEs.merged'), 
-     file = 'CoexppNet_mRNA_signed.RData')
+     file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 ### Compare eigen genes and covariates
 ```{r compare.covars, fig.height=10, fig.width=15}
@@ -408,7 +408,7 @@ p
 save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
             'dynamicModLabels', 'dynamicColorLabels', 'MEs', 'MEDiss', 'METree', 'mergedNetModules', 'dynamicColorLabels.merged', 
             'MEs.merged', 'moduleTraitCor', 'ALL.COMP'), 
-     file = 'CoexppNet_mRNA_signed.RData')
+     file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 vbsr between MEs and traits
 ```{r vbsr, fig.height=15, fig.width=18}
@@ -434,14 +434,14 @@ p = mapply(function(cols, name){
 save(list=c('powerTables', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
             'dynamicModLabels', 'dynamicColorLabels', 'MEs', 'mergedNetModules', 'dynamicColorLabels.merged', 
             'moduleTraitCor', 'associationStats'), 
-     file = 'CoexppNet_mRNA_signed.RData')
+     file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 
 ### Synapse Store
 ```{r synapse.store, cache=FALSE, include=FALSE}
 activityName='Coexpression Network Analysis of eXpress aligned mRNA data with NULL model'
   
-thisFileName <- 'CoexppNet_mRNA_Signed.Rmd'
+thisFileName <- 'CoexppNet_mRNA_Unsigned.Rmd'
   
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
@@ -452,11 +452,11 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Create folder to tore the results and populate analysis wiki
-CODE <- Folder(name = 'Coexpression Network Analysis mRNA No Adjustments Signed',parentId = parentId)
+CODE <- Folder(name = 'Coexpression Network Analysis mRNA No Adjustments Unsigned',parentId = parentId)
 CODE <- synStore(CODE)
       
 # Store Results
-# COEXPP_OBJ <- File('./CoexppNet_mRNA_signed.RData', name = 'Coexpression Networks', parentId = CODE$properties$id)
+# COEXPP_OBJ <- File('./CoexppNet_mRNA_unsigned.RData', name = 'Coexpression Networks', parentId = CODE$properties$id)
 # COEXPP_OBJ <- synStore(COEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
 # Store Module Files
