@@ -54,7 +54,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE)
+  cache = FALSE)
 ```
 ### Download data
 ```{r setup, include=FALSE}
@@ -163,7 +163,6 @@ Initial normalisation usign voom (with NULL design)
 ```{r initial.voom.normalisation}
 # Initial normalisation of gene expression
 VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, plot=T)
-EXPR = VOOM.GENE_EXPRESSION$E
 ```
 Sample clustering to check for outliers
 ```{r sample.pc, fig.height=8, fig.width=8}
@@ -203,13 +202,15 @@ enableWGCNAThreads()
 # Choose a set of soft-thresholding powers
 powers = c(seq(2,10,by=1), seq(12,30, by=2));
 
+# Calculate weighted correlation
+correlationMatrix = psych::cor.wt(t(VOOM.GENE_EXPRESSION$E), w = t(VOOM.GENE_EXPRESSION$weights))
+
 # Call the network topology analysis function
-powerTables = pickSoftThreshold(t(VOOM.GENE_EXPRESSION$E),
-                                powerVector=powers,
-                                corFnc = 'bicor',
-                                networkType = 'unsigned',
-                                blockSize = 20000,
-                                verbose = 2)[[2]]
+powerTables = pickSoftThreshold.fromSimilarity(correlationMatrix$r,
+                                               powerVector=powers,
+                                               networkType = 'unsigned',
+                                               blockSize = 20000,
+                                               verbose = 2)[[2]]
 collectGarbage();
 
 # Plot the results
@@ -229,7 +230,7 @@ for (i in 1:length(plotCols)){
 }
 
 multiplot(plotlist=p, cols=2)
-softPower = 7
+softPower = 6
 collectGarbage()
 save(list=c('powerTables'), file = 'CoexppNet_mRNA_unsigned.RData')
 ```
@@ -238,44 +239,82 @@ Beta is chosen to be `r softPower`
 # We set the minimum module size relatively high
 minModuleSize = 30;
 
+# Cluster expression data in to blocks (for computational efficiency)
+datExpr = t(VOOM.GENE_EXPRESSION$weights * VOOM.GENE_EXPRESSION$E )
+dataCluster = projectiveKMeans(datExpr, verbose = 3, indent = 0)
+
 # Calculate weighted correlation
-correlationMatrix = psych::cor.wt(t(VOOM.GENE_EXPRESSION$E), w = t(VOOM.GENE_EXPRESSION$weights))
 adjacency = abs(correlationMatrix$r)^softPower 
 
 # Turn adjacency into topological overlap
-TOM = TOMsimilarity(adjacency, TOMType = "unsigned");
-dissTOM = 1-TOM
+TOM = list()
+dissTOM = list()
+geneTree = list()
+dynamicMods = list()
+dynamicColors = list()
+for (cluster in unique(dataCluster$clusters)){
+  cat("-----\n")
+  cat(paste("Modularising cluster number:",cluster,"\n"))
+  
+  # Get genes in the cluster
+  ind = which(dataCluster$clusters == cluster)
+  
+  # Turn adjacency into topological overlap
+  TOM[[cluster]] = TOMsimilarity(adjacency[ind,ind], TOMType = "unsigned", verbose = 3);
+  dissTOM[[cluster]] = 1-TOM[[cluster]]
+  
+  # Call the hierarchical clustering function
+  geneTree[[cluster]] = Rclusterpp.hclust(as.dist(dissTOM[[cluster]]), method = "average");
 
-# Call the hierarchical clustering function
-geneTree = Rclusterpp.hclust(as.dist(dissTOM), method = "average");
+  # Module identification using dynamic tree cut:
+  dynamicMods[[cluster]] = cutreeDynamic(dendro = geneTree[[cluster]], distM = dissTOM[[cluster]],
+                                         deepSplit = 3, pamRespectsDendro = TRUE,
+                                         minClusterSize = minModuleSize, verbose = 3);
+  collectGarbage()
+  
+  dynamicColors[[cluster]] = labels2colors(dynamicMods[[cluster]])
+}
 
-# Module identification using dynamic tree cut:
-dynamicMods = cutreeDynamic(dendro = geneTree, distM = dissTOM,
-                            deepSplit = 4, pamRespectsDendro = TRUE,
-                            minClusterSize = minModuleSize,
-                            verbose = 3);
-collectGarbage()
+# Convert all module numbers between 1 and max
+dynamicMods.all = dynamicMods
+ind = which(sapply(dynamicMods, min) == 0)
+dynamicMods.all[ind] = lapply(dynamicMods.all[ind], function(x){x = x + 1})
+
+# Combine all modules
+modSize = cumsum(sapply(sapply(dynamicMods.all, unique), length))
+if (length(modSize) > 1){
+  for (i in 2:max(dataCluster$clusters)){
+    dynamicMods.all[[i]] = dynamicMods.all[[i]] + modSize[i-1]
+  }  
+}
+
+dynamicModLabels = matrix(0, 1, length(VOOM.GENE_EXPRESSION$genes))
+for (i in 1:max(dataCluster$clusters)){
+  dynamicModLabels[dataCluster$clusters == i] = dynamicMods.all[[i]]
+}
 
 # Convert numeric lables into colors
-dynamicColors = labels2colors(dynamicMods)
-table(dynamicColors)
-collectGarbage()
+dynamicColorLabels = labels2colors(dynamicModLabels)
+table(dynamicColorLabels)
 
-save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods', 'dynamicColors'), 
+save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
+            'dynamicModLabels', 'dynamicColorLabels'), 
      file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 Dendrogram tree of gene clustering
 ```{r dendro.modules, fig.height=12, fig.width=20}
-# Plot the dendrogram and colors underneath
-plotDendroAndColors(geneTree, dynamicColors, "Dynamic Tree Cut",
-                    dendroLabels = FALSE, hang = 0.03,
-                    addGuide = TRUE, guideHang = 0.05,
-                    main = "Gene dendrogram and module colors")
+for (i in 1:max(dataCluster$clusters)){
+  # Plot the dendrogram and colors underneath
+  plotDendroAndColors(geneTree[[i]], dynamicColors[[i]], "Dynamic Tree Cut",
+                      dendroLabels = FALSE, hang = 0.03,
+                      addGuide = TRUE, guideHang = 0.05,
+                      main = "Blockwise gene dendrogram and module colors")
+}
 ```
 ### Module analysis
 ```{r module.analysis, fig.height=10, fig.width=15}
 # Calculate module eigengenes
-MEs = moduleEigengenes(t(EXPR), colors = dynamicMods, nPC = 10)
+MEs = moduleEigengenes(t(VOOM.GENE_EXPRESSION$E), colors = dynamicColorLabels, nPC = 10)
 
 # Calculate dissimilarity between module eigen genes
 MEDiss = 1 - abs(cor(MEs$eigengenes, use = "p"))
@@ -287,19 +326,22 @@ collectGarbage()
 # Plot the results
 plot(METree,  main = "Clustering of module eigengenes",
      xlab = "", sub = "")
-abline(h=0.15, col = "red")
-save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods', 'dynamicColors',
-            'MEs', 'MEDiss', 'METree'), 
+abline(h=0.1, col = "red")
+
+save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
+            'dynamicModLabels', 'dynamicColorLabels', 'MEs', 'MEDiss', 'METree'), 
      file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 
 ```{r merge.modules, fig.height=20, fig.width=22}
-# Merge modules
-mergedNetModules = mergeCloseModules(fixDataStructure(t(EXPR)), dynamicColors, cutHeight = 0.2, verbose = 3)
+# Merge modules with eucledian distance less than 0.1
+mergedNetModules = mergeCloseModules(fixDataStructure(t(VOOM.GENE_EXPRESSION$E)), 
+                                     dynamicColorLabels, 
+                                     cutHeight = 0.1, verbose = 3)
 
 # Merged module labels
-dynamicColors.merged = mergedNetModules$colors
-table(dynamicColors.merged)
+dynamicColorLabels.merged = mergedNetModules$colors
+table(dynamicColorLabels.merged)
 
 # Eigengenes of the new merged modules
 MEs.merged = mergedNetModules$newMEs
@@ -311,8 +353,9 @@ tmp1 = tmp$r
 tmp1[tmp$pval >= 0.05] = 0
 ggheatmap.show(ggheatmap(tmp1))
 
-save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods', 'dynamicColors',
-            'MEs', 'MEDiss', 'METree', 'mergedNetModules', 'dynamicColors.merged', 'MEs.merged'), 
+save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
+            'dynamicModLabels', 'dynamicColorLabels', 'MEs', 'MEDiss', 'METree', 'mergedNetModules', 'dynamicColorLabels.merged', 
+            'MEs.merged'), 
      file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 ### Compare eigen genes and covariates
@@ -362,9 +405,9 @@ p = ggplot(tmp, aes(x=MEs,y=Trait)) + geom_tile(aes(fill = value), colour = "whi
 p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 p
 
-save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods', 'dynamicColors',
-            'MEs', 'MEDiss', 'METree', 'mergedNetModules', 'dynamicColors.merged', 'MEs.merged',
-            'moduleTraitCor', 'ALL.COMP'), 
+save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
+            'dynamicModLabels', 'dynamicColorLabels', 'MEs', 'MEDiss', 'METree', 'mergedNetModules', 'dynamicColorLabels.merged', 
+            'MEs.merged', 'moduleTraitCor', 'ALL.COMP'), 
      file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 vbsr between MEs and traits
@@ -388,9 +431,9 @@ p = mapply(function(cols, name){
 
 # multiplot(plotlist=p, cols=1)
 
-save(list=c('powerTables', 'correlationMatrix', 'adjacency', 'TOM', 'geneTree', 'dynamicMods', 'dynamicColors',
-            'MEs', 'MEDiss', 'METree', 'mergedNetModules', 'dynamicColors.merged', 'MEs.merged',
-            'moduleTraitCor', 'ALL.COMP', 'associationStats', 'p'), 
+save(list=c('powerTables', 'adjacency', 'TOM', 'geneTree', 'dynamicMods','dynamicColors',
+            'dynamicModLabels', 'dynamicColorLabels', 'MEs', 'mergedNetModules', 'dynamicColorLabels.merged', 
+            'moduleTraitCor', 'associationStats'), 
      file = 'CoexppNet_mRNA_unsigned.RData')
 ```
 
@@ -413,17 +456,17 @@ CODE <- Folder(name = 'Coexpression Network Analysis mRNA No Adjustments Unsigne
 CODE <- synStore(CODE)
       
 # Store Results
-COEXPP_OBJ <- File('./CoexppNet_mRNA_unsigned.RData', name = 'Coexpression Networks', parentId = CODE$properties$id)
-COEXPP_OBJ <- synStore(COEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+# COEXPP_OBJ <- File('./CoexppNet_mRNA_unsigned.RData', name = 'Coexpression Networks', parentId = CODE$properties$id)
+# COEXPP_OBJ <- synStore(COEXPP_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
 # Store Module Files
-MOD = data.frame(ID = rownames(EXPR) , merged = dynamicColors.merged, unmerged = dynamicColors)
+MOD = data.frame(ID = rownames(VOOM.GENE_EXPRESSION$E) , merged = dynamicColorLabels.merged, unmerged = dynamicColorLabels)
 write.table(MOD, file='Modules.tsv', sep='\t', quote=F, row.names=F)
 MOD_OBJ <- File('Modules.tsv', name = 'Coexpression Network Modules', parentId = CODE$properties$id)
 MOD_OBJ <- synStore(MOD_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
 # Store module eigen genes
-MEs = cbind(data.frame(ID =  colnames(EXPR)), MEs.merged)
+MEs = cbind(data.frame(ID =  colnames(VOOM.GENE_EXPRESSION$E)), MEs.merged)
 write.table(MEs, file='Module.EigenGenes.tsv', sep='\t', quote=F, row.names=F)
 ME_OBJ <- File('Module.EigenGenes.tsv', name = 'Module Eigen Genes', parentId = CODE$properties$id)
 ME_OBJ <- synStore(ME_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)

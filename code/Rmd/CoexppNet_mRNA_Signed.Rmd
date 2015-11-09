@@ -272,7 +272,7 @@ for (cluster in unique(dataCluster$clusters)){
                                          minClusterSize = minModuleSize, verbose = 3);
   collectGarbage()
   
-  dynamicColors[[cluster]] = labels2colors(dynamicMods[[cluster]])}
+  dynamicColors[[cluster]] = labels2colors(dynamicMods[[cluster]])
 }
 
 # Convert all module numbers between 1 and max
