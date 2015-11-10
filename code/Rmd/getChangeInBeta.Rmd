@@ -90,13 +90,13 @@ diffExp.comparison = rbindlist(methyl.diffExp) %>%
 compNames.new = filter(compNames, comparisonName %in% diffExp.comparison)
 
 WGCNA::collectGarbage()
-changeBeta = apply(compNames.new, 1, function(x, covariates, beta){  
+changeBeta = apply(compNames.new, 1, function(x, covariates, betaFraction){  
   ind1 = which(covariates[,x['class']] == x["variable1Short"])
   ind2 = which(covariates[,x['class']] == x["variable2Short"])
   
   if (length(ind1) > 0 && length(ind2) > 0 ){
-    var1Mean = rowMeans(beta[,covariates$UID[ind1], drop=F], na.rm=T)
-    var2Mean = rowMeans(beta[,covariates$UID[ind2], drop=F], na.rm=T)
+    var1Mean = rowMeans(betaFraction[,covariates$UID[ind1], drop=F], na.rm=T)
+    var2Mean = rowMeans(betaFraction[,covariates$UID[ind2], drop=F], na.rm=T)
     changeBeta = var1Mean - var2Mean
     
     changeBeta = rownameToFirstColumn(changeBeta, 'methProbeIDs')    
@@ -105,7 +105,7 @@ changeBeta = apply(compNames.new, 1, function(x, covariates, beta){
   }
   colnames(changeBeta)[2] = x["comparisonName"]
   return(changeBeta)
-}, COVARIATES, beta)
+}, COVARIATES, BETA)
 changeBeta = plyr::join_all(changeBeta)
 ```
 ### Synapse store
