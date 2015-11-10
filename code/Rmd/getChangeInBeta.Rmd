@@ -1,0 +1,133 @@
+---
+title: "Get mean change in beta for each differential comparisons"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(plyr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+library(reshape2)
+library(biomaRt)
+library(tools)
+
+library(knitr)
+library(knit2synapse)
+library(synapseClient)
+library(rGithubClient) ## Needs the dev branch
+
+synapseLogin()
+
+# source utility files from ../R/lib folder
+file.sources = list.files('../R/lib',pattern="*.R", full.names=T)
+tmp = sapply(file.sources,source,.GlobalEnv)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = FALSE)
+```
+### Download differential expression results
+```{r download.comp}
+# Get all comparison names from synapse
+compNames <- synTableQuery("SELECT * FROM syn4483642")@values
+ALL_USED_IDs = "syn4483642"
+
+# Add direction to comparison names
+compNames = rbind(compNames %>%
+                    mutate(direction = 'up',
+                           comparisonName = str_c(comparison,direction,sep='__')),
+                  compNames %>%
+                    mutate(direction = 'down',
+                           comparisonName = str_c(comparison,direction,sep='__')))
+
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE", "MESO5", "ECTO", "MESO15", "MESO30", "EB")
+```
+
+```{r summarise}
+# Add change in beta values for each comparison
+BETA_ID = 'syn4487642'
+COVARIATES_ID = 'syn4487669'
+ALL_USED_IDs = c(ALL_USED_IDs, BETA_ID, COVARIATES_ID)
+
+# Get filtered beta values
+BETA_OBJ = synGet(BETA_ID)
+BETA = fread(getFileLocation(BETA_OBJ))
+tmp = read.table(getFileLocation(BETA_OBJ), sep = '\t', header=T, check.names=F, nrow=1)
+setnames(BETA, colnames(BETA), colnames(tmp))
+BETA = as.data.frame(BETA)
+rownames(BETA) = BETA[,1]
+
+# Get filtered metadata
+COVARIATES_OBJ = synGet(COVARIATES_ID)
+ALL_USED_IDs[length(ALL_USED_IDs)+1] = COVARIATES_OBJ$properties$id
+COVARIATES = read.table(getFileLocation(COVARIATES_OBJ), sep='\t', header=T, stringsAsFactors = F)
+
+# Get differential expresison results (this is used to filter only those comparisons which are of use)
+methylIds = c(methylId.all = "syn4527629", methylId.eachDiffState = "syn4598861")
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(methylIds))
+methyl.diffExp = lapply(methylIds, function(id){
+  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
+})
+diffExp.comparison = rbindlist(methyl.diffExp) %>%
+  dplyr::select(Comparison) %>% unlist %>% unique
+
+compNames.new = filter(compNames, comparisonName %in% diffExp.comparison)
+
+WGCNA::collectGarbage()
+changeBeta = apply(compNames.new, 1, function(x, covariates, beta){  
+  ind1 = which(covariates[,x['class']] == x["variable1Short"])
+  ind2 = which(covariates[,x['class']] == x["variable2Short"])
+  
+  if (length(ind1) > 0 && length(ind2) > 0 ){
+    var1Mean = rowMeans(beta[,covariates$UID[ind1], drop=F], na.rm=T)
+    var2Mean = rowMeans(beta[,covariates$UID[ind2], drop=F], na.rm=T)
+    changeBeta = var1Mean - var2Mean
+    
+    changeBeta = rownameToFirstColumn(changeBeta, 'methProbeIDs')    
+  } else {
+    changeBeta = data.frame(methProbeIDs =NA, DF=NA)    
+  }
+  colnames(changeBeta)[2] = x["comparisonName"]
+  return(changeBeta)
+}, COVARIATES, beta)
+changeBeta = plyr::join_all(changeBeta)
+```
+### Synapse store
+```{r synapse.store}
+activityName = "Calculate change in beta for all differential comparisons"
+
+parentId = "syn4231339"
+
+thisFileName <- 'getChangeInBeta.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='splicing')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Write large matrix to RData file
+save(list = "changeBeta" , file = "changeInBeta.RData")
+
+# Write file to synapse
+file.obj = File(file = "changeInBeta.RData", name = "Change in Beta", parentId = parentId)
+file.obj = synStore(file.obj, activityName = activityName, used = as.character(ALL_USED_IDs), executed = thisFile)
+```
