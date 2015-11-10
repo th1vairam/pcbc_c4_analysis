@@ -117,7 +117,7 @@ activityName = "Calculate change in PSI for all differential comparisons"
 
 parentId = 'syn4991628'
 
-thisFileName <- 'changePSI.R'
+thisFileName <- 'changeInPSI.R'
 
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
