@@ -23,6 +23,8 @@ library(rGithubClient) ## Needs the dev branch
 
 synapseLogin()
 
+source('./lib/rownameToFirstColumn.R')
+
 ### Download differential expression results
 # Get all comparison names from synapse
 compNames <- synTableQuery("SELECT * FROM syn4483642")@values
@@ -80,6 +82,7 @@ COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
 # Convert factor covariates to factors
 COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
 COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
+COVARIATES = rownameToFirstColumn(COVARIATES, 'UID')
 
 # Get differential splicing results (this is used to filter only those comparisons which are of use)
 splicingIds = c(splicingId.all = "syn5049321", splicingId.DE = "syn5065271", splicingId.EB = "syn5065380", 
