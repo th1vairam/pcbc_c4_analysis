@@ -34,6 +34,11 @@ devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-func
 
 synapseLogin()
 
+# knitToFolderEntity(file = "./AnalyseDiffExp_Diffname_Short.Rmd", 
+#                    entityName = 'Analysis of differential expression results between differentiation states', 
+#                    parentId = 'syn5194922', 
+#                    overwrite=F)
+
 # source utility files from ../R/lib folder
 file.sources = list.files('../R/lib',pattern="*.R", full.names = T)
 tmp = sapply(file.sources,source,.GlobalEnv)
@@ -66,7 +71,7 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
 
 # Create folder to tore the results and populate analysis wiki
-CODE <- Folder(name = 'Analysis of differential expression results between differentiaiton states',parentId = parentId)
+CODE <- Folder(name = 'Analysis of differential expression results between differentiation states',parentId = parentId)
 CODE <- synStore(CODE)
 ```
 
@@ -77,7 +82,7 @@ mRNA.pval.th <- 0.05
 miRNA.lfc.th <- 1.5
 miRNA.pval.th <- 0.05
 
-methyl.changeBeta.th <- 0.4
+methyl.changeBeta.th <- 0.35
 methyl.pval.th <- 0.05
 ```
 
@@ -138,7 +143,7 @@ TFsMapping = rbindlist(list(TFsMapping1, TFsMapping2, TFsMapping3)) %>% unique
 ```
 
 Get mRNA-miRNA mapping from synapse (Lorena version)
-```{r miRNA.mRNA.mapping}
+```{r miRNA.mRNA.mapping, eval=FALSE}
 # Get miRNA mapping files
 miRNA.mRNA.id = 'syn3461627'
 ALL_USED_IDs <- c(ALL_USED_IDs, miRNA.mRNA.id)
@@ -170,6 +175,19 @@ miRNA.mRNA2 <- miRNA.mRNA2 %>%
   plyr::rename(c("miRNA" = "feature", "Target Gene" = "target")) %>%
   unique
 ```
+
+Get miRNA-methyl mapping from synapse
+```{r miRNA.mRNA.exp.mapping}
+# Get miRNA mapping files
+miRNA.methyl.id = 'syn4895962'
+ALL_USED_IDs <- c(ALL_USED_IDs, miRNA.methyl.id)
+miRNA.methyl = fread(synGet(miRNA.methyl.id)@filePath, data.table=F, header=F)
+
+miRNA.methyl <- miRNA.methyl %>%
+  dplyr::rename(feature = V1, target = V2) %>%
+  unique
+```
+
 
 ### Download mRNA counts matrix
 ```{r mRNA.counts}
@@ -277,7 +295,7 @@ d.miRNA = lapply(miRNAIds, downloadFile) %>%
   dplyr::mutate(assay='miRNA') %>%
   left_join(compNames %>% as.data.table) %>%
   dplyr::filter(class == "Diffname_short") %>%
-  left_join(miRNA.mRNA2 %>% as.data.table) %>%
+  left_join(miRNA.mRNA %>% as.data.table) %>%
   dplyr::select(comparisonName, feature, logFC, adj.P.value, assay, target, class, dataRestrictionShort, 
                 variable1Short, variable2Short, comparison, direction)
 ```
@@ -378,7 +396,7 @@ Total percent of differentially expressed
    7. nonTFs that are not regulated by TF, miRNA and methyl probes: `r 100*(dplyr::filter(d.mRNA, isTF == 0, isTFtarget == 0, ismiRNAOppDirection == 0, isMethylOppDirection == 0, isMethylSameDirection == 0) %>% nrow)/(dplyr::filter(d.mRNA, isTF == 0) %>% nrow)`
 
 ### Analyse differentially regulated TFs
-```{r mRNA.TFs.Analyze, fig.height=25, fig.width=15}
+```{r mRNA.TFs.Analyze1, fig.height=8, fig.width=8}
 # Diff states in a sensible, quasi time-based ordering
 orderedDiffState <- c("SC", "DE", "MESO5", "ECTO", "MESO15", "MESO30", "EB")
 
@@ -389,7 +407,9 @@ mRNA.exp = mRNACounts[d.mRNA.TF %>% dplyr::select(feature) %>% unique %>% unlist
 cat('----\n')
 cat('Correlation between differentiation states (based on TF expression)')
 ggheatmap.show(ggheatmap(WGCNA::bicor(mRNA.exp), brewer.pal(5, 'YlOrRd')))
+```
 
+```{r mRNA.TFs.Analyze2, fig.height=18, fig.width=15}
 # Scale expression counts
 mRNA.exp1 = mRNA.exp; mRNA.exp1[mRNA.exp1<=0] = 0;
 mRNA.exp1 = t(apply(mRNA.exp1, 1, function(x){ x = x/max(x)}));#t(apply(mRNA.exp1, 1, function(x){ x = scale(x)})); #
@@ -399,39 +419,42 @@ writeLines(paste('Clustering expression of',dim(mRNA.exp)[1],'TFs'))
 mRNACluster = pamk(mRNA.exp1[,-(2)], 2:15) # exclude DE in clustering
 mRNACluster = kmeans(mRNA.exp1, mRNACluster$nc)
 
-annotate = d.mRNA.TF %>% 
-  dplyr::select(feature, ismiRNAOppDirection, 
-                isMethylOppDirection, isMethylSameDirection) %>%
+annotate = d.mRNA.TF %>%
+  dplyr::select(feature, isMethylOppDirection, isMethylSameDirection, ismiRNAOppDirection) %>%
   melt %>%
   group_by(feature, variable) %>%
   summarise(value = as.numeric(any(value))) %>%
-  dcast(feature ~ variable) %>%
+  reshape2::dcast(feature ~ variable) %>%
   left_join(rownameToFirstColumn(mRNACluster$cluster, 'feature')) %>%
-  dplyr::rename(miRNA = ismiRNAOppDirection, 
-                Methyl.Opp = isMethylOppDirection, 
-                Methyl.Same = isMethylSameDirection,
-                cluster = DF) %>%
-  mutate(cluster = factor(cluster),
-         miRNA = factor(miRNA),
-         Methyl.Opp = factor(Methyl.Opp),
-         Methyl.Same = factor(Methyl.Same))
+  dplyr::mutate()%>%
+  dplyr::rename(cluster = DF) %>%
+  dplyr::mutate(Methylation.Target = isMethylSameDirection - isMethylOppDirection, 
+    cluster = factor(cluster, labels = c('MESO15', 'Early Signatures','EB','Late Signatures','ECTO','MESO5','MESO30','EB')),
+         miRNA.Target = factor(ismiRNAOppDirection, labels=c("None", "Discordant")),
+         Methylation.Target = factor(Methylation.Target, labels=c("Discordant","None","Concordant"))) %>%
+  dplyr::select(feature, Methylation.Target, miRNA.Target, cluster)
 
 rownames(annotate) = annotate$feature
 
 annotate = annotate[order(annotate$cluster),-(1)]
 mRNA.exp1 = mRNA.exp1[rownames(annotate), orderedDiffState]
 
-ha1 = HeatmapAnnotation(df = annotate, which = "row", 
-                        col = list(miRNA = c("1" = "red", "0" = "white"),
-                                   Methyl.Opp = c("1" = "blue", "0" = "white"),
-                                   Methyl.Same = c("1" = "black", "0" = "white")))
-Heatmap(mRNA.exp1, name = 'Scaled median mRNA counts', row_title = 'Genes', column_title = 'Differentiation Stage', 
-        cluster_columns = F, cluster_rows=F, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
-        show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_hclust = F) + ha1
+bmp(filename = "TF.bmp", width = 17, height = 20, units = "cm", res = 600)
+
+ha1 = HeatmapAnnotation(df = annotate, which = "row",
+                        col = list(miRNA.Target = c("Discordant" = "blue", "None" = "white"),
+                                   Methylation.Target = c("Discordant" = "red", "None" = "white", "Concordant" = "green")))
+                                        
+Heatmap(mRNA.exp1, name = 'Scaled median mRNA counts', column_title = 'Transcription Factors', 
+        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"), row_title_gp = gpar(fontsize = 20, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 17), show_row_names = F, row_names_side = 'left', show_column_names = T, 
+        show_row_hclust = F, combined_name_fun = NULL) + ha1
+dev.off()
 ```
 
 ### Analyse differentially regulated miRNAs
-```{r miRNA.Analyze, fig.height=25, fig.width=15}
+```{r miRNA.Analyze1, fig.height=8, fig.width=8}
 d.miRNA$isTargetTF = 0;
 d.miRNA$isTargetTF[d.miRNA$target %in% TFsMapping$feature] = 1
 
@@ -440,7 +463,9 @@ miRNA.exp = miRNACounts[d.miRNA %>% dplyr::select(feature) %>% unique %>% unlist
 cat('----\n')
 cat('Correlation between differentiation states (based on miRNA expression)')
 ggheatmap.show(ggheatmap(WGCNA::bicor(miRNA.exp), brewer.pal(5, 'YlOrRd')))
+```
 
+```{r miRNA.Analyze2, fig.height=18, fig.width=15}
 # Scale expression counts
 miRNA.exp1 = miRNA.exp; miRNA.exp1[miRNA.exp1<=0] = 0;
 miRNA.exp1 = t(apply(miRNA.exp1, 1, function(x){ x = x/max(x)}));#t(apply(exp1, 1, function(x){ x = scale(x)})); #
@@ -455,25 +480,33 @@ annotate = d.miRNA %>%
   melt %>%
   group_by(feature, variable) %>%
   summarise(value = as.numeric(any(value))) %>%
-  dcast(feature ~ variable) %>%
+  reshape2::dcast(feature ~ variable) %>%
   left_join(rownameToFirstColumn(miRNACluster$cluster, 'feature')) %>%
   dplyr::rename(TF = isTargetTF,
                 cluster = DF) %>%
-  mutate(TF = factor(TF), cluster = factor(cluster))
+  mutate(TF = factor(TF, labels = c("None","Discordant")), 
+         cluster = factor(cluster, labels = c("MESO15","Late Signatures", "Very Late Signatures", "Mesendoderm","EB",
+                                              "ECTO","Early Signatures", "MESO15", "Late Signatures", "SC", "EB", "SC",
+                                              "Early Signatures", "MESO30")))
 
 rownames(annotate) = annotate$feature
 
 annotate = annotate[order(annotate$cluster),-(1)]
 miRNA.exp1 = miRNA.exp1[rownames(annotate), orderedDiffState]
 
-ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("1" = "red", "0" = "white")))
-Heatmap(miRNA.exp1, name = 'Scaled median miRNA counts', row_title = 'miRNAs', column_title = 'Differentiation Stage', 
-        cluster_columns = F, cluster_rows=F, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
+bmp(filename = "miRNA.bmp", width = 17, height = 20, units = "cm", res = 600)
+
+ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("Discordant" = "red", "None" = "white")))
+Heatmap(miRNA.exp1, name = 'Scaled median miRNA counts', column_title = 'miRNA', 
+        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
+        column_title_gp = gpar(fontsize = 22, fontface = "bold"), row_title_gp = gpar(fontsize = 22, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18),  combined_name_fun = NULL,
         show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_hclust = F) + ha1
+dev.off()
 ```
 
 ### Analyse differentially regulated methylation probes
-```{r methyl.Analyze, fig.height=25, fig.width=15}
+```{r methyl.Analyze1, fig.height=8, fig.width=8}
 # Diff states in a sensible, quasi time-based ordering
 orderedDiffState <- c("SC", "DE", "MESO5", "ECTO", "EB")
 
@@ -485,7 +518,9 @@ methyl.exp = methylCounts[d.methyl %>% dplyr::select(feature) %>% unique %>% unl
 cat('----\n')
 cat('Correlation between differentiation states (based on methyl expression)')
 ggheatmap.show(ggheatmap(WGCNA::bicor(methyl.exp), brewer.pal(5, 'YlOrRd')))
+```
 
+```{r methyl.Analyze2, fig.height=18, fig.width=15}
 writeLines(paste('Clustering expression of',dim(methyl.exp)[1],'methylation probes'))
 
 # Kmeans clustering of scaled expression data
@@ -497,21 +532,252 @@ annotate = d.methyl %>%
   melt %>%
   group_by(feature, variable) %>%
   summarise(value = as.numeric(any(value))) %>%
-  dcast(feature ~ variable) %>%
+  reshape2::dcast(feature ~ variable) %>%
   left_join(rownameToFirstColumn(methylCluster$cluster, 'feature')) %>%
   dplyr::rename(TF = isTargetTF,
                 cluster = DF) %>%
-  mutate(TF = factor(TF), cluster = factor(cluster))
+  mutate(TF = factor(TF, labels = c("None","Discordant")), 
+         cluster = factor(cluster, labels= c("Early Signatures", "ECTO", "Late Signatures")))
 
 rownames(annotate) = annotate$feature
 
 annotate = annotate[order(annotate$cluster),-(1)]
 methyl.exp = methyl.exp[rownames(annotate), orderedDiffState]
 
-ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("1" = "red", "0" = "white")))
-Heatmap(methyl.exp, name = 'Scaled median beta', row_title = 'methyl probes', column_title = 'Differentiation Stage', 
-        cluster_columns = F, cluster_rows=F, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
+bmp(filename = "methyl.bmp", width = 17, height = 20, units = "cm", res = 600)
+
+ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("Discordant" = "red", "None" = "white")))
+Heatmap(methyl.exp, name = 'Scaled median beta', 
+        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"), row_title_gp = gpar(fontsize = 20, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 17), combined_name_fun = NULL,
         show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_hclust = F) + ha1
+dev.off()
+```
+
+### Annotate modules of mRNA, miRNA and methylation
+```{r annotate}
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE","MESO5", "ECTO", "MESO15","MESO30","EB")
+
+# mRNA module assignment to diff states
+mRNA.mod.cor = matrix(0, length(orderedDiffState), length(mRNACluster$size))
+rownames(mRNA.mod.cor) = orderedDiffState
+colnames(mRNA.mod.cor) = paste0('Cluster.',1:length(mRNACluster$size))
+for (diffState in orderedDiffState){
+  refState = rep(0, length(orderedDiffState)); names(refState) = orderedDiffState
+  refState[diffState] = 1
+  
+  mRNA.cor = abs(apply(mRNA.exp1[,orderedDiffState], 1, cor, refState))
+  
+  for (i in 1:length(mRNACluster$size))
+    mRNA.mod.cor[diffState, i] = mean(abs(mRNA.cor[names(mRNACluster$cluster)[mRNACluster$cluster == i]]))
+}
+mRNA.mod = apply(mRNA.mod.cor, 1, which.max)
+
+# miRNA module assignments to diff state
+miRNA.mod.cor = matrix(0, length(orderedDiffState), length(miRNACluster$size))
+rownames(miRNA.mod.cor) = orderedDiffState
+colnames(miRNA.mod.cor) = paste0('Cluster.',1:length(miRNACluster$size))
+for (diffState in orderedDiffState){
+  refState = rep(0, length(orderedDiffState)); names(refState) = orderedDiffState
+  refState[diffState] = 1
+  
+  miRNA.cor = abs(apply(miRNA.exp1[,orderedDiffState], 1, cor, refState))
+  
+  for (i in 1:length(miRNACluster$size))
+    miRNA.mod.cor[diffState, i] = mean(abs(miRNA.cor[names(miRNACluster$cluster)[miRNACluster$cluster == i]]))
+}
+miRNA.mod = apply(miRNA.mod.cor, 1, which.max)
+
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE","MESO5", "ECTO", "EB")
+
+# methyl module assignments to diff state
+methyl.mod.cor = matrix(0, length(orderedDiffState), length(methylCluster$size))
+rownames(methyl.mod.cor) = orderedDiffState
+colnames(methyl.mod.cor) = paste0('Cluster.',1:length(methylCluster$size))
+for (diffState in orderedDiffState){
+  refState = rep(0, length(orderedDiffState)); names(refState) = orderedDiffState
+  refState[diffState] = 1
+  
+  methyl.cor = abs(apply(methyl.exp[,orderedDiffState], 1, cor, refState))
+  
+  for (i in 1:length(methylCluster$size))
+    methyl.mod.cor[diffState, i] = mean(abs(methyl.cor[names(methylCluster$cluster)[methylCluster$cluster == i]]))
+}
+methyl.mod = apply(methyl.mod.cor, 1, which.max)
+```
+
+### Extract mRNA, miRNA and methylation interactions based on identified modules
+mRNA-miRNA
+```{r mRNA.miRNA.Module}
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE","MESO5", "ECTO", "MESO15","MESO30","EB")
+
+mRNA.miRNA.Int = list()
+for (diffState in orderedDiffState){
+  mRNA.miRNA.Int[[diffState]] = full_join(
+    d.mRNA %>% dplyr::filter(feature %in% names(mRNACluster$cluster)[mRNACluster$cluster == mRNA.mod[diffState]], 
+                             variable1Short == diffState | variable2Short == diffState) %>%
+      dplyr::select(feature, comparison, variable1Short, variable2Short, direction) %>%
+      dplyr::rename(mRNA = feature, d.mRNA = direction),
+    d.miRNA %>% data.frame %>% 
+      dplyr::filter(feature %in% names(miRNACluster$cluster)[miRNACluster$cluster == miRNA.mod[diffState]],
+                    variable1Short == diffState | variable2Short == diffState) %>%
+      dplyr::select(feature, target, comparison, variable1Short, variable2Short, direction) %>%
+      dplyr::rename(miRNA = feature, mRNA = target, d.miRNA = direction)) %>%
+    dplyr::filter(d.mRNA != d.miRNA)
+}
+mRNA.miRNA.Int = rbindlist(mRNA.miRNA.Int)
+kable(mRNA.miRNA.Int)
+```
+mRNA-methylation
+```{r mRNA.methyl.module}
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE","MESO5", "ECTO","EB")
+
+mRNA.methyl.Int = list()
+for (diffState in orderedDiffState){
+  mRNA.methyl.Int[[diffState]] = full_join(
+    d.mRNA %>% dplyr::filter(feature %in% names(mRNACluster$cluster)[mRNACluster$cluster == mRNA.mod[diffState]], 
+                             variable1Short == diffState | variable2Short == diffState) %>%
+      dplyr::select(feature, comparison, variable1Short, variable2Short, direction) %>%
+      dplyr::rename(mRNA = feature, d.mRNA = direction),
+    d.methyl %>% data.frame %>% 
+      dplyr::filter(feature %in% names(methylCluster$cluster)[methylCluster$cluster == methyl.mod[diffState]],
+                    variable1Short == diffState | variable2Short == diffState) %>%
+      dplyr::select(feature, target, comparison, variable1Short, variable2Short, direction) %>%
+      dplyr::rename(methyl = feature, mRNA = target, d.methyl = direction)) %>%
+    dplyr::filter(d.mRNA != d.methyl)
+}
+mRNA.methyl.Int = rbindlist(mRNA.methyl.Int)
+kable(mRNA.methyl.Int)
+```
+miRNA-methylation
+```{r miRNA.methyl.module}
+d.methyl = left_join(d.methyl, dplyr::rename(miRNA.methyl, miRNA.target = target), copy=T)
+miRNA.methyl.Int = list()
+for (diffState in orderedDiffState){
+  miRNA.methyl.Int[[diffState]] = full_join(
+    d.miRNA %>% dplyr::filter(feature %in% names(miRNACluster$cluster)[miRNACluster$cluster == miRNA.mod[diffState]], 
+                             variable1Short == diffState | variable2Short == diffState) %>%
+      dplyr::select(feature, comparison, variable1Short, variable2Short, direction) %>%
+      dplyr::rename(miRNA = feature, d.miRNA = direction),
+    d.methyl %>% data.frame %>% 
+      dplyr::filter(feature %in% names(methylCluster$cluster)[methylCluster$cluster == methyl.mod[diffState]],
+                    variable1Short == diffState | variable2Short == diffState) %>%
+      dplyr::select(feature, miRNA.target, comparison, variable1Short, variable2Short, direction) %>%
+      dplyr::rename(methyl = feature, miRNA = miRNA.target, d.methyl = direction)) %>%
+    dplyr::filter(d.miRNA != d.methyl)
+}
+miRNA.methyl.Int = rbindlist(miRNA.methyl.Int)
+kable(miRNA.methyl.Int)
+```
+
+### Extract mRNA, miRNA and methylation interactions usign all diff exp data
+mRNA-miRNA
+```{r mRNA.miRNA.Module}
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE","MESO5", "ECTO", "MESO15","MESO30","EB")
+
+# Combine all diff exp TFs and miRNA
+mRNA.miRNA.Int2 = right_join(
+  d.mRNA.TF %>% 
+    dplyr::select(feature, comparison, variable1Short, variable2Short, direction) %>%
+    dplyr::rename(mRNA = feature, d.mRNA = direction),
+  d.miRNA %>% data.frame %>% 
+    dplyr::select(feature, target, comparison, variable1Short, variable2Short, direction) %>%
+    dplyr::rename(miRNA = feature, mRNA = target, d.miRNA = direction)) %>%
+  dplyr::filter(d.mRNA != d.miRNA) %>%
+  dplyr::mutate(miRNA.mRNA = paste(miRNA, mRNA, sep = '.')) 
+
+# Find unique mRNA.miRNA interaction
+tmp = mRNA.miRNA.Int2 %>% 
+  dplyr::select(miRNA.mRNA, variable1Short, variable2Short) %>% 
+  melt(id.vars = c('miRNA.mRNA')) %>% dplyr::select(-(variable)) %>% unique %>%
+  dcast(miRNA.mRNA ~ value, length) %>%
+  dplyr::select(-(EB))
+
+ind = which(rowSums(tmp[,-(1)]) == 1)
+tmp1 = mRNA.miRNA.Int2 %>% dplyr::filter(miRNA.mRNA %in% tmp$miRNA.mRNA[ind]) %>%
+  dplyr::select(miRNA, d.miRNA, mRNA, d.mRNA, variable1Short, variable2Short) %>%
+  dplyr::arrange(variable2Short)
+
+mRNA.miRNA.Int = list()
+for (diffState in orderedDiffState){
+  mRNA.miRNA.Int[[diffState]] = full_join(
+    d.mRNA %>% dplyr::filter(feature %in% names(mRNACluster$cluster)[mRNACluster$cluster == mRNA.mod[diffState]], 
+                             variable1Short == diffState | variable2Short == diffState) %>%
+      dplyr::select(feature, comparison, variable1Short, variable2Short, direction) %>%
+      dplyr::rename(mRNA = feature, d.mRNA = direction),
+    d.miRNA %>% data.frame %>% 
+      dplyr::filter(feature %in% names(miRNACluster$cluster)[miRNACluster$cluster == miRNA.mod[diffState]],
+                    variable1Short == diffState | variable2Short == diffState) %>%
+      dplyr::select(feature, target, comparison, variable1Short, variable2Short, direction) %>%
+      dplyr::rename(miRNA = feature, mRNA = target, d.miRNA = direction)) %>%
+    dplyr::filter(d.mRNA != d.miRNA)
+}
+mRNA.miRNA.Int = rbindlist(mRNA.miRNA.Int)
+kable(mRNA.miRNA.Int)
+```
+
+mRNA-methylation
+```{r mRNA.methyl.Module}
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE","MESO5", "ECTO", "EB")
+
+# Combine all diff exp TFs and miRNA
+mRNA.methyl.Int2 = right_join(
+  d.mRNA.TF %>% 
+    dplyr::select(feature, comparison, variable1Short, variable2Short, direction) %>%
+    dplyr::rename(mRNA = feature, d.mRNA = direction),
+  d.methyl %>% data.frame %>% 
+    dplyr::select(feature, target, comparison, variable1Short, variable2Short, direction) %>%
+    dplyr::rename(methyl = feature, mRNA = target, d.methyl = direction)) %>%
+  dplyr::filter(d.mRNA != d.methyl) %>%
+  dplyr::mutate(methyl.mRNA = paste(methyl, mRNA, sep = '.')) 
+
+# Find unique mRNA.methyl interaction
+tmp = mRNA.methyl.Int2 %>% 
+  dplyr::select(methyl.mRNA, variable1Short, variable2Short) %>% 
+  melt(id.vars = c('methyl.mRNA')) %>% dplyr::select(-(variable)) %>% unique %>%
+  dcast(methyl.mRNA ~ value, length) %>%
+  dplyr::select(-(EB))
+
+ind = which(rowSums(tmp[,-(1)]) == 1)
+tmp1 = mRNA.methyl.Int2 %>% dplyr::filter(methyl.mRNA %in% tmp$methyl.mRNA[ind]) %>%
+  dplyr::select(methyl, d.methyl, mRNA, d.mRNA, variable1Short, variable2Short) %>%
+  dplyr::arrange(variable2Short)
+```
+
+miRNA-methylation
+```{r miRNA.methyl.Module}
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE","MESO5", "ECTO", "EB")
+
+# Combine all diff exp TFs and miRNA
+miRNA.methyl.Int2 = right_join(
+  d.miRNA %>% 
+    dplyr::select(feature, comparison, variable1Short, variable2Short, direction) %>%
+    dplyr::rename(miRNA = feature, d.miRNA = direction),
+  d.methyl %>% data.frame %>% 
+    dplyr::select(feature, miRNA.target, comparison, variable1Short, variable2Short, direction) %>%
+    dplyr::rename(methyl = feature, miRNA = miRNA.target, d.methyl = direction)) %>%
+  dplyr::filter(d.miRNA != d.methyl) %>%
+  dplyr::mutate(methyl.miRNA = paste(methyl, miRNA, sep = '.')) 
+
+# Find unique mRNA.methyl interaction
+tmp = miRNA.methyl.Int2 %>% 
+  dplyr::select(methyl.miRNA, variable1Short, variable2Short) %>% 
+  melt(id.vars = c('methyl.miRNA')) %>% dplyr::select(-(variable)) %>% unique %>%
+  dcast(methyl.miRNA ~ value, length) %>%
+  dplyr::select(-(EB))
+
+ind = which(rowSums(tmp[,-(1)]) == 1)
+tmp1 = mRNA.methyl.Int2 %>% dplyr::filter(methyl.mRNA %in% tmp$methyl.mRNA[ind]) %>%
+  dplyr::select(methyl, d.methyl, mRNA, d.mRNA, variable1Short, variable2Short) %>%
+  dplyr::arrange(variable2Short)
 ```
 
 ### Differential interactions of differentiation
@@ -600,11 +866,12 @@ methyl.Int = rbindlist(methyl.Int) %>% dplyr::arrange(variable1Short)
 
 kable(dplyr::select(methyl.Int, comparison, variable1Short, variable2Short, mRNA,d.mRNA, methyl, d.methyl))
 ```
+
 ### Store results to synapse
 ```{r synapse.store}
 results = list(mRNA = d.mRNA, miRNA = d.miRNA, methyl = d.methyl, TF = d.mRNA.TF, miRNA.Interaction = miRNA.Int,
                methylation.Interaction = methyl.Int)
-for (i = 1:length(results)){
+for (i in 1:length(results)){
   write.table(results[[i]],file = paste0(names(results)[i],'.tsv'), sep = '\t', quote=F, row.names=F)
   obj = File(paste0(names(results)[i],'.tsv'), name = names(results)[i], parentId = CODE@properties$id)
   obj = synStore(obj, used = ALL_USED_IDs, activityName = activityName, executed = thisFile)

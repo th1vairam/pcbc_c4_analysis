@@ -61,10 +61,10 @@ thisFile <- getPermlink(repository = thisRepo,
 ```
 
 ```{r set.thresholds}
-mRNA.lfc.th <- 2
+mRNA.lfc.th <- 1
 mRNA.pval.th <- 0.05
 
-miRNA.lfc.th <- 2
+miRNA.lfc.th <- 1
 miRNA.pval.th <- 0.05
 
 methyl.changeBeta.th <- 0.4

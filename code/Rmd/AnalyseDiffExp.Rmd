@@ -184,6 +184,7 @@ d.methyl <- fread(getFileLocation(methyl.obj),
                 -probeType, -probeStart, -probeEnd, -probeTarget, -distanceToTSS, -nearestTSS, -end, -width,
                 -nearestTSS.ID, -distanceToTx, -nearestTx.ID)
 ```
+
 #### Filter and combine all three assays
 ```{r filter.feature}
 d1.mrna <- d.mrna %>%
