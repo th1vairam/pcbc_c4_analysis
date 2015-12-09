@@ -712,21 +712,21 @@ mRNA.TF-miRNA interactions
 ```{r mrna.mirna.int, fig.height=12, fig.width=20}
 # Calculate correlation between mRNA.TFs and miRNA interactions
 mRNA.miRNA.cor = WGCNA::bicor(mRNA.TF.counts.scaled, miRNA.counts.scaled)
-mRNA.miRNA.cor[mRNA.miRNA.cor>=0] = 0
-mRNA.miRNA.cor = abs(mRNA.miRNA.cor)
+# mRNA.miRNA.cor[mRNA.miRNA.cor>=0] = 0
+# mRNA.miRNA.cor = abs(mRNA.miRNA.cor)
 
 # Plot correlation between mRNA and miRNA interactions
 ind  = names(miRNA.cluster$cluster)[miRNA.cluster$cluster == 1]
 col_title = as.character(unique(miRNA.cluster$annotations[miRNA.cluster$cluster == 1]))
-h.mRNA.miRNA = Heatmap(mRNA.miRNA.cor[,ind], column_title = col_title, col = brewer.pal(5, "RdPu"),
-            name = '-(Correlation)', cluster_columns = T, cluster_rows = T, 
+h.mRNA.miRNA = Heatmap(mRNA.miRNA.cor[,ind], column_title = col_title, #col = brewer.pal(5, "RdPu"),
+            name = 'Correlation', cluster_columns = T, cluster_rows = T, 
             split= mRNA.TF.cluster$annotations, show_row_names = F, show_column_names = F,
             show_row_hclust = F, show_column_hclust = F)
 for (i in 2:max(miRNA.cluster$cluster)){
   ind  = names(miRNA.cluster$cluster)[miRNA.cluster$cluster == i]
   col_title = as.character(unique(miRNA.cluster$annotations[miRNA.cluster$cluster == i]))
   h.mRNA.miRNA = h.mRNA.miRNA + Heatmap(mRNA.miRNA.cor[,ind], column_title = col_title, show_heatmap_legend = F,
-                                        col = brewer.pal(5, "RdPu"), cluster_columns = T, cluster_rows = T, 
+                                        cluster_columns = T, cluster_rows = T, #col = brewer.pal(5, "RdPu"),
                                         split= mRNA.TF.cluster$annotations, show_row_names = F, show_column_names = F, 
                                         show_row_hclust = F, show_column_hclust = F)
 }
@@ -736,21 +736,21 @@ mRNA.TF-methylation
 ```{r mRNA.TF.methyl.int, fig.height=12, fig.width=20}
 # Calculate correlation between mRNA.TFs and methyl interactions
 mRNA.methyl.cor = WGCNA::bicor(mRNA.TF.counts.scaled[orderedDiffState.methyl,], methyl.counts.scaled)
-mRNA.methyl.cor[mRNA.methyl.cor>=0] = 0
-mRNA.methyl.cor = abs(mRNA.methyl.cor)
+# mRNA.methyl.cor[mRNA.methyl.cor>=0] = 0
+# mRNA.methyl.cor = abs(mRNA.methyl.cor)
 
 # Plot correlation between mRNA and methyl interactions
 ind  = names(methyl.cluster$cluster)[methyl.cluster$cluster == 1]
 col_title = as.character(unique(methyl.cluster$annotations[methyl.cluster$cluster == 1]))
-h.mRNA.methyl = Heatmap(mRNA.methyl.cor[,ind], column_title = col_title, col = brewer.pal(5, "RdPu"),
-            name = '-(Correlation)', cluster_columns = T, cluster_rows = T, 
+h.mRNA.methyl = Heatmap(mRNA.methyl.cor[,ind], column_title = col_title, #col = brewer.pal(5, "RdPu"),
+            name = 'Correlation', cluster_columns = T, cluster_rows = T, 
             split= mRNA.TF.cluster$annotations, show_row_names = F, show_column_names = F,
             show_row_hclust = F, show_column_hclust = F)
 for (i in 2:max(methyl.cluster$cluster)){
   ind  = names(methyl.cluster$cluster)[methyl.cluster$cluster == i]
   col_title = as.character(unique(methyl.cluster$annotations[methyl.cluster$cluster == i]))
   h.mRNA.methyl = h.mRNA.methyl + Heatmap(mRNA.methyl.cor[,ind], column_title = col_title, show_heatmap_legend = F,
-                                        col = brewer.pal(5, "RdPu"), cluster_columns = T, cluster_rows = T, 
+                                        cluster_columns = T, cluster_rows = T, # col = brewer.pal(5, "RdPu"),
                                         split= mRNA.TF.cluster$annotations, show_row_names = F, show_column_names = F, 
                                         show_row_hclust = F, show_column_hclust = F)
 }
@@ -760,21 +760,21 @@ miRNA-methylation
 ```{r miRNA.methyl.int, fig.height=12, fig.width=20}
 # Calculate correlation between miRNA and methyl interactions
 miRNA.methyl.cor = WGCNA::bicor(methyl.counts.scaled, miRNA.counts.scaled[orderedDiffState.methyl,])
-miRNA.methyl.cor[miRNA.methyl.cor>=0] = 0
-miRNA.methyl.cor = abs(miRNA.methyl.cor)
+# miRNA.methyl.cor[miRNA.methyl.cor>=0] = 0
+# miRNA.methyl.cor = abs(miRNA.methyl.cor)
 
 # Plot correlation between miRNA and methyl interactions
 ind  = names(miRNA.cluster$cluster)[miRNA.cluster$cluster == 1]
 col_title = as.character(unique(miRNA.cluster$annotations[miRNA.cluster$cluster == 1]))
-h.miRNA.methyl = Heatmap(miRNA.methyl.cor[,ind], column_title = col_title, col = brewer.pal(5, "RdPu"),
-            name = '-(Correlation)', cluster_columns = T, cluster_rows = T, 
+h.miRNA.methyl = Heatmap(miRNA.methyl.cor[,ind], column_title = col_title, # col = brewer.pal(5, "RdPu"),
+            name = 'Correlation', cluster_columns = T, cluster_rows = T, 
             split= methyl.cluster$annotations, show_row_names = F, show_column_names = F,
             show_row_hclust = F, show_column_hclust = F)
 for (i in 2:max(miRNA.cluster$cluster)){
   ind  = names(miRNA.cluster$cluster)[miRNA.cluster$cluster == i]
   col_title = as.character(unique(miRNA.cluster$annotations[miRNA.cluster$cluster == i]))
   h.miRNA.methyl = h.miRNA.methyl + Heatmap(miRNA.methyl.cor[,ind], column_title = col_title, show_heatmap_legend = F,
-                                        col = brewer.pal(5, "RdPu"), cluster_columns = T, cluster_rows = T, 
+                                        cluster_columns = T, cluster_rows = T, #col = brewer.pal(5, "RdPu"), 
                                         split= methyl.cluster$annotations, show_row_names = F, show_column_names = F, 
                                         show_row_hclust = F, show_column_hclust = F)
 }
