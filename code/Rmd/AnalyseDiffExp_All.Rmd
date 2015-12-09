@@ -4,6 +4,12 @@ author: "Thanneer Perumal"
 date: '`r date()`'
 output: html_document
 ---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+knit2synapse::knitToFolderEntity(file = 'AnalyseDiffExp_All.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Differential Analysis Features')
+```
+
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
 ## It is assumed your working directory is where this file is
 
@@ -51,7 +57,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = FALSE)
+  cache = TRUE)
 ```
 
 ```{r synapseStore.params}
@@ -84,7 +90,7 @@ downloadFile <- function(id){
 }
 ```
 
-### Download all comparison reference and mapping files from synapse
+### Download comparison reference and mapping files from synapse
 Get all comparison names from synapse
 ```{r mappings}
 # Get all comparison names from synapse
@@ -180,7 +186,7 @@ miRNA.methyl <- miRNA.methyl %>%
   unique
 ```
 
-### Download mRNA counts matrix
+#### Download mRNA counts matrix
 ```{r mRNA.counts}
 mRNACountsId = 'syn5011095'
 ALL_USED_IDs = c(ALL_USED_IDs, mRNACountsId)
@@ -206,7 +212,7 @@ mRNACounts = sapply(mRNACovariates, function(covariates, counts){
 }, mRNACounts)
 ```
 
-### Download miRNA counts matrix
+#### Download miRNA counts matrix
 ```{r miRNA.counts}
 miRNACountsId = 'syn5014454'
 ALL_USED_IDs = c(ALL_USED_IDs, miRNACountsId)
@@ -232,7 +238,7 @@ miRNACounts = sapply(miRNACovariates, function(covariates, counts){
 }, miRNACounts)
 ```
 
-### Download methylation beta matrix
+#### Download methylation beta matrix
 ```{r methyl.counts}
 methylCountsId = 'syn4487642'
 ALL_USED_IDs = c(ALL_USED_IDs, methylCountsId)
@@ -387,7 +393,7 @@ Total percent of differentially expressed
    7. nonTFs that are not regulated by TFs, miRNA and methyl probes: `r 100*(dplyr::filter(d.mRNA, isTF == 0, isTFtarget == 0, ismiRNADiscordant == 0, isMethylDiscordant == 0, isMethylConcordant == 0) %>% nrow)/(dplyr::filter(d.mRNA, isTF == 0) %>% nrow)`
 
 ### Analyse differentially regulated TFs
-```{r mRNA.TFs.Analyze}
+```{r mRNA.TFs.Analyze, fig.height=20, fig.width=15}
 # Diff states in a sensible, quasi time-based ordering
 orderedDiffState <- c("SC", "DE", "MESO5", "ECTO", "MESO15", "MESO30", "EB")
 
@@ -468,7 +474,7 @@ kable(TF.signatures)
 ```
 
 ### Analyse differentially regulated nonTFs
-```{r mRNA.nonTFs.Analyze}
+```{r mRNA.nonTFs.Analyze, fig.height=20, fig.width=15}
 # Subset nonTFs
 d.mRNA.nonTF = dplyr::filter(d.mRNA, isTF == 0)
 
@@ -500,7 +506,7 @@ annotate = d.mRNA.nonTF %>%
                 Methyl.Concordant = isMethylConcordant,
                 cluster = DF) %>%
   mutate(
-    cluster = factor(cluster),
+    cluster = factor(cluster, labels = c('Early','SC','Late','MESO15','MESO30','ECTO','MESO5','EB')),
          miRNA.Discordant = factor(miRNA.Discordant, labels = c("None", "Discordant")),
          Methyl.Discordant = factor(Methyl.Discordant, labels = c("None", "Discordant")),
          Methyl.Concordant = factor(Methyl.Concordant, labels = c("None", "Concordant")))
@@ -545,7 +551,7 @@ kable(nonTF.signatures)
 ```
 
 ### Analyse differentially regulated miRNAs
-```{r miRNA.Analyze}
+```{r miRNA.Analyze, fig.height=20, fig.width=15}
 d.miRNA$isTargetTF = 0;
 d.miRNA$isTargetTF[d.miRNA$target %in% TFsMapping$feature] = 1
 
@@ -606,13 +612,13 @@ for (name in levels(annotate$cluster)){
 }
 
 miRNA.signatures = lapply(miRNA.signatures, function(x){paste(x, collapse = ',')}) %>% ldply
-colnames(nonTF.signatures) = c('Annotation','miRNAs')
+colnames(miRNA.signatures) = c('Annotation','miRNAs')
 
 kable(miRNA.signatures)
 ```
 
 ### Analyse differentially regulated methylation probes
-```{r methyl.Analyze}
+```{r methyl.Analyze, fig.height=20, fig.width=15}
 # Diff states in a sensible, quasi time-based ordering
 orderedDiffState <- c("SC", "DE", "MESO5", "ECTO", "EB")
 
@@ -703,7 +709,7 @@ miRNA.counts.scaled = t(miRNACounts[names(miRNA.cluster$cluster),])# %>% apply(2
 methyl.counts.scaled = t(methylCounts[names(methyl.cluster$cluster),])# %>% apply(2, function(x){x = x/max(x)})
 ```
 mRNA.TF-miRNA interactions
-```{r mrna.mirna.int, fig.height=12, fig.width=12}
+```{r mrna.mirna.int, fig.height=12, fig.width=20}
 # Calculate correlation between mRNA.TFs and miRNA interactions
 mRNA.miRNA.cor = WGCNA::bicor(mRNA.TF.counts.scaled, miRNA.counts.scaled)
 mRNA.miRNA.cor[mRNA.miRNA.cor>=0] = 0
@@ -727,7 +733,7 @@ for (i in 2:max(miRNA.cluster$cluster)){
 draw(h.mRNA.miRNA)
 ```
 mRNA.TF-methylation
-```{r mRNA.TF.methyl.int, fig.height=12, fig.width=12}
+```{r mRNA.TF.methyl.int, fig.height=12, fig.width=20}
 # Calculate correlation between mRNA.TFs and methyl interactions
 mRNA.methyl.cor = WGCNA::bicor(mRNA.TF.counts.scaled[orderedDiffState.methyl,], methyl.counts.scaled)
 mRNA.methyl.cor[mRNA.methyl.cor>=0] = 0
@@ -751,7 +757,7 @@ for (i in 2:max(methyl.cluster$cluster)){
 draw(h.mRNA.methyl)
 ```
 miRNA-methylation
-```{r miRNA.methyl.int, fig.height=12, fig.width=12}
+```{r miRNA.methyl.int, fig.height=12, fig.width=20}
 # Calculate correlation between miRNA and methyl interactions
 miRNA.methyl.cor = WGCNA::bicor(methyl.counts.scaled, miRNA.counts.scaled[orderedDiffState.methyl,])
 miRNA.methyl.cor[miRNA.methyl.cor>=0] = 0
@@ -799,11 +805,9 @@ RESULTS = list('Transcription Factors' = d.mRNA.TF, 'Non Transcription Factors' 
      'Methylation Signatures' = methyl.signatures)
 RESULTS_OBJ = lapply(names(RESULTS), function(x, results, code, activityName, allUsedIds, thisFile){
   write.table(results[[x]], file = paste0(str_replace_all(' ','_',x),'.tsv'), sep = '\t', quote=F, row.names = F)
-  obj = File(paste0(str_replace_all(' ','_',x),'.tsv'), name = x, parnetId = code$properties$id)
+  obj = File(paste0(str_replace_all(' ','_',x),'.tsv'), name = x, parentId = code$properties$id)
   obj = synStore(obj, activityName = activityName, executed = thisFile, used = allUsedIds)
 }, RESULTS, CODE, ActivityName, ALL_USED_IDs, ThisFile)
-
-
 ```
 ### Source Code
 [Source R Markdown](`r thisFile`)
