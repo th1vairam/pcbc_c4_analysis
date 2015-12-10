@@ -195,6 +195,7 @@ mirna_mat_median <- reshape2::melt(mirna_mat) %>%
 ```
 ### Perform discordant analysis between TF-miRNA features at each diffstate
 Performing analysis with `r dim(mrna_mat_median)[1]` TFs and  `r dim(mirna_mat_median)[1]` miRNAs in `r dim(mirna_mat_median)[2]` samples
+Dicordant features at P.value <= 0.05
 ```{r discordant.analysis}
 metadata <- mrna_metadata_filtered %>% 
   dplyr::select(UID, biologicalSampleName, Diffname_short) %>% 
@@ -220,10 +221,10 @@ all.comparisons = t(combn(names(metadata), 2))
 # Perform discordant analysis across all possible diff state comparisons
 results.discordant = apply(all.comparisons, 1, function(diffStates, metaData, mrnaMat, mirnaMat){
   mrna = mrnaMat[,c(metaData[[diffStates[1]]]$biologicalSampleName,
-                    metaData[[diffStates[2]]]$biologicalSampleName)][1:50,]
+                    metaData[[diffStates[2]]]$biologicalSampleName)]#[1:50,]
   
   mirna = mirnaMat[,c(metaData[[diffStates[1]]]$biologicalSampleName,
-                      metaData[[diffStates[2]]]$biologicalSampleName)][1:50,]
+                      metaData[[diffStates[2]]]$biologicalSampleName)]#[1:50,]
   
   group = c(rep(1, length(metaData[[diffStates[1]]]$Diffname_short)),
             rep(2, length(metaData[[diffStates[2]]]$Diffname_short)))
@@ -242,13 +243,17 @@ results.discordant = apply(all.comparisons, 1, function(diffStates, metaData, mr
   return(result)
 #   resultTable <- makeTable(result$discordPPMatrix, mrna, mirna)
 }, metadata, mrna_mat_median, mirna_mat_median)
+names(results.discordant) = apply(all.comparisons, 1, paste, collapse = '_vs_')
 
 diffFeatures = lapply(results.discordant, function(x){
-  x$discordPPMatrix$feature[x$discordPPMatrix$Pvalue <= 0.05]
-}) %>% ldply
+  tmp = x$discordPPMatrix$feature[x$discordPPMatrix$Pvalue <= 0.05] %>% 
+    paste(collapse = ',')
+  tmp = gsub('_',':',tmp)
+}) %>% ldply(function(x){data.frame(value = x)})
+kable(diffFeatures)
 ```
 ### Calculate co-expression between TF-miRNA features at each diffstate
-```{r coexpp, fig.height=20, fig.width=15}
+```{r coexpp, fig.height=25, fig.width=15}
 # Calcualte correlation between features at each diffstate
 Feature.Correlation <- lapply(metadata, function(metaData, mrnaMat, mirnaMat){
   mrnaMat <- mrnaMat[,metaData$biologicalSampleName]
@@ -276,8 +281,6 @@ diffFeatures = lapply(results.discordant, function(x){
 Correlation.cluster = pamk(Correlation.all[diffFeatures,], 2:15, seed = 123456)
 set.seed(123456);Correlation.cluster = kmeans(Correlation.all[diffFeatures,], Correlation.cluster$nc)
 
-Heatmap(Correlation.all[diffFeatures,], cluster_columns = F, split = Correlation.cluster$cluster)
-
 h.TF.miRNA <- Heatmap(Correlation.all[diffFeatures, ], column_title = 'Active TF - miRNA interactions',
                       name = 'Correlation', cluster_columns = F, cluster_rows = T,
                       split = Correlation.cluster$cluster, show_row_names = T, show_column_names = T,
@@ -296,10 +299,10 @@ ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis",
                     refName='discordant_anal')
 
 ThisFile <- getPermlink(repository = ThisRepo,
-                        repositoryPath=paste0('code/Rmd/', thisFileName))    
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
 # Populate wiki with results
-CODE <- Folder(name = 'Discordant Analysis Features',parentId = parentId)
+CODE <- Folder(name = 'Differential Coexpression Analysis Features',parentId = parentId)
 CODE <- synStore(CODE)
 ```
 ### Source Code
-[Source R Markdown](`r thisFile`)
+[Source R Markdown](`r ThisFile`)
