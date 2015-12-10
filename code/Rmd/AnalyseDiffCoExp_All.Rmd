@@ -1,0 +1,305 @@
+---
+title: "Discordant analysis of interactions between mRNA, miRNA, and methylation expression"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+knit2synapse::knitToFolderEntity(file = 'AnalyseDiffCoExp_All.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Differential Coexpression Analysis Features')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(plyr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+
+library(tools)
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+library(biomaRt)
+library(fpc)
+library(reshape2)
+
+library(knitr)
+library(knit2synapse)
+library(synapseClient)
+library(rGithubClient) ## Needs the dev branch
+
+## Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+synapseLogin()
+
+# source utility files from ../R/lib folder
+file.sources = list.files('../R/lib',pattern="*.R", full.names = T)
+tmp = sapply(file.sources,source,.GlobalEnv)
+
+# source all discordant related files (see for installation: https://github.com/siskac/discordant/archive/master.zip)
+dir = getwd()
+setwd('/mnt/Github/discordant/discordant-master/')
+source('/mnt/Github/discordant/discordant-master//discordant.R')
+setwd(dir)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r synapseStore.params}
+parentId = "syn5194922"
+SYNAPSE_STORE = T
+  
+```
+
+```{r fxns}
+downloadFile <- function(id){
+  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
+}
+```
+### Download and filter raw counts and differential expression data from synapse
+#### Download mRNA data
+```{r download.mRNA.data}
+# Get metadata
+mrna_metdata_id <- "syn3156503"
+ALL_USED_IDs = mrna_metdata_id
+
+mrna_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', mrna_metdata_id))
+mrna_metadata <- mrna_metadata_obj@values
+
+mrna_metadata[mrna_metadata == 'N/A'] = NA
+
+# Get mRNA raw counts
+mrna_id <- "syn5011097"
+ALL_USED_IDs <- c(ALL_USED_IDs, mrna_id)
+
+mrna_mat <- downloadFile(mrna_id)
+
+# Filter mRNA metadata - will use UIDs from these to subset matrices
+mrna_metadata_filtered <- mrna_metadata %>%
+  filter(public, pass_qc, !exclude,
+         UID %in% colnames(mrna_mat),
+         Diffname_short != "",
+         Cell_Type == "PSC",
+         C4_Karyotype_Result != "abnormal")
+```
+#### Download miRNA data
+```{r download.miRNA.data}
+# Get metadata
+mirna_metdata_id <- "syn3219876"
+ALL_USED_IDs <- c(ALL_USED_IDs, mirna_metdata_id)
+
+mirna_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', mirna_metdata_id))
+mirna_metadata <- mirna_metadata_obj@values
+
+mirna_metadata[mirna_metadata == 'N/A'] = NA
+
+# Get miRNA raw counts
+mirna_id <- "syn5014456"
+ALL_USED_IDs = c(ALL_USED_IDs, mirna_id)  
+
+mirna_mat <- downloadFile(mirna_id)
+
+# Filter miRNA metadata - will use UIDs from these to subset matrices
+mirna_metadata_filtered <- mirna_metadata %>%
+  filter(public, pass_qc, !exclude,
+         UID %in% colnames(mirna_mat),
+         Diffname_short != "",
+         Cell_Type == "PSC",
+         C4_Karyotype_Result != "abnormal")
+```
+#### Download differentially expressed TFs and miRNAs
+```{r diffExp}
+# Get differentialy expressed transcription factors
+diffTF_id <- 'syn5521879'
+ALL_USED_IDs <- c(ALL_USED_IDs, diffTF_id)
+diffTF <- downloadFile(diffTF_id)  %>%
+  dplyr::select(feature) %>%
+  unique %>% unlist
+
+# Get TF clusters
+clusterTF_id <- 'syn5521889'
+ALL_USED_IDs <- c(ALL_USED_IDs, clusterTF_id)
+clusterTF <- downloadFile(clusterTF_id)  
+tmp <- lapply(clusterTF$TFs, function(x){str_split(x, ",") %>% unlist})
+names(tmp) <- clusterTF$Annotation
+clusterTF <- ldply(tmp, function(x){data.frame(x)}) %>% plyr::rename(c(".id" = "Annotation", "x" = "GeneNames"))
+rownames(clusterTF) <- clusterTF$GeneNames
+
+# Get differentialy expressed miRNA
+diffmiRNA_id <- 'syn5521885'
+diffmiRNA <- downloadFile(diffmiRNA_id)  %>%
+  dplyr::select(feature) %>%
+  unique %>% unlist
+
+# Get miRNA clusters
+clustermiRNA_id <- 'syn5521905'
+ALL_USED_IDs <- c(ALL_USED_IDs, clustermiRNA_id)
+clustermiRNA <- downloadFile(clustermiRNA_id)  
+tmp <- lapply(clustermiRNA$miRNAs, function(x){str_split(x, ",") %>% unlist})
+names(tmp) <- clustermiRNA$Annotation
+clustermiRNA <- ldply(tmp, function(x){as.data.frame(x)}) %>% plyr::rename(c(".id" = "Annotation", "x" = "GeneNames"))
+rownames(clustermiRNA) <- clustermiRNA$GeneNames
+```
+### Combine samples to unique biological sample name (take median values for replicates)
+```{r combine.samples}
+# Match up biological sample between assays
+biosampleInBoth <- intersect(mrna_metadata_filtered$biologicalSampleName, 
+                             mirna_metadata_filtered$biologicalSampleName)
+
+mrna_metadata_filtered <- mrna_metadata_filtered %>%
+  filter(biologicalSampleName %in% biosampleInBoth)
+
+mirna_metadata_filtered <- mirna_metadata_filtered %>%
+  filter(biologicalSampleName %in% biosampleInBoth)
+
+mrna_mat <- mrna_mat %>%
+  dplyr::select(GeneName, one_of(mrna_metadata_filtered$UID)) %>%
+  dplyr::filter(GeneName %in% diffTF)
+
+mirna_mat <- mirna_mat %>%
+  dplyr::select(GeneName, one_of(mirna_metadata_filtered$UID)) %>%
+  dplyr::filter(GeneName %in% diffmiRNA)
+
+# Take the median across multiple biological samples per feature
+mrna_mat_median <- reshape2::melt(mrna_mat) %>%
+  dplyr::rename(UID = variable, expression = value) %>% 
+  left_join(mrna_metadata_filtered %>% dplyr::select(UID, biologicalSampleName)) %>% 
+  dplyr::group_by(GeneName, biologicalSampleName) %>% 
+  dplyr::summarize(median_expression=median(expression)) %>%
+  reshape2::dcast(GeneName ~ biologicalSampleName)
+
+mirna_mat_median <- reshape2::melt(mirna_mat) %>%
+  dplyr::rename(UID = variable, expression = value) %>% 
+  left_join(mirna_metadata_filtered %>% dplyr::select(UID, biologicalSampleName)) %>% 
+  group_by(GeneName, biologicalSampleName) %>% 
+  summarize(median_expression=median(expression)) %>% 
+  dcast(GeneName ~ biologicalSampleName)
+```
+### Perform discordant analysis between TF-miRNA features at each diffstate
+Performing analysis with `r dim(mrna_mat_median)[1]` TFs and  `r dim(mirna_mat_median)[1]` miRNAs in `r dim(mirna_mat_median)[2]` samples
+```{r discordant.analysis}
+metadata <- mrna_metadata_filtered %>% 
+  dplyr::select(UID, biologicalSampleName, Diffname_short) %>% 
+  dplyr::mutate(Diffname_short = gsub('-','',Diffname_short)) %>% 
+  unique
+
+# Process mRNA
+rownames(mrna_mat_median) = mrna_mat_median$GeneName
+mrna_mat_median$GeneName = NULL
+mrna_mat_median = mrna_mat_median[,metadata$biologicalSampleName]
+
+# Process miRNA
+rownames(mirna_mat_median) = mirna_mat_median$GeneName
+mirna_mat_median$GeneName = NULL
+mirna_mat_median = mirna_mat_median[,metadata$biologicalSampleName]
+ 
+# Split metadata in terms of diffstate
+metadata <- split(metadata, metadata$Diffname_short)
+
+# Get all possible diff state comparisons
+all.comparisons = t(combn(names(metadata), 2))
+
+# Perform discordant analysis across all possible diff state comparisons
+results.discordant = apply(all.comparisons, 1, function(diffStates, metaData, mrnaMat, mirnaMat){
+  mrna = mrnaMat[,c(metaData[[diffStates[1]]]$biologicalSampleName,
+                    metaData[[diffStates[2]]]$biologicalSampleName)][1:50,]
+  
+  mirna = mirnaMat[,c(metaData[[diffStates[1]]]$biologicalSampleName,
+                      metaData[[diffStates[2]]]$biologicalSampleName)][1:50,]
+  
+  group = c(rep(1, length(metaData[[diffStates[1]]]$Diffname_short)),
+            rep(2, length(metaData[[diffStates[2]]]$Diffname_short)))
+  
+  vectors <- createVectors(mrna, mirna, groups = group)
+  result <- discordantRun(vectors$v1, vectors$v2, mrna, mirna)
+  
+  rownames(result$discordPPMatrix) = rownames(mrna)
+  colnames(result$discordPPMatrix) = rownames(mirna)
+  
+  result$discordPPMatrix = melt(result$discordPPMatrix) %>%
+    dplyr::rename(TFs = X1, miRNA = X2, Pvalue = value) %>%
+    dplyr::mutate(feature = paste(TFs,miRNA,sep = "_"), FDR = p.adjust(Pvalue, method = "fdr"))
+  
+  writeLines(paste('Completed',diffStates[1],diffStates[2]))
+  return(result)
+#   resultTable <- makeTable(result$discordPPMatrix, mrna, mirna)
+}, metadata, mrna_mat_median, mirna_mat_median)
+
+diffFeatures = lapply(results.discordant, function(x){
+  x$discordPPMatrix$feature[x$discordPPMatrix$Pvalue <= 0.05]
+}) %>% ldply
+```
+### Calculate co-expression between TF-miRNA features at each diffstate
+```{r coexpp, fig.height=20, fig.width=15}
+# Calcualte correlation between features at each diffstate
+Feature.Correlation <- lapply(metadata, function(metaData, mrnaMat, mirnaMat){
+  mrnaMat <- mrnaMat[,metaData$biologicalSampleName]
+  mirnaMat <- mirnaMat[,metaData$biologicalSampleName]
+  
+  C = WGCNA::bicor(t(mrnaMat), t(mirnaMat))  
+}, mrna_mat_median, mirna_mat_median)
+
+# Calculate change in Fishers Z between diff states
+Correlation.all = join_all(lapply(names(Feature.Correlation), function(x, correlation){
+  y = melt(correlation[[x]]) %>% 
+    plyr::rename(c("X1" = "TF", "X2" = "miRNA", "value" = x)) %>%
+    mutate(id = paste(TF, miRNA, sep = "_")) %>%
+    dplyr::select(-(TF),-(miRNA))
+}, Feature.Correlation))
+rownames(Correlation.all) = Correlation.all$id
+Correlation.all$id = NULL
+Correlation.all = Correlation.all[, c('SC', 'DE', 'MESO5', 'ECTO', 'MESO15', 'MESO30', 'EB')]
+
+diffFeatures = lapply(results.discordant, function(x){
+  x$discordPPMatrix$feature[x$discordPPMatrix$Pvalue <= 0.05]
+}) %>% unlist %>% unique
+
+# Kmeans clustering of scaled expression data
+Correlation.cluster = pamk(Correlation.all[diffFeatures,], 2:15, seed = 123456)
+set.seed(123456);Correlation.cluster = kmeans(Correlation.all[diffFeatures,], Correlation.cluster$nc)
+
+Heatmap(Correlation.all[diffFeatures,], cluster_columns = F, split = Correlation.cluster$cluster)
+
+h.TF.miRNA <- Heatmap(Correlation.all[diffFeatures, ], column_title = 'Active TF - miRNA interactions',
+                      name = 'Correlation', cluster_columns = F, cluster_rows = T,
+                      split = Correlation.cluster$cluster, show_row_names = T, show_column_names = T,
+                      show_row_hclust = T, show_column_hclust = F)
+draw(h.TF.miRNA)
+```
+
+### Store results in synapse
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+ActivityName <- 'Analyse integrated differential co-expression results between assays'
+  
+ThisFileName <- 'AnalyseDiffCoExp_All.Rmd'
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='discordant_anal')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))    
+# Populate wiki with results
+CODE <- Folder(name = 'Discordant Analysis Features',parentId = parentId)
+CODE <- synStore(CODE)
+```
+### Source Code
+[Source R Markdown](`r thisFile`)
