@@ -163,9 +163,6 @@ methyl_mat <- downloadFile(methyl_id)
 methyl_metadata_filtered <- methyl_metadata %>%
   filter(UID %in% colnames(methyl_mat),
          Diffname_short != "")
-
-mrna_mat = mrna_mat[1:1000,]
-methyl_mat = methyl_mat[1:1000,]
 ```
 
 #### Calculate co-expression between mrna-mirna features at each diffstate
@@ -230,63 +227,6 @@ mrna.mirna.correlation = lapply(metadata.mrna.mirna, calculateCor, mrna_mat_medi
 mrna.mirna.correlation = join_all(mrna.mirna.correlation, by = c("feature","mrna","mirna"))
 
 metadata.mrna.mirna = rbindlist(metadata.mrna.mirna)
-```
-
-#### Calculate co-expression between mrna-methylation features at each diffstate
-Combine samples to unique biological sample name (take median values for replicates)
-```{r combine.samples.mrna.methyl}
-# Match up biological sample between assays
-biosampleInBoth <- intersect(mrna_metadata_filtered$biologicalSampleName, 
-                             methyl_metadata_filtered$biologicalSampleName)
-
-# Filter metadata
-mrna_metadata <- mrna_metadata_filtered %>%
-  filter(biologicalSampleName %in% biosampleInBoth)
-
-methyl_metadata <- methyl_metadata_filtered %>%
-  filter(biologicalSampleName %in% biosampleInBoth)
-
-# Take the median across multiple biological samples per feature
-mrna_mat_median <- mrna_mat %>%
-  dplyr::select(GeneName, one_of(mrna_metadata$UID)) %>%
-  melt %>%
-  dplyr::rename(UID = variable, expression = value) %>% 
-  left_join(mrna_metadata %>% dplyr::select(UID, biologicalSampleName)) %>% 
-  dplyr::group_by(GeneName, biologicalSampleName) %>% 
-  dplyr::summarize(median_expression=median(expression)) %>%
-  reshape2::dcast(GeneName ~ biologicalSampleName)
-
-rownames(mrna_mat_median) = mrna_mat_median$GeneName
-mrna_mat_median$GeneName = NULL
-
-# Take the median across multiple biological samples per feature
-rownames(methyl_metadata) = methyl_metadata$UID
-methyl_mat_median <- methyl_mat[,methyl_metadata$UID]
-rownames(methyl_mat_median) = methyl_mat$methProbeID
-colnames(methyl_mat_median) = methyl_metadata[colnames(methyl_mat_median), 'biologicalSampleName']
-
-# Get unique metadata
-metadata.mrna.methyl <- mrna_metadata_filtered %>% 
-  dplyr::select(biologicalSampleName, Diffname_short, Originating_Lab, Cell_Type, 
-                Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin,
-                Reprogramming_Gene_Combination, Culture_Conditions,
-                Cell_Type_of_Origin_Level2, Reprogramming_Vector_Type_Level2) %>%
-  dplyr::filter(biologicalSampleName %in% biosampleInBoth) %>%
-  dplyr::mutate(Diffname_short = gsub('-','',Diffname_short)) %>% 
-  unique
-mrna_mat_median = mrna_mat_median[,metadata.mrna.methyl$biologicalSampleName]
-methyl_mat_median = methyl_mat_median[,metadata.mrna.methyl$biologicalSampleName]
-
-# Split metadata in terms of diffstate
-metadata.mrna.methyl <- split(metadata.mrna.methyl, metadata.mrna.methyl$Diffname_short)
-```
-Performing analysis with `r dim(mrna_mat_median)[1]` mrnas and  `r dim(methyl_mat_median)[1]` methylation probes in `r dim(methyl_mat_median)[2]` samples
-
-```{r coexpp.mrna.methyl}
-mrna.methyl.correlation = lapply(metadata.mrna.methyl, calculateCor, mrna_mat_median, methyl_mat_median, 'mrna', 'methyl')
-mrna.methyl.correlation = join_all(mrna.methyl.correlation, by = c("feature","mrna","methyl"))
-
-metadata.mrna.methyl = rbindlist(metadata.mrna.methyl)
 ```
 
 #### Calculate co-expression between mrna-methylation features at each diffstate
@@ -433,6 +373,16 @@ metadata_obj = mapply(function(x,y, parentId, used, executed, activityName){
 SIMPLIFY = F)
 
 
+# Store coexpression
+CoExp <- list(mrna_mirna = mrna.mirna.correlation, 
+                 mrna_methyl = mrna.methyl.correlation,
+                 mirna_methyl = mirna.methyl.correlation)
+CoExp_obj = mapply(function(x,y, parentId, used, executed, activityName){
+  write.table(x, file=paste0('CoExp_',y,'.tsv'), sep = '\t', quote=F, row.names=F)
+  obj = File(paste0('CoExp_',y,'.tsv'), name = paste('Coexpression',y), parentId = parentId)
+  obj = synStore(obj, used = used, executed = executed, activityName = activityName)
+}, CoExp, names(CoExp), MoreArgs = list(CODE$properties$id, ALL_USED_IDs, ThisFile, ActivityName),
+SIMPLIFY = F)
 ```
 
 ### Source Code
