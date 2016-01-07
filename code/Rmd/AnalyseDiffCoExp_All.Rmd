@@ -1,10 +1,15 @@
 ---
-title: "Discordant analysis of interactions between mRNA, miRNA, and methylation expression"
+title: "Differential co-expression analysis of interactions between mRNA, miRNA, and methylation expression"
 author: "Thanneer Perumal"
 date: '`r date()`'
 output: html_document
 ---
 ```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knit2synapse)
+
+synapseLogin()
+
 knit2synapse::knitToFolderEntity(file = 'AnalyseDiffCoExp_All.Rmd',
                                  parentId = "syn5194922",
                                  entityName = 'Differential Coexpression Analysis Features')
@@ -22,7 +27,9 @@ library(dplyr)
 library(data.table)
 library(stringr)
 library(tidyr)
+library(reshape2)
 
+library(circlize)
 library(tools)
 library(ggplot2)
 library(RColorBrewer)
@@ -31,6 +38,7 @@ library(matrixStats)
 library(biomaRt)
 library(fpc)
 library(reshape2)
+library(EBcoexpress)
 
 library(knitr)
 library(knit2synapse)
@@ -65,234 +73,396 @@ knitr::opts_chunk$set(
 
 ```{r synapseStore.params}
 parentId = "syn5194922"
-SYNAPSE_STORE = T
-  
+SYNAPSE_STORE = T  
+ALL_USED_IDs = c()
 ```
 
 ```{r fxns}
 downloadFile <- function(id){
   tmp = fread(synGet(id)@filePath, data.table=F, header=T)
 }
+
+# Function to calcualte Fishers Z
+fishersZ <- function(C){
+  # C is a correlation matrix
+  fishersZ = 0.5 * log((1+C)/(1-C), base = exp(1));
+  return(fishersZ)
+}
+
+# Function to calculate change in Fishers Z
+fishersPvalue <- function(fishersZ.group1, fishersZ.group2, n.group1, n.group2){
+  # Calculate change in Fishers Z between groups
+  result = data.frame(changeFishersZ = abs((fishersZ.group1 - fishersZ.group2)/
+                                sqrt((1/(n.group1 - 3)) + (1/(n.group2 - 3)))))
+    
+  # Estimate p-values for change in Fishers Z between groups
+  result$pvalue = pnorm(result$changeFishersZ, lower.tail = F)
+  
+  # Adjust P-value using FDR
+  result$fdr = p.adjust(result$pvalue, method = 'fdr')
+  return(result)
+}
+
+# Function to calculate change in co-expression analysis using Fishers Z method
+calculateCor <- function(metaData, omics1Mat, omics2Mat, var1 = "omics1", var2 = "omics2"){
+  ## For group1
+  omics1Mat = omics1Mat[,metaData$biologicalSampleName]
+  omics2Mat = omics2Mat[,metaData$biologicalSampleName]
+  
+  # Calcualte correlation between features at group1
+  correlation = WGCNA::bicor(t(omics1Mat), t(omics2Mat))  
+  
+  correlation = reshape2::melt(correlation) %>%
+    dplyr::mutate(feature = paste(X1,X2,sep = "_")) %>%
+    plyr::rename(c("X1" = var1, "X2" = var2,  "value" = unique(metaData$Diffname_short)))
+    
+  rownames(correlation) = correlation$feature
+  writeLines(paste('Completed',unique(metaData$Diffname_short)))
+  return(correlation)
+}
+  
+# Function to calculate change in co-expression analysis using Fishers Z method
+changeCoExp <- function(group, metaData, correlationMat, var1 = "omics1", var2 = "omics2", FDR = 0.05, logFC = 1.5){
+  results = dplyr::select(correlationMat, one_of(c('feature',var1,var2,group)))
+  
+  colnames(results) = gsub(group[1], 'correlation.group1', colnames(results))
+  colnames(results) = gsub(group[2], 'correlation.group2', colnames(results))
+
+  # Calcualte Fishers Z scores from correlations
+  results$fishersZ.group1 = fishersZ(results$correlation.group1)
+  results$fishersZ.group2 = fishersZ(results$correlation.group2)
+  
+  # Estimate p-values for change in Fishers Z
+  results = dplyr::bind_cols(results,
+                             fishersPvalue(results$fishersZ.group1, 
+                                           results$fishersZ.group2, 
+                                           dim(metaData)[1],
+                                           dim(metaData)[1]));
+  
+  results$logfc = log(abs(results$correlation.group1/results$correlation.group2))
+
+  results = dplyr::filter(results, fdr <= FDR, abs(logfc) >= logFC)
+  writeLines(paste('Completed',group[1],group[2]))
+  return(results)
+}
+
+# Function to calculate discordant probabilities
+discordantAnalysis <- function(group, metaData, omics1Mat, omics2Mat, var1, var2){
+  omics1Mat = omics1Mat[,c(metaData[[group[1]]]$biologicalSampleName,
+                           metaData[[group[2]]]$biologicalSampleName)]
+  omics2Mat = omics2Mat[,c(metaData[[group[1]]]$biologicalSampleName,
+                           metaData[[group[2]]]$biologicalSampleName)]
+  
+  groupLabels = c(rep(1, length(metaData[[group[1]]]$Diffname_short)),
+            rep(2, length(metaData[[group[2]]]$Diffname_short)))
+  
+  # Run discordant analysis
+  vectors <- createVectors(omics1Mat, omics2Mat, groups = groupLabels)
+  results <- discordantRun(vectors$v1, vectors$v2, omics1Mat, omics2Mat)
+  
+  rownames(results$discordPPMatrix) = rownames(omics1Mat)
+  colnames(results$discordPPMatrix) = rownames(omics2Mat)
+  
+  results$discordPPMatrix = reshape2::melt(results$discordPPMatrix) %>%
+    dplyr::rename(omics1 = X1, omics2 = X2, PP = value) %>%
+    dplyr::mutate(feature = paste(omics1,omics2,sep = "_"))
+  results$discordPPMatrix$PP = 1 - results$discordPPMatrix$PP
+  
+  results$discordPPMatrix = results$discordPPMatrix %>%
+    plyr::rename(c("omics1" = var1, "omics2" = var2))  
+  writeLines(paste('Completed',group[1],group[2]))
+  return(results$discordPPMatrix)
+}
 ```
-### Download and filter raw counts and differential expression data from synapse
-#### Download mRNA data
-```{r download.mRNA.data}
-# Get metadata
-mrna_metdata_id <- "syn3156503"
-ALL_USED_IDs = mrna_metdata_id
 
-mrna_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', mrna_metdata_id))
-mrna_metadata <- mrna_metadata_obj@values
+### Download mappings
+#### Get TF-DNA mapping from Enrichr genesets
+```{r tf.dna.mapping}
+# Download TFs from Enrichr genesets
+load(synGet('syn4867851')@filePath)
+ALL_USED_IDs = c(ALL_USED_IDs,'syn4867851')
 
-mrna_metadata[mrna_metadata == 'N/A'] = NA
-
-# Get mRNA raw counts
-mrna_id <- "syn5011097"
-ALL_USED_IDs <- c(ALL_USED_IDs, mrna_id)
-
-mrna_mat <- downloadFile(mrna_id)
-
-# Filter mRNA metadata - will use UIDs from these to subset matrices
-mrna_metadata_filtered <- mrna_metadata %>%
-  filter(public, pass_qc, !exclude,
-         UID %in% colnames(mrna_mat),
-         Diffname_short != "",
-         Cell_Type == "PSC",
-         C4_Karyotype_Result != "abnormal")
-```
-#### Download miRNA data
-```{r download.miRNA.data}
-# Get metadata
-mirna_metdata_id <- "syn3219876"
-ALL_USED_IDs <- c(ALL_USED_IDs, mirna_metdata_id)
-
-mirna_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', mirna_metdata_id))
-mirna_metadata <- mirna_metadata_obj@values
-
-mirna_metadata[mirna_metadata == 'N/A'] = NA
-
-# Get miRNA raw counts
-mirna_id <- "syn5014456"
-ALL_USED_IDs = c(ALL_USED_IDs, mirna_id)  
-
-mirna_mat <- downloadFile(mirna_id)
-
-# Filter miRNA metadata - will use UIDs from these to subset matrices
-mirna_metadata_filtered <- mirna_metadata %>%
-  filter(public, pass_qc, !exclude,
-         UID %in% colnames(mirna_mat),
-         Diffname_short != "",
-         Cell_Type == "PSC",
-         C4_Karyotype_Result != "abnormal")
-```
-#### Download differentially expressed TFs and miRNAs
-```{r diffExp}
-# Get differentialy expressed transcription factors
-diffTF_id <- 'syn5521879'
-ALL_USED_IDs <- c(ALL_USED_IDs, diffTF_id)
-diffTF <- downloadFile(diffTF_id)  %>%
-  dplyr::select(feature) %>%
-  unique %>% unlist
-
-# Get TF clusters
-clusterTF_id <- 'syn5521889'
-ALL_USED_IDs <- c(ALL_USED_IDs, clusterTF_id)
-clusterTF <- downloadFile(clusterTF_id)  
-tmp <- lapply(clusterTF$TFs, function(x){str_split(x, ",") %>% unlist})
-names(tmp) <- clusterTF$Annotation
-clusterTF <- ldply(tmp, function(x){data.frame(x)}) %>% plyr::rename(c(".id" = "Annotation", "x" = "GeneNames"))
-rownames(clusterTF) <- clusterTF$GeneNames
-
-# Get differentialy expressed miRNA
-diffmiRNA_id <- 'syn5521885'
-diffmiRNA <- downloadFile(diffmiRNA_id)  %>%
-  dplyr::select(feature) %>%
-  unique %>% unlist
-
-# Get miRNA clusters
-clustermiRNA_id <- 'syn5521905'
-ALL_USED_IDs <- c(ALL_USED_IDs, clustermiRNA_id)
-clustermiRNA <- downloadFile(clustermiRNA_id)  
-tmp <- lapply(clustermiRNA$miRNAs, function(x){str_split(x, ",") %>% unlist})
-names(tmp) <- clustermiRNA$Annotation
-clustermiRNA <- ldply(tmp, function(x){as.data.frame(x)}) %>% plyr::rename(c(".id" = "Annotation", "x" = "GeneNames"))
-rownames(clustermiRNA) <- clustermiRNA$GeneNames
-```
-### Combine samples to unique biological sample name (take median values for replicates)
-```{r combine.samples}
-# Match up biological sample between assays
-biosampleInBoth <- intersect(mrna_metadata_filtered$biologicalSampleName, 
-                             mirna_metadata_filtered$biologicalSampleName)
-
-mrna_metadata_filtered <- mrna_metadata_filtered %>%
-  filter(biologicalSampleName %in% biosampleInBoth)
-
-mirna_metadata_filtered <- mirna_metadata_filtered %>%
-  filter(biologicalSampleName %in% biosampleInBoth)
-
-mrna_mat <- mrna_mat %>%
-  dplyr::select(GeneName, one_of(mrna_metadata_filtered$UID)) %>%
-  dplyr::filter(GeneName %in% diffTF)
-
-mirna_mat <- mirna_mat %>%
-  dplyr::select(GeneName, one_of(mirna_metadata_filtered$UID)) %>%
-  dplyr::filter(GeneName %in% diffmiRNA)
-
-# Take the median across multiple biological samples per feature
-mrna_mat_median <- reshape2::melt(mrna_mat) %>%
-  dplyr::rename(UID = variable, expression = value) %>% 
-  left_join(mrna_metadata_filtered %>% dplyr::select(UID, biologicalSampleName)) %>% 
-  dplyr::group_by(GeneName, biologicalSampleName) %>% 
-  dplyr::summarize(median_expression=median(expression)) %>%
-  reshape2::dcast(GeneName ~ biologicalSampleName)
-
-mirna_mat_median <- reshape2::melt(mirna_mat) %>%
-  dplyr::rename(UID = variable, expression = value) %>% 
-  left_join(mirna_metadata_filtered %>% dplyr::select(UID, biologicalSampleName)) %>% 
-  group_by(GeneName, biologicalSampleName) %>% 
-  summarize(median_expression=median(expression)) %>% 
-  dcast(GeneName ~ biologicalSampleName)
-```
-### Perform discordant analysis between TF-miRNA features at each diffstate
-Performing analysis with `r dim(mrna_mat_median)[1]` TFs and  `r dim(mirna_mat_median)[1]` miRNAs in `r dim(mirna_mat_median)[2]` samples
-Dicordant features at P.value <= 0.05
-```{r discordant.analysis}
-metadata <- mrna_metadata_filtered %>% 
-  dplyr::select(UID, biologicalSampleName, Diffname_short) %>% 
-  dplyr::mutate(Diffname_short = gsub('-','',Diffname_short)) %>% 
+# Get unique TF - gene mapping from three data bases: ChEA, TRANSFAC&JASPAR and ENCODE
+ind = grep('HUMAN', names(GeneSets$ChEA))
+TFsMapping1 = mapply(function(x, y){
+  TFname = str_split(x, '-')[[1]][1]
+  return(list(data.frame(feature = TFname, target = y)))
+}, names(GeneSets$ChEA)[ind], GeneSets$ChEA[ind]) %>%
+  rbindlist %>%
   unique
 
-# Process mRNA
-rownames(mrna_mat_median) = mrna_mat_median$GeneName
-mrna_mat_median$GeneName = NULL
-mrna_mat_median = mrna_mat_median[,metadata$biologicalSampleName]
+ind = grep('human', names(GeneSets$TRANSFAC_and_JASPAR_PWMs))
+TFsMapping2 = mapply(function(x, y){
+  TFname = str_split(x, ' ')[[1]][1]
+  return(list(data.frame(feature = TFname, target = y)))
+}, names(GeneSets$TRANSFAC_and_JASPAR_PWMs)[ind], GeneSets$TRANSFAC_and_JASPAR_PWMs[ind]) %>%
+  rbindlist %>%
+  unique
 
-# Process miRNA
-rownames(mirna_mat_median) = mirna_mat_median$GeneName
-mirna_mat_median$GeneName = NULL
-mirna_mat_median = mirna_mat_median[,metadata$biologicalSampleName]
- 
-# Split metadata in terms of diffstate
-metadata <- split(metadata, metadata$Diffname_short)
+ind = grep('hg19', names(GeneSets$"ENCODE_TF_ChIP-seq_2015"))
+TFsMapping3 = mapply(function(x, y){
+  TFname = str_split(x, '_')[[1]][1]
+  return(list(data.frame(feature = TFname, target = y)))
+}, names(GeneSets$"ENCODE_TF_ChIP-seq_2015")[ind], GeneSets$"ENCODE_TF_ChIP-seq_2015"[ind]) %>%
+  rbindlist %>%
+  unique
 
-# Get all possible diff state comparisons
-all.comparisons = t(combn(names(metadata), 2))
-
-# Perform discordant analysis across all possible diff state comparisons
-results.discordant = apply(all.comparisons, 1, function(diffStates, metaData, mrnaMat, mirnaMat){
-  mrna = mrnaMat[,c(metaData[[diffStates[1]]]$biologicalSampleName,
-                    metaData[[diffStates[2]]]$biologicalSampleName)]#[1:50,]
-  
-  mirna = mirnaMat[,c(metaData[[diffStates[1]]]$biologicalSampleName,
-                      metaData[[diffStates[2]]]$biologicalSampleName)]#[1:50,]
-  
-  group = c(rep(1, length(metaData[[diffStates[1]]]$Diffname_short)),
-            rep(2, length(metaData[[diffStates[2]]]$Diffname_short)))
-  
-  vectors <- createVectors(mrna, mirna, groups = group)
-  result <- discordantRun(vectors$v1, vectors$v2, mrna, mirna)
-  
-  rownames(result$discordPPMatrix) = rownames(mrna)
-  colnames(result$discordPPMatrix) = rownames(mirna)
-  
-  result$discordPPMatrix = melt(result$discordPPMatrix) %>%
-    dplyr::rename(TFs = X1, miRNA = X2, Pvalue = value) %>%
-    dplyr::mutate(feature = paste(TFs,miRNA,sep = "_"), FDR = p.adjust(Pvalue, method = "fdr"))
-  
-  writeLines(paste('Completed',diffStates[1],diffStates[2]))
-  return(result)
-#   resultTable <- makeTable(result$discordPPMatrix, mrna, mirna)
-}, metadata, mrna_mat_median, mirna_mat_median)
-names(results.discordant) = apply(all.comparisons, 1, paste, collapse = '_vs_')
-
-diffFeatures = lapply(results.discordant, function(x){
-  tmp = x$discordPPMatrix$feature[x$discordPPMatrix$Pvalue <= 0.05] %>% 
-    paste(collapse = ',')
-  tmp = gsub('_',':',tmp)
-}) %>% ldply(function(x){data.frame(value = x)})
-kable(diffFeatures)
+TFsMapping = rbindlist(list(TFsMapping1, TFsMapping2, TFsMapping3)) %>% unique             
 ```
-### Calculate co-expression between TF-miRNA features at each diffstate
-```{r coexpp, fig.height=25, fig.width=15}
-# Calcualte correlation between features at each diffstate
-Feature.Correlation <- lapply(metadata, function(metaData, mrnaMat, mirnaMat){
-  mrnaMat <- mrnaMat[,metaData$biologicalSampleName]
-  mirnaMat <- mirnaMat[,metaData$biologicalSampleName]
+
+
+### Download coexpression and metadata from synapse
+#### Download mRNA-miRNA coexpression and metadata
+```{r download.mRNA.miRNA.data}
+# Get coexpression
+mrna.mirna.coexp = downloadFile('syn5578560')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn5578560')
+
+TF.mirna.coexp = dplyr::filter(mrna.mirna.coexp, mrna %in% TFsMapping$feature)
+nonTF.mirna.coexp = dplyr::filter(mrna.mirna.coexp, !(mrna %in% TFsMapping$feature))
+
+# Get mRNA-miRNA metadata
+mrna.mirna.metadata = downloadFile('syn5578554')
+ALL_USED_IDs <- c(ALL_USED_IDs, 'syn5578554')
+```
+#### Download mRNA-methyl coexpression and metadata
+```{r download.mRNA.methyl.data}
+# Get coexpression
+mrna.methyl.coexp = downloadFile('syn5578562')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn5578562')
+
+TF.methyl.coexp = dplyr::filter(mrna.methyl.coexp, mrna %in% TFsMapping$feature)
+nonTF.methyl.coexp = dplyr::filter(mrna.methyl.coexp, !(mrna %in% TFsMapping$feature))
+
+# Get mRNA-methyl metadata
+mrna.methyl.metadata = downloadFile('syn5578556')
+ALL_USED_IDs <- c(ALL_USED_IDs, 'syn5578556')
+```
+#### Download miRNA-methyl coexpression and metadata
+```{r download.miRNA.methyl.data}
+# Get coexpression
+mirna.methyl.coexp = downloadFile('syn5578564')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn5578564')
+
+# Get mRNA-methyl metadata
+mirna.methyl.metadata = downloadFile('syn5578558')
+ALL_USED_IDs <- c(ALL_USED_IDs, 'syn5578558')
+```
+
+
+### Calculate differential co-expression analysis between TF-miRNA features at each diffstate
+Performing analysis with `r dim(TF.mirna.coexp)[1]` TF-miRNAs calculated from `r dim(mrna.mirna.metadata)[1]` samples
+```{r coexpp.fisher.TF.miRNA, fig.height=15, fig.width=15, echo=FALSE, results='asis'}
+# Get all possible diff state comparisons
+all.comparisons = t(combn(unique(mrna.mirna.metadata$Diffname_short), 2))
+
+# Perform Fisher analysis across all possible diff state comparisons
+TF.mirna.fisher = apply(all.comparisons, 1, changeCoExp, 
+                        mrna.mirna.metadata, TF.mirna.coexp, 
+                        var1 = 'mrna', var2 = 'mirna', FDR = 0.05, logFC = 3)
+names(TF.mirna.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
+
+writeLines("Number of differentially co-expressed features at an FDR <= 0.05 and absolute logFC >= 3 are")
+tmp = sapply(TF.mirna.fisher, function(x){dim(x)[1]}, simplify = F) %>% 
+  ldply(function(x){data.frame(value = x)}, .id = 'Comparison')
+kable(tmp)
+
+# Extract co-expression matrix at each differentiation stage
+uniqueFeatures = lapply(TF.mirna.fisher, function(x){
+  dplyr::select(x, feature) %>%
+    unlist
+}) 
+writeLines(paste("Total number of differentially co-expressed features at an FDR <= 0.05 and absolute logFC >= 3 are",
+                 length(uniqueFeatures %>% unlist %>% unique)))
+
+tmp = ldply(uniqueFeatures, function(x){
+  data.frame(value = paste(x, collapse = ';'))
+}, .id = 'Comparison')
+writeLines("They are")
+kable(tmp)
+
+TF.mirna.fisher = ldply(TF.mirna.fisher, .id = "Comparison")
+```
+
+```{r cluster.TF.miRNA, fig.height=15, fig.width=15, results='asis', echo=FALSE}
+tmp = TF.mirna.coexp %>%
+  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique)) %>%
+  dplyr::select(feature, SC, DE, MESO5, ECTO, MESO15, MESO30, EB)
+
+tmp.cor = t(apply(tmp[,-(1)], 1, function(x){
+  x[x>=0] = 0; 
+  x[is.na(x)] = 0; 
+  x = x/max(abs(x), na.rm = T)
+}))
+rownames(tmp.cor) = tmp$feature
+tmp.cor = na.omit(tmp.cor)
+
+writeLines(paste('Clustering',dim(tmp.cor)[1],'TF-miRNA interactions'))
+# clust.TF.miRNA = pamk(tmp.cor, 1:20, seed = 12345, usepam= F)
+set.seed(12345); clust.TF.miRNA = kmeans(tmp.cor, 10)#clust.TF.miRNA$nc)
+clust.TF.miRNA$cluster = clust.TF.miRNA$cluster %>%
+  factor(levels = c(2, 3, 7, 4, 5, 10, 9, 1, 8, 6))
   
-  C = WGCNA::bicor(t(mrnaMat), t(mirnaMat))  
-}, mrna_mat_median, mirna_mat_median)
+col = rev(brewer.pal(5, "RdPu"));
+figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
 
-# Calculate change in Fishers Z between diff states
-Correlation.all = join_all(lapply(names(Feature.Correlation), function(x, correlation){
-  y = melt(correlation[[x]]) %>% 
-    plyr::rename(c("X1" = "TF", "X2" = "miRNA", "value" = x)) %>%
-    mutate(id = paste(TF, miRNA, sep = "_")) %>%
-    dplyr::select(-(TF),-(miRNA))
-}, Feature.Correlation))
-rownames(Correlation.all) = Correlation.all$id
-Correlation.all$id = NULL
-Correlation.all = Correlation.all[, c('SC', 'DE', 'MESO5', 'ECTO', 'MESO15', 'MESO30', 'EB')]
+h.TF.miRNA = Heatmap(tmp.cor, name = 'Scaled Corr', column_title = 'Transcription Factors-miRNA', 
+        cluster_columns = F, cluster_rows=T, split = clust.TF.miRNA$cluster, 
+        col = colorRamp2(c(-1,-0.75,-0.5,-0.25,0), col),
+        column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
+        row_title_gp = gpar(fontsize = 22, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
+        row_names_gp = gpar(fontsize = 10),
+        show_row_names = F, row_names_side = 'right', show_column_names = T, show_row_hclust = F,
+        heatmap_legend_param = figure_size)
+draw(h.TF.miRNA, heatmap_legend_side = "left")
+WGCNA::collectGarbage()
+```
 
-diffFeatures = lapply(results.discordant, function(x){
-  x$discordPPMatrix$feature[x$discordPPMatrix$Pvalue <= 0.05]
-}) %>% unlist %>% unique
+### Calculate differential co-expression analysis between TF-methylation features at each diffstate
+Performing analysis with `r dim(TF.methyl.coexp)[1]` TF-methylation features calculated from `r dim(mrna.methyl.metadata)[1]` samples
+```{r coexpp.fisher.TF.methyl, fig.height=15, fig.width=15, echo=FALSE, results='asis'}
+# Get all possible diff state comparisons
+all.comparisons = t(combn(unique(mrna.methyl.metadata$Diffname_short), 2))
 
-# Kmeans clustering of scaled expression data
-Correlation.cluster = pamk(Correlation.all[diffFeatures,], 2:15, seed = 123456)
-set.seed(123456);Correlation.cluster = kmeans(Correlation.all[diffFeatures,], Correlation.cluster$nc)
+# Perform Fisher analysis across all possible diff state comparisons
+TF.methyl.fisher = apply(all.comparisons, 1, changeCoExp, 
+                        mrna.methyl.metadata, TF.methyl.coexp, 
+                        var1 = 'mrna', var2 = 'methyl', FDR = 0.05, logFC = 3)
+names(TF.methyl.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
 
-h.TF.miRNA <- Heatmap(Correlation.all[diffFeatures, ], column_title = 'Active TF - miRNA interactions',
-                      name = 'Correlation', cluster_columns = F, cluster_rows = T,
-                      split = Correlation.cluster$cluster, show_row_names = T, show_column_names = T,
-                      show_row_hclust = T, show_column_hclust = F)
-draw(h.TF.miRNA)
+writeLines("Number of differentially co-expressed features at an FDR <= 0.05 and absolute logFC >= 3 are")
+tmp = sapply(TF.methyl.fisher, function(x){dim(x)[1]}, simplify = F) %>% 
+  ldply(function(x){data.frame(value = x)}, .id = 'Comparison')
+kable(tmp)
+
+# Extract co-expression matrix at each differentiation stage
+uniqueFeatures = lapply(TF.methyl.fisher, function(x){
+  dplyr::select(x, feature) %>%
+    unlist
+}) 
+writeLines(paste("Total number of differentially co-expressed features at an FDR <= 0.05 and absolute logFC >= 3 are",
+                 length(uniqueFeatures %>% unlist %>% unique)))
+
+tmp = ldply(uniqueFeatures, function(x){
+  data.frame(value = paste(x, collapse = ';'))
+}, .id = 'Comparison')
+writeLines("They are")
+kable(tmp)
+
+TF.methyl.fisher = ldply(TF.methyl.fisher, .id = "Comparison")
+```
+
+```{r cluster.TF.methyl, fig.height=15, fig.width=15, results='asis', echo=FALSE}
+tmp = TF.methyl.coexp %>%
+  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique)) %>%
+  dplyr::select(feature, SC, DE, MESO5, ECTO, EB)
+
+tmp.cor = t(apply(tmp[,-(1)], 1, function(x){
+  x[x>=0] = 0; 
+  x[is.na(x)] = 0; 
+  x = x/max(abs(x), na.rm = T)
+}))
+rownames(tmp.cor) = tmp$feature
+tmp.cor = na.omit(tmp.cor)
+
+writeLines(paste('Clustering',dim(tmp.cor)[1],'TF-methylation interactions'))
+clust.TF.methyl = pamk(tmp.cor, 1:20, seed = 12345, usepam= F)
+set.seed(12345); clust.TF.methyl = kmeans(tmp.cor, clust.TF.methyl$nc)
+clust.TF.methyl$cluster = clust.TF.methyl$cluster %>%
+  factor(levels = c(2, 4, 5, 10, 8, 11, 7, 1, 6, 3, 9))
+  
+col = rev(brewer.pal(5, "RdPu"));
+figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
+
+h.TF.methyl = Heatmap(tmp.cor, name = 'Scaled Corr', column_title = 'Transcription Factors-Methylation probes', 
+        cluster_columns = F, cluster_rows=T, split = clust.TF.methyl$cluster, 
+        col = colorRamp2(c(-1,-0.75,-0.5,-0.25,0), col),
+        column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
+        row_title_gp = gpar(fontsize = 22, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
+        row_names_gp = gpar(fontsize = 10),
+        show_row_names = F, row_names_side = 'right', show_column_names = T, show_row_hclust = F,
+        heatmap_legend_param = figure_size)
+draw(h.TF.methyl, heatmap_legend_side = "left")
+WGCNA::collectGarbage()
+```
+
+### Calculate differential co-expression analysis between miRNA-methylation features at each diffstate
+Performing analysis with `r dim(mirna.methyl.coexp)[1]` mirna-methylation features calculated from `r dim(mirna.methyl.metadata)[1]` samples
+```{r coexpp.fisher.mirna.methyl, fig.height=15, fig.width=15, echo=FALSE, results='asis'}
+# Get all possible diff state comparisons
+all.comparisons = t(combn(unique(mirna.methyl.metadata$Diffname_short), 2))
+
+# Perform Fisher analysis across all possible diff state comparisons
+mirna.methyl.fisher = apply(all.comparisons, 1, changeCoExp, 
+                        mirna.methyl.metadata, mirna.methyl.coexp, 
+                        var1 = 'mirna', var2 = 'methyl', FDR = 0.05, logFC = 3)
+names(mirna.methyl.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
+
+writeLines("Number of differentially co-expressed features at an FDR <= 0.05 and absolute logFC >= 3 are")
+tmp = sapply(mirna.methyl.fisher, function(x){dim(x)[1]}, simplify = F) %>% 
+  ldply(function(x){data.frame(value = x)}, .id = 'Comparison')
+kable(tmp)
+
+# Extract co-expression matrix at each differentiation stage
+uniqueFeatures = lapply(mirna.methyl.fisher, function(x){
+  dplyr::select(x, feature) %>%
+    unlist
+}) 
+writeLines(paste("Total number of differentially co-expressed features at an FDR <= 0.05 and absolute logFC >= 3 are",
+                 length(uniqueFeatures %>% unlist %>% unique)))
+
+tmp = ldply(uniqueFeatures, function(x){
+  data.frame(value = paste(x, collapse = ';'))
+}, .id = 'Comparison')
+writeLines("They are")
+kable(tmp)
+
+mirna.methyl.fisher = ldply(mirna.methyl.fisher, .id = "Comparison")
+```
+
+```{r cluster.mirna.methyl, fig.height=15, fig.width=15, results='asis', echo=FALSE}
+tmp = mirna.methyl.coexp %>%
+  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique)) %>%
+  dplyr::select(feature, SC, DE, MESO5, ECTO, EB)
+
+tmp.cor = t(apply(tmp[,-(1)], 1, function(x){
+  x[x>=0] = 0; 
+  x[is.na(x)] = 0; 
+  x = x/max(abs(x), na.rm = T)
+}))
+rownames(tmp.cor) = tmp$feature
+tmp.cor = na.omit(tmp.cor)
+
+writeLines(paste('Clustering',dim(tmp.cor)[1],'mirna-methylation interactions'))
+# clust.mirna.methyl = pamk(tmp.cor, 1:20, seed = 12345, usepam= T)
+set.seed(12345); clust.mirna.methyl = kmeans(tmp.cor, 10)
+clust.mirna.methyl$cluster = clust.mirna.methyl$cluster %>%
+  factor(levels = c(10, 4, 8, 7, 9, 5, 2, 3, 6, 1))
+  
+col = rev(brewer.pal(5, "RdPu"));
+figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
+
+h.mirna.methyl = Heatmap(tmp.cor, name = 'Scaled Corr', column_title = 'miRNA-Methylation probes', 
+        cluster_columns = F, cluster_rows=T, split = clust.mirna.methyl$cluster, 
+        col = colorRamp2(c(-1,-0.75,-0.5,-0.25,0), col),
+        column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
+        row_title_gp = gpar(fontsize = 22, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
+        row_names_gp = gpar(fontsize = 10),
+        show_row_names = F, row_names_side = 'right', show_column_names = T, show_row_hclust = F,
+        heatmap_legend_param = figure_size)
+draw(h.mirna.methyl, heatmap_legend_side = "left")
+WGCNA::collectGarbage()
 ```
 
 ### Store results in synapse
-```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache = F}
 ActivityName <- 'Analyse integrated differential co-expression results between assays'
   
 ThisFileName <- 'AnalyseDiffCoExp_All.Rmd'
+
 # Github link
 ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
                     ref="branch", 
@@ -300,9 +470,21 @@ ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis",
 
 ThisFile <- getPermlink(repository = ThisRepo,
                         repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
 # Populate wiki with results
 CODE <- Folder(name = 'Differential Coexpression Analysis Features',parentId = parentId)
 CODE <- synStore(CODE)
+
+# Store coexpression
+changeCoExp <- list(TF_mirna = TF.mirna.fisher,
+                    TF_methyl = TF.methyl.fisher,
+                    mirna_methyl = mirna.methyl.fisher)
+changeCoExp_obj = mapply(function(x,y, parentId, used, executed, activityName){
+  write.table(x, file=paste0('changeCoExp_',y,'.tsv'), sep = '\t', quote=F, row.names=F)
+  obj = File(paste0('changeCoExp_',y,'.tsv'), name = paste('Fishers Change in Coexpression',y), parentId = parentId)
+  obj = synStore(obj, used = used, executed = executed, activityName = activityName)
+}, changeCoExp, names(changeCoExp), MoreArgs = list(CODE$properties$id, ALL_USED_IDs, ThisFile, ActivityName),
+SIMPLIFY = F)
 ```
 ### Source Code
 [Source R Markdown](`r ThisFile`)
