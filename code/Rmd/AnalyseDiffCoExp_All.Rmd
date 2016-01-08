@@ -505,7 +505,7 @@ kable(tmp)
 TF.methyl.fisher = ldply(TF.methyl.fisher, .id = "Comparison")
 ```
 
-```{r cluster.TF.methyl, fig.height=25, fig.width=15, results='asis', echo=FALSE}
+```{r cluster.TF.methyl, fig.height=5, fig.width=15, results='asis', echo=FALSE}
 tmp = D %>%
   dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique)) %>%
   dplyr::select(feature, SC, DE, MESO5, ECTO, EB)
@@ -525,6 +525,196 @@ h.TF.methyl = Heatmap(tmp[,-(1)], name = 'Corr',
 draw(h.TF.methyl, heatmap_legend_side = "right", column_title = 'Transcription Factors-methylation Probes',
      column_title_gp = gpar(fontsize = 22, fontface = "bold"))
 WGCNA::collectGarbage()
+```
+
+### Calculate differential co-expression analysis between nonTF-miRNA features at each diffstate
+Performing analysis with `r dim(nonTF.mirna.coexp)[1]` nonTF-miRNA interactions calculated from `r dim(mrna.mirna.metadata)[1]` samples
+```{r coexpp.fisher.nonTF.miRNA, fig.height=15, fig.width=15, echo=FALSE, results='asis'}
+# Get all possible diff state comparisons
+all.comparisons = t(combn(setdiff(unique(mrna.mirna.metadata$Diffname_short), c()),2))#'MESO15','MESO30'
+
+# Perform Fisher analysis across all possible diff state comparisons
+nonTF.mirna.fisher = apply(all.comparisons, 1, changeCoExp, 
+                        mrna.mirna.metadata, nonTF.mirna.coexp, 
+                        var1 = 'mrna', var2 = 'mirna', FDR = 0.05, logFC = 0)
+names(nonTF.mirna.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
+
+# Extract co-expression values from differential coexpression
+D = mapply(function(x,y){
+  group = str_split(y,'_vs_')[[1]]
+  x = plyr::rename(x, c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
+    dplyr::select(one_of(c('feature','mrna','mirna',group)))
+}, nonTF.mirna.fisher, names(nonTF.mirna.fisher), SIMPLIFY = F) %>%
+  plyr::join_all(type = "full", by = c("feature", "mrna", "mirna"))
+
+writeLines("Number of differentially co-expressed interactions at an FDR <= 0.05 with either the nonTF or the miRNA are differentially expressed are")
+tmp = sapply(nonTF.mirna.fisher, function(x, diffexp){
+  mRNA = (intersect(x$mrna, diffexp[['nonTF']]$feature))
+  miRNA = (intersect(x$mirna, diffexp[['mirna']]$feature))
+  x = dplyr::filter(x, mrna %in% mRNA | mirna %in% miRNA)
+  dim(x)[1]
+}, diffExp, simplify = F) %>% 
+  ldply(function(x){data.frame(value = x)}, .id = 'Comparison')
+kable(tmp)
+
+# Extract co-expression matrix at each differentiation stage
+uniqueFeatures = lapply(nonTF.mirna.fisher, function(x, diffexp){
+  mRNA = (intersect(x$mrna, diffexp[['nonTF']]$feature))
+  miRNA = (intersect(x$mirna, diffexp[['mirna']]$feature))
+  x = dplyr::filter(x, mrna %in% mRNA | mirna %in% miRNA) %>%
+    dplyr::select(feature) %>%
+    unlist %>% unique
+}, diffExp) 
+writeLines(paste("Unique number of differentially co-expressed interactions at an FDR <= 0.05 with either a differentially expressed nonTF or miRNA are", length(uniqueFeatures %>% unlist %>% unique)))
+
+tmp = ldply(uniqueFeatures, function(x){
+  data.frame(value = paste(x, collapse = ';'))
+}, .id = 'Comparison')
+writeLines("They are")
+kable(tmp)
+
+nonTF.mirna.fisher = ldply(nonTF.mirna.fisher, .id = "Comparison")
+```
+
+```{r cluster.nonTF.miRNA, fig.height=35, fig.width=15, results='asis', echo=FALSE}
+tmp = D %>%
+  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique)) %>%
+  dplyr::select(feature, SC, DE, MESO5, ECTO, MESO15, MESO30, EB)
+
+tmp.cor = t(apply(tmp[,-(1)], 1, function(x){
+  x[x>=0] = 0; 
+  x[is.na(x)] = 0; 
+  x = x/max(abs(x), na.rm = T)
+}))
+rownames(tmp.cor) = tmp$feature
+tmp.cor = na.omit(tmp.cor)
+
+writeLines(paste('Clustering',dim(tmp.cor)[1],'nonTF-miRNA interactions'))
+clust.nonTF.miRNA = pamk(tmp.cor, 1:20, seed = 12345, usepam= F)
+set.seed(12345); clust.nonTF.miRNA = kmeans(tmp.cor, clust.nonTF.miRNA$nc)
+clust.nonTF.miRNA$cluster = clust.nonTF.miRNA$cluster %>%
+  factor(levels = c(6, 7, 4, 1, 3, 2, 5))
+  
+# Plot raw correlation values based on processed value based clustering
+tmp = D %>%
+  dplyr::filter(feature %in% rownames(tmp.cor)) %>%
+  dplyr::select(feature, mrna, mirna, SC, DE, MESO5, ECTO, MESO15, MESO30, EB) %>%
+  left_join(mrnaCounts) %>%
+  left_join(mirnaCounts)
+
+tmp.coExp = dplyr::select(tmp, SC, DE, MESO5, ECTO, MESO15, MESO30, EB)
+rownames(tmp.coExp) = tmp$feature
+tmp.mrna = dplyr::select(tmp, SC.mrna, DE.mrna, MESO5.mrna, ECTO.mrna, MESO15.mrna, MESO30.mrna, EB.mrna)
+rownames(tmp.mrna) = tmp$feature
+tmp.mirna = dplyr::select(tmp, SC.mirna, DE.mirna, MESO5.mirna, ECTO.mirna, MESO15.mirna, MESO30.mirna, EB.mirna)   
+rownames(tmp.mirna) = tmp$feature
+
+col = rev(brewer.pal(5, "RdPu"))
+figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
+
+h.nonTF.miRNA = Heatmap(tmp.coExp, name = 'Corr', 
+        cluster_columns = F, cluster_rows=T, split = clust.nonTF.miRNA$cluster, 
+        # col = colorRamp2(c(-1,-0.75,-0.5,-0.25,0), col),
+        column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
+        row_title_gp = gpar(fontsize = 22, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
+        row_names_gp = gpar(fontsize = 10),
+        show_row_names = T, row_names_side = 'right', show_column_names = T, show_row_hclust = F,
+        heatmap_legend_param = figure_size)
+draw(h.nonTF.miRNA, heatmap_legend_side = "left", column_title = 'Transcription Factors-miRNA',
+     column_title_gp = gpar(fontsize = 22, fontface = "bold"))
+WGCNA::collectGarbage()
+```
+
+### Calculate differential co-expression analysis between nonTF-methylation interactions at each diffstate
+Performing analysis with `r dim(nonTF.methyl.coexp)[1]` nonTF-methylation interactions calculated from `r dim(mrna.methyl.metadata)[1]` samples
+```{r coexpp.fisher.nonTF.methyl, fig.height=15, fig.width=15, echo=FALSE, results='asis'}
+# Get all possible diff state comparisons
+all.comparisons = t(combn(setdiff(unique(mrna.methyl.metadata$Diffname_short), c()),2))#'MESO15','MESO30'
+
+# Perform Fisher analysis across all possible diff state comparisons
+nonTF.methyl.fisher = apply(all.comparisons, 1, changeCoExp, 
+                            mrna.methyl.metadata, nonTF.methyl.coexp, 
+                            var1 = 'mrna', var2 = 'methyl', FDR = 0.05, logFC = 0)
+names(nonTF.methyl.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
+
+# Extract co-expression values from differential coexpression
+D = mapply(function(x,y){
+  group = str_split(y,'_vs_')[[1]]
+  x = plyr::rename(x, c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
+    dplyr::select(one_of(c('feature','mrna','methyl',group)))
+}, nonTF.methyl.fisher, names(nonTF.methyl.fisher), SIMPLIFY = F) %>%
+  plyr::join_all(type = "full", by = c("feature", "mrna", "methyl"))
+
+writeLines("Number of differentially co-expressed interactions at an FDR <= 0.05 with either the nonTF or the methylation probe are differentially expressed are")
+tmp = sapply(nonTF.methyl.fisher, function(x, diffexp){
+  mRNA = (intersect(x$mrna, diffexp[['nonTF']]$feature))
+  methyl = (intersect(x$methyl, diffexp[['methyl']]$feature))
+  x = dplyr::filter(x, mrna %in% mRNA | methyl %in% methyl)
+  dim(x)[1]
+}, diffExp, simplify = F) %>% 
+  ldply(function(x){data.frame(value = x)}, .id = 'Comparison')
+kable(tmp)
+
+# Extract co-expression matrix at each differentiation stage
+uniqueFeatures = lapply(nonTF.methyl.fisher, function(x, diffexp){
+  mRNA = (intersect(x$mrna, diffexp[['nonTF']]$feature))
+  methyl = (intersect(x$methyl, diffexp[['methyl']]$feature))
+  x = dplyr::filter(x, mrna %in% mRNA | methyl %in% methyl) %>%
+    dplyr::select(feature) %>%
+    unlist %>% unique
+}, diffExp) 
+writeLines(paste("Unique number of differentially co-expressed interactions at an FDR <= 0.05 with either a differentially expressed nonTF or methyl probe are", length(uniqueFeatures %>% unlist %>% unique)))
+
+tmp = ldply(uniqueFeatures, function(x){
+  data.frame(value = paste(x, collapse = ';'))
+}, .id = 'Comparison')
+writeLines("They are")
+kable(tmp)
+
+nonTF.methyl.fisher = ldply(nonTF.methyl.fisher, .id = "Comparison")
+```
+
+```{r cluster.nonTF.methyl, fig.height=25, fig.width=15, results='asis', echo=FALSE}
+tmp = D %>%
+  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique)) %>%
+  dplyr::select(feature, SC, DE, MESO5, ECTO, EB)
+
+tmp.cor = t(apply(tmp[,-(1)], 1, function(x){
+  x[x>=0] = 0; 
+  x[is.na(x)] = 0; 
+  x = x/max(abs(x), na.rm = T)
+}))
+rownames(tmp.cor) = tmp$feature
+tmp.cor = na.omit(tmp.cor)
+
+writeLines(paste('Clustering',dim(tmp.cor)[1],'nonTF-miRNA interactions'))
+clust.nonTF.methyl = pamk(tmp.cor, 1:20, seed = 12345, usepam= F)
+set.seed(12345); clust.nonTF.methyl = kmeans(tmp.cor, 6)#clust.nonTF.methyl$nc)
+clust.nonTF.methyl$cluster = clust.nonTF.methyl$cluster %>%
+  factor(levels = c(4, 6, 5, 3, 2, 1))
+  
+# Plot raw correlation values based on processed value based clustering
+tmp = D %>%
+  dplyr::filter(feature %in% rownames(tmp.cor)) %>%
+  dplyr::select(feature, SC, DE, MESO5, ECTO, EB)
+rownames(tmp) = tmp$feature
+tmp[is.na(tmp)] = 0
+
+col = rev(brewer.pal(5, "RdPu"))
+figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
+
+h.nonTF.methyl = Heatmap(tmp[,-(1)], name = 'Corr', 
+        cluster_columns = F, cluster_rows=T, split = clust.nonTF.methyl$cluster, 
+        # col = colorRamp2(c(-1,-0.75,-0.5,-0.25,0), col),
+        column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
+        row_title_gp = gpar(fontsize = 22, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
+        row_names_gp = gpar(fontsize = 10),
+        show_row_names = T, row_names_side = 'right', show_column_names = T, show_row_hclust = F,
+        heatmap_legend_param = figure_size)
+draw(h.nonTF.methyl, heatmap_legend_side = "left", column_title = 'Non Transcription Factors-Methylation Probes',
+     column_title_gp = gpar(fontsize = 22, fontface = "bold"))
 ```
 
 ### Calculate differential co-expression analysis between miRNA-methylation interactions at each diffstate
@@ -576,9 +766,8 @@ kable(tmp)
 mirna.methyl.fisher = ldply(mirna.methyl.fisher, .id = "Comparison")
 ```
 
-
 ### Store results in synapse
-```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache = F}
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache = FALSE}
 ActivityName <- 'Analyse integrated differential co-expression results between assays'
   
 ThisFileName <- 'AnalyseDiffCoExp_All.Rmd'
@@ -596,14 +785,16 @@ CODE <- Folder(name = 'Differential Coexpression Analysis Features',parentId = p
 CODE <- synStore(CODE)
 
 # Store coexpression
-changeCoExp <- list(TF_methyl = TF.methyl.fisher,
+changeCoexp <- list(TF_mirna = TF.mirna.fisher,
                     TF_methyl = TF.methyl.fisher,
+                    nonTF_mirna = nonTF.mirna.fisher,
+                    nonTF_methyl = nonTF.methyl.fisher,
                     mirna_methyl = mirna.methyl.fisher)
-changeCoExp_obj = mapply(function(x,y, parentId, used, executed, activityName){
+changeCoexp_obj = mapply(function(x,y, parentId, used, executed, activityName){
   write.table(x, file=paste0('changeCoExp_',y,'.tsv'), sep = '\t', quote=F, row.names=F)
   obj = File(paste0('changeCoExp_',y,'.tsv'), name = paste('Fishers Change in Coexpression',y), parentId = parentId)
   obj = synStore(obj, used = used, executed = executed, activityName = activityName)
-}, changeCoExp, names(changeCoExp), MoreArgs = list(CODE$properties$id, ALL_USED_IDs, ThisFile, ActivityName),
+}, changeCoexp, names(changeCoexp), MoreArgs = list(CODE$properties$id, ALL_USED_IDs, ThisFile, ActivityName),
 SIMPLIFY = F)
 ```
 ### Source Code
