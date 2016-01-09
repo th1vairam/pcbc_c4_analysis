@@ -455,6 +455,9 @@ h.TF.miRNA = Heatmap(tmp.coExp, name = 'Corr',
 draw(h.TF.miRNA, heatmap_legend_side = "left", column_title = 'Transcription Factors-miRNA',
      column_title_gp = gpar(fontsize = 22, fontface = "bold"))
 WGCNA::collectGarbage()
+
+clust.TF.miRNA$cluster = clust.TF.miRNA$cluster %>%
+  revalue(c('6' = 'SC', '7' = 'DE', '4' = 'MESO5', '1' = 'ECTO', '3' = 'MESO15', '2' = 'MESO30', '5' = 'EB'))
 ```
 
 ### Calculate differential co-expression analysis between TF-methylation interactions at each diffstate
@@ -513,6 +516,9 @@ tmp = D %>%
 rownames(tmp) = tmp$feature
 tmp[is.na(tmp)] = 0
 
+writeLines(paste('Clustering',dim(tmp)[1],'TF-methylation probe interactions'))
+set.seed(12345); clust.TF.methyl = kmeans(tmp[,-(1)], 1)
+
 col = rev(brewer.pal(5, "RdPu"))
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
 
@@ -526,6 +532,9 @@ h.TF.methyl = Heatmap(tmp[,-(1)], name = 'Corr',
         heatmap_legend_param = figure_size)
 draw(h.TF.methyl, heatmap_legend_side = "right", column_title = 'Transcription Factors-methylation Probes',
      column_title_gp = gpar(fontsize = 22, fontface = "bold"))
+
+clust.TF.methyl$cluster = c('FOXL1_cg02141498' = 'DE', 'FOXL1_cg02141498' = 'EB', 
+                            'TBL1XR1_cg10747185' = 'MESO5', 'TBL1XR1_cg10747185' = 'ECTO') 
 WGCNA::collectGarbage()
 ```
 
@@ -578,7 +587,7 @@ kable(tmp)
 nonTF.mirna.fisher = ldply(nonTF.mirna.fisher, .id = "Comparison")
 ```
 
-```{r cluster.nonTF.miRNA, fig.height=35, fig.width=15, results='asis', echo=FALSE}
+```{r cluster.nonTF.miRNA, fig.height=35, fig.width=15, results='asis', echo=FALSE, cache=FALSE}
 tmp = D %>%
   dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique)) %>%
   dplyr::select(feature, SC, DE, MESO5, ECTO, MESO15, MESO30, EB)
@@ -593,9 +602,9 @@ tmp.cor = na.omit(tmp.cor)
 
 writeLines(paste('Clustering',dim(tmp.cor)[1],'nonTF-miRNA interactions'))
 clust.nonTF.miRNA = pamk(tmp.cor, 1:20, seed = 12345, usepam= F)
-set.seed(12345); clust.nonTF.miRNA = kmeans(tmp.cor, clust.nonTF.miRNA$nc)
+set.seed(12345); clust.nonTF.miRNA = kmeans(tmp.cor, 6)#clust.nonTF.miRNA$nc)
 clust.nonTF.miRNA$cluster = clust.nonTF.miRNA$cluster %>%
-  factor(levels = c(6, 7, 4, 1, 3, 2, 5))
+  factor(levels = c(1,2,3,5,4,6))
   
 # Plot raw correlation values based on processed value based clustering
 tmp = D %>%
@@ -614,7 +623,7 @@ h.nonTF.miRNA = Heatmap(tmp[,-(1)], name = 'Corr',
         row_title_gp = gpar(fontsize = 22, fontface = "bold"),
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
         row_names_gp = gpar(fontsize = 10),
-        show_row_names = T, row_names_side = 'right', show_column_names = T, show_row_hclust = F,
+        show_row_names = F, row_names_side = 'right', show_column_names = T, show_row_hclust = T,
         heatmap_legend_param = figure_size)
 draw(h.nonTF.miRNA, heatmap_legend_side = "left", column_title = 'Non Transcription Factors-miRNA',
      column_title_gp = gpar(fontsize = 22, fontface = "bold"))
