@@ -434,6 +434,7 @@ tmp = D %>%
 
 tmp.coExp = dplyr::select(tmp, SC, DE, MESO5, ECTO, MESO15, MESO30, EB)
 rownames(tmp.coExp) = tmp$feature
+tmp.coExp[is.na(tmp.coExp)] = 0
 tmp.mrna = dplyr::select(tmp, SC.mrna, DE.mrna, MESO5.mrna, ECTO.mrna, MESO15.mrna, MESO30.mrna, EB.mrna)
 rownames(tmp.mrna) = tmp$feature
 tmp.mirna = dplyr::select(tmp, SC.mirna, DE.mirna, MESO5.mirna, ECTO.mirna, MESO15.mirna, MESO30.mirna, EB.mirna)   
@@ -510,6 +511,7 @@ tmp = D %>%
   dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique)) %>%
   dplyr::select(feature, SC, DE, MESO5, ECTO, EB)
 rownames(tmp) = tmp$feature
+tmp[is.na(tmp)] = 0
 
 col = rev(brewer.pal(5, "RdPu"))
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
@@ -598,21 +600,14 @@ clust.nonTF.miRNA$cluster = clust.nonTF.miRNA$cluster %>%
 # Plot raw correlation values based on processed value based clustering
 tmp = D %>%
   dplyr::filter(feature %in% rownames(tmp.cor)) %>%
-  dplyr::select(feature, mrna, mirna, SC, DE, MESO5, ECTO, MESO15, MESO30, EB) %>%
-  left_join(mrnaCounts) %>%
-  left_join(mirnaCounts)
-
-tmp.coExp = dplyr::select(tmp, SC, DE, MESO5, ECTO, MESO15, MESO30, EB)
-rownames(tmp.coExp) = tmp$feature
-tmp.mrna = dplyr::select(tmp, SC.mrna, DE.mrna, MESO5.mrna, ECTO.mrna, MESO15.mrna, MESO30.mrna, EB.mrna)
-rownames(tmp.mrna) = tmp$feature
-tmp.mirna = dplyr::select(tmp, SC.mirna, DE.mirna, MESO5.mirna, ECTO.mirna, MESO15.mirna, MESO30.mirna, EB.mirna)   
-rownames(tmp.mirna) = tmp$feature
+  dplyr::select(feature, SC, DE, MESO5, ECTO, MESO15, MESO30, EB)
+rownames(tmp) = tmp$feature
+tmp[is.na(tmp)] = 0
 
 col = rev(brewer.pal(5, "RdPu"))
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
 
-h.nonTF.miRNA = Heatmap(tmp.coExp, name = 'Corr', 
+h.nonTF.miRNA = Heatmap(tmp[,-(1)], name = 'Corr', 
         cluster_columns = F, cluster_rows=T, split = clust.nonTF.miRNA$cluster, 
         # col = colorRamp2(c(-1,-0.75,-0.5,-0.25,0), col),
         column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
@@ -621,7 +616,7 @@ h.nonTF.miRNA = Heatmap(tmp.coExp, name = 'Corr',
         row_names_gp = gpar(fontsize = 10),
         show_row_names = T, row_names_side = 'right', show_column_names = T, show_row_hclust = F,
         heatmap_legend_param = figure_size)
-draw(h.nonTF.miRNA, heatmap_legend_side = "left", column_title = 'Transcription Factors-miRNA',
+draw(h.nonTF.miRNA, heatmap_legend_side = "left", column_title = 'Non Transcription Factors-miRNA',
      column_title_gp = gpar(fontsize = 22, fontface = "bold"))
 WGCNA::collectGarbage()
 ```
