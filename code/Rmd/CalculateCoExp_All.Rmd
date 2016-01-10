@@ -257,6 +257,57 @@ mRNA.methyl <- get450KProbeMapping(methyl_mat$methProbeID)$Annotation %>%
 ```
 
 
+#### Calculate co-expression between TF-nonTF features at each diffstate
+Combine samples to unique biological sample name (take median values for replicates)
+```{r combine.samples.TF.nonTF}
+# Match up biological sample between assays
+biosampleInBoth <- mrna_metadata_filtered$biologicalSampleName
+
+# Filter metadata
+mrna_metadata <- mrna_metadata_filtered 
+
+# Take the median across multiple biological samples per feature
+mrna_mat_median <- mrna_mat %>%
+  dplyr::select(GeneName, one_of(mrna_metadata$UID)) %>%
+  melt %>%
+  dplyr::rename(UID = variable, expression = value) %>% 
+  left_join(mrna_metadata %>% dplyr::select(UID, biologicalSampleName)) %>% 
+  dplyr::group_by(GeneName, biologicalSampleName) %>% 
+  dplyr::summarize(median_expression=median(expression)) %>%
+  reshape2::dcast(GeneName ~ biologicalSampleName)
+
+rownames(mrna_mat_median) = mrna_mat_median$GeneName
+mrna_mat_median$GeneName = NULL
+
+# Get unique metadata
+metadata.TF.nonTF <- mrna_metadata_filtered %>% 
+  dplyr::select(biologicalSampleName, Diffname_short, Originating_Lab, Cell_Type, 
+                Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin,
+                Reprogramming_Gene_Combination, Culture_Conditions,
+                Cell_Type_of_Origin_Level2, Reprogramming_Vector_Type_Level2) %>%
+  dplyr::filter(biologicalSampleName %in% biosampleInBoth) %>%
+  dplyr::mutate(Diffname_short = gsub('-','',Diffname_short)) %>% 
+  unique
+mrna_mat_median = mrna_mat_median[,metadata.TF.nonTF$biologicalSampleName]
+
+nonTF_mat_median = mrna_mat_median[!(rownames(mrna_mat_median) %in% unique(TFsMapping$feature)),]
+TF_mat_median = mrna_mat_median[(rownames(mrna_mat_median) %in% unique(TFsMapping$feature)),]
+
+# Split metadata in terms of diffstate
+metadata.TF.nonTF <- split(metadata.TF.nonTF, metadata.TF.nonTF$Diffname_short)
+```
+Calculating coexpression between `r dim(mrna_mat_median)[1]` mrnas and  `r dim(mirna_mat_median)[1]` mirnas in `r dim(mirna_mat_median)[2]` samples
+```{r coexpp.TF.nonTF}
+features = data.frame(omics1 = TFsMapping$feature, omics2 = TFsMapping$target) %>%
+  dplyr::filter(omics1 %in% rownames(TF_mat_median), omics2 %in% rownames(nonTF_mat_median))
+
+TF.nonTF.correlation = lapply(metadata.TF.nonTF, calculateCor, TF_mat_median, nonTF_mat_median, features[1:1000,], 'TF', 'nonTF')
+TF.nonTF.correlation = join_all(TF.nonTF.correlation, by = c("feature","TF","nonTF")) %>%
+  dplyr::select(feature, TF, nonTF, DE, EB, ECTO, MESO15, MESO30, MESO5, SC)
+
+metadata.TF.nonTF = rbindlist(metadata.TF.nonTF)
+```
+
 #### Calculate co-expression between mrna-mirna features at each diffstate
 Combine samples to unique biological sample name (take median values for replicates)
 ```{r combine.samples.mrna.mirna}
@@ -471,7 +522,8 @@ CODE <- Folder(name = 'Coexpression Between Different Assays At Each Differentia
 CODE <- synStore(CODE)
 
 # Store metadata
-metadata <- list(mrna_mirna = metadata.mrna.mirna, 
+metadata <- list(TF_nonTF = metadata.TF.nonTF,
+                 mrna_mirna = metadata.mrna.mirna, 
                  mrna_methyl = metadata.mrna.methyl,
                  mirna_methyl = metadata.mirna.methyl)
 metadata_obj = mapply(function(x,y, parentId, used, executed, activityName){
@@ -483,9 +535,10 @@ SIMPLIFY = F)
 
 
 # Store coexpression
-CoExp <- list(mrna_mirna = mrna.mirna.correlation, 
-                 mrna_methyl = mrna.methyl.correlation,
-                 mirna_methyl = mirna.methyl.correlation)
+CoExp <- list(TF_nonTF = TF.nonTF.correlation,
+              mrna_mirna = mrna.mirna.correlation, 
+              mrna_methyl = mrna.methyl.correlation,
+              mirna_methyl = mirna.methyl.correlation)
 CoExp_obj = mapply(function(x,y, parentId, used, executed, activityName){
   write.table(x, file=paste0('CoExp_',y,'.tsv'), sep = '\t', quote=F, row.names=F)
   obj = File(paste0('CoExp_',y,'.tsv'), name = paste('Coexpression',y), parentId = parentId)
