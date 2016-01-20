@@ -1,0 +1,301 @@
+---
+title: "Consolidate mRNA, miRNA, and methylation differential- and co- expression results for network visualisation"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'AnalyseDiffCoExp_All.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Differential Coexpression Analysis Features')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(plyr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+library(reshape2)
+
+library(circlize)
+library(tools)
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+library(biomaRt)
+library(fpc)
+library(reshape2)
+library(EBcoexpress)
+
+library(knitr)
+library(knit2synapse)
+library(synapseClient)
+library(rGithubClient) ## Needs the dev branch
+
+synapseLogin()
+
+# source utility files from ../R/lib folder
+# file.sources = list.files('../R/lib',pattern="row*.R", full.names = T)
+# tmp = sapply(file.sources,source,.GlobalEnv)
+source('../R/lib/rownameToFirstColumn.R')
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r synapseStore.params}
+parentId = "syn5194922"
+SYNAPSE_STORE = T  
+ALL_USED_IDs = c()
+```
+
+```{r fxns}
+downloadFile <- function(id){
+  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
+}
+```
+
+
+### Download mappings
+#### Get TF-DNA mapping from Enrichr genesets
+```{r tf.dna.mapping}
+# Download TFs from Enrichr genesets
+load(synGet('syn4867851')@filePath)
+ALL_USED_IDs = c(ALL_USED_IDs,'syn4867851')
+
+# Get unique TF - gene mapping from three data bases: ChEA, TRANSFAC&JASPAR and ENCODE
+ind = grep('HUMAN', names(GeneSets$ChEA))
+TFsMapping1 = mapply(function(x, y){
+  TFname = str_split(x, '-')[[1]][1]
+  return(list(data.frame(feature = TFname, target = y)))
+}, names(GeneSets$ChEA)[ind], GeneSets$ChEA[ind]) %>%
+  rbindlist %>%
+  unique
+
+ind = grep('human', names(GeneSets$TRANSFAC_and_JASPAR_PWMs))
+TFsMapping2 = mapply(function(x, y){
+  TFname = str_split(x, ' ')[[1]][1]
+  return(list(data.frame(feature = TFname, target = y)))
+}, names(GeneSets$TRANSFAC_and_JASPAR_PWMs)[ind], GeneSets$TRANSFAC_and_JASPAR_PWMs[ind]) %>%
+  rbindlist %>%
+  unique
+
+ind = grep('hg19', names(GeneSets$"ENCODE_TF_ChIP-seq_2015"))
+TFsMapping3 = mapply(function(x, y){
+  TFname = str_split(x, '_')[[1]][1]
+  return(list(data.frame(feature = TFname, target = y)))
+}, names(GeneSets$"ENCODE_TF_ChIP-seq_2015")[ind], GeneSets$"ENCODE_TF_ChIP-seq_2015"[ind]) %>%
+  rbindlist %>%
+  unique
+
+TFsMapping = rbindlist(list(TFsMapping1, TFsMapping2, TFsMapping3)) %>% unique           
+rm(list = c('GeneSets','TFsMapping1','TFsMapping2','TFsMapping3','ind'))
+WGCNA::collectGarbage()
+```
+
+
+### Download expression matrices and calculate median values at each diff state
+```{r counts}
+# Get count matrices
+counts.ids = list(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(counts.ids))
+
+counts = lapply(counts.ids, function(id){
+  x = downloadFile(id)
+  row.names(x) = x[,1]
+  x = as.matrix(x[,-(1)])
+})
+
+# Get associated covariates
+covariates.ids = list(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.ids))
+
+covariates = lapply(covariates.ids, function(id){
+  x = downloadFile(id)
+  row.names(x) = x[,1]
+  x = x[,-(1)]
+})
+
+# Find median values
+counts = mapply(function(count, covariate){
+  covariate = split(covariate, covariate$Diffname_short)
+  count = sapply(covariate, function(covariate, count){
+    tmp = rowMedians(count[, rownames(covariate)], na.rm=T)
+    names(tmp) = rownames(count)
+    return(tmp)
+    }, count)
+  
+  count_scaled = t(apply(count, 1, function(x){x = x/max(x, na.rm=T)}))
+  colnames(count_scaled) = paste(colnames(count_scaled),'scaled',sep='.')
+  
+  count = rownameToFirstColumn(count, 'feature')
+  count_scaled = rownameToFirstColumn(count_scaled, 'feature')
+  
+  count = full_join(count, count_scaled)
+}, counts, covariates, SIMPLIFY = F)
+
+counts = ldply(counts, .id = 'Assay')
+
+WGCNA::collectGarbage()
+```
+
+### Download coexpression and metadata from synapse
+```{r coExp}
+# Get coexpression data
+coExp.ids = c(TF.TF = 'syn5588503', TF.nonTF = 'syn5584105',
+              mirna.mrna = 'syn5578560', methyl.mrna = 'syn5578562',
+              methyl.mirna = 'syn5578564')
+ALL_USED_IDs = c(ALL_USED_IDs, coExp.ids)
+
+coExp = lapply(coExp.ids, downloadFile)
+```
+
+### Download differential expression results from synapse
+```{r diffExp}
+diffExp.ids = c(TF = 'syn5521879', nonTF = 'syn5521883',
+                mirna = 'syn5521885', methyl = 'syn5521887')
+ALL_USED_IDs = c(ALL_USED_IDs, diffExp.ids)
+
+diffExp = lapply(diffExp.ids, downloadFile)
+```
+
+### Download differential co-expression results from synapse
+```{r diffCoExp}
+diffCoExp.ids = c(TF.TF = 'syn5594542', TF.nonTF = 'syn5586707',
+                  mirna.TF = 'syn5579744', mirna.nonTF = 'syn5583716',
+                  methyl.TF = 'syn5579746', methyl.nonTF = 'syn5583718')
+ALL_USED_IDs = c(ALL_USED_IDs, diffCoExp.ids)
+
+diffCoExp = lapply(diffCoExp.ids, downloadFile)
+```
+
+### Filter features
+Molecular entities (mRNA, miRNA or DNA methylation probes) are selected if they are differentially expressed or co-expressed in at least one of the comparisons between differentiation states 
+```{r extract.features}
+diffFeatures = list()
+# Get differentially (co)-expressed TFs
+diffFeatures[['TF']] = c(diffExp$TF$feature %>% unique,
+                    diffCoExp$TF.TF$TF.regulator %>% unique,
+                    diffCoExp$TF.TF$TF.regulated %>% unique,
+                    diffCoExp$TF.nonTF$TF %>% unique,
+                    diffCoExp$mirna.TF$mrna %>% unique,
+                    diffCoExp$methyl.TF$mrna %>% unique) %>% unique
+
+# Get differentially (co)-expressed nonTFs
+diffFeatures[['nonTF']] = c(diffExp$nonTF$feature %>% unique,
+                            diffCoExp$TF.nonTF$nonTF %>% unique,
+                            diffCoExp$mirna.nonTF$mrna %>% unique,
+                            diffCoExp$methyl.nonTF$mrna %>% unique) %>% unique
+
+# Get differentially (co)-expressed mirna
+diffFeatures[['mirna']] = c(diffExp$mirna$feature %>% unique,
+                            diffCoExp$mirna.TF$mirna %>% unique,
+                            diffCoExp$mirna.nonTF$mirna %>% unique) %>% unique
+
+# Get differentially (co)-expressed methyl
+diffFeatures[['methyl']] = c(diffExp$methyl$feature %>% unique,
+                             diffCoExp$methyl.TF$methyl %>% unique,
+                             diffCoExp$methyl.nonTF$methyl %>% unique) %>% unique
+```
+
+### Filter expresion matrices
+```{r filter.counts}
+filteredCounts = lapply(diffFeatures,function(x, count){
+  dplyr::filter(count, feature %in% x)
+}, counts)
+
+filteredCounts = lapply(names(filteredCounts), function(x, filteredcounts){
+  tmp = filteredCounts[[x]]
+  tmp$Assay = x
+  return(tmp)
+}, filteredCounts) %>%
+  ldply(.id = NULL)
+```
+
+### Filter co-expression interactions
+```{r filter.int}
+filteredInteractions = list()
+
+filteredInteractions[['TF.TF']] = coExp$TF.TF %>%
+  dplyr::filter(TF.regulator %in% diffFeatures$TF, 
+                TF.regulated %in% diffFeatures$TF) %>%
+  dplyr::rename(from = TF.regulator, to = TF.regulated)
+
+filteredInteractions[['TF.nonTF']] = coExp$TF.nonTF %>%
+  dplyr::filter(TF %in% diffFeatures$TF, 
+                nonTF %in% diffFeatures$nonTF) %>%
+  dplyr::rename(from = TF, to = nonTF)
+
+filteredInteractions[['mirna.TF']] = coExp$mirna.mrna %>%
+  dplyr::filter(mrna %in% diffFeatures$TF, 
+                mirna %in% diffFeatures$mirna) %>%
+  dplyr::rename(from = mirna, to = mrna)
+
+filteredInteractions[['mirna.nonTF']] = coExp$mirna.mrna %>%
+  dplyr::filter(mrna %in% diffFeatures$nonTF, 
+                mirna %in% diffFeatures$mirna) %>%
+  dplyr::rename(from = mirna, to = mrna)
+
+filteredInteractions[['methyl.TF']] = coExp$methyl.mrna %>%
+  dplyr::filter(mrna %in% diffFeatures$TF, 
+                methyl %in% diffFeatures$methyl) %>%
+  dplyr::rename(from = methyl, to = mrna)
+
+filteredInteractions[['methyl.nonTF']] = coExp$methyl.mrna %>%
+  dplyr::filter(mrna %in% diffFeatures$nonTF, 
+                methyl %in% diffFeatures$methyl) %>%
+  dplyr::rename(from = methyl, to = mrna)
+
+filteredInteractions = ldply(filteredInteractions, .id = 'Assay')
+```
+
+### Store results in synapse
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache = FALSE}
+ActivityName <- 'Filter counts and interactions for networks'
+  
+ThisFileName <- 'ConsolidateResults.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='discordant_anal')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'Filtered Resulst for networks',parentId = parentId)
+CODE <- synStore(CODE)
+
+# Write counts to synapse
+write.table(filteredCounts, file='Counts.tsv', sep = '\t', quote=F, row.names=F)
+counts_obj = File('Counts.tsv', name = 'Filtered counts', parentId = parentId)
+counts_obj = synStore(counts_obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+
+# Write interactions to synapse
+write.table(filteredInteractions, file='Interactions.tsv', sep = '\t', quote=F, row.names=F)
+int_obj = File('Interactions.tsv', name = 'Filtered interactions', parentId = parentId)
+int_obj = synStore(int_obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+```
+### Source Code
+[Source R Markdown](`r ThisFile`)
