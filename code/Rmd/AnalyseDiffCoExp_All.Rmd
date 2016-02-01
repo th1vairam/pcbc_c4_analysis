@@ -77,6 +77,24 @@ ALL_USED_IDs = c()
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
 ```
 
+### Create folder in synapse to store results
+```{r synapsestore1, echo=FALSE, include=FALSE, eval=TRUE, cache = FALSE}
+ActivityName <- 'Analyse integrated differential co-expression results between assays'
+  
+ThisFileName <- 'AnalyseDiffCoExp_All.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='discordant_anal')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'Differential Coexpression Analysis Features',parentId = parentId)
+CODE <- synStore(CODE)
+```
 ```{r fxns}
 downloadFile <- function(id){
   tmp = fread(synGet(id)@filePath, data.table=F, header=T)
@@ -399,19 +417,22 @@ all.comparisons = t(combn(setdiff(unique(TF.TF.metadata$Diffname_short), c()),2)
 # Perform Fisher analysis across all possible diff state comparisons
 TF.TF.fisher = apply(all.comparisons, 1, changeCoExp,
                      TF.TF.metadata, TF.TF.coexp, 
-                     var1 = 'TF.regulator', var2 = 'TF.regulated', FDR = 0.05, logFC = 0)
+                     var1 = 'TF.regulator', var2 = 'TF.regulated', FDR = 1.1, logFC = 0)
 names(TF.TF.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
 
 # Extract co-expression values from differential coexpression
 D = mapply(function(x,y){
   group = str_split(y,'_vs_')[[1]]
-  x = plyr::rename(x, c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
+  x = x %>%
+    dplyr::filter(fdr <= 0.05) %>%
+    plyr::rename(c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
     dplyr::select(one_of(c('feature','TF.regulator','TF.regulated',group)))
 }, TF.TF.fisher, names(TF.TF.fisher), SIMPLIFY = F) %>%
   plyr::join_all(type = "full", by = c("feature", "TF.regulator", "TF.regulated"))
 
 writeLines("Number of differentially co-expressed interactions at an FDR <= 0.05 with either of the TFs are differentially expressed are")
 tmp = sapply(TF.TF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   TFs.regulator = intersect(x$TF.regulator, diffexp[['TF']]$feature)
   TFs.regulated = intersect(x$TF.regulated, diffexp[['TF']]$feature)
   x = dplyr::filter(x, TF.regulator %in% TFs.regulator | TF.regulated %in% TFs.regulated)
@@ -422,6 +443,7 @@ kable(tmp)
 
 # Extract co-expression matrix at each differentiation stage
 uniqueFeatures = lapply(TF.TF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   TFs.regulator = intersect(x$TF.regulator, diffexp[['TF']]$feature)
   TFs.regulated = intersect(x$TF.regulated, diffexp[['TF']]$feature)
   x = dplyr::filter(x, TF.regulator %in% TFs.regulator | TF.regulated %in% TFs.regulated) %>%
@@ -431,15 +453,19 @@ uniqueFeatures = lapply(TF.TF.fisher, function(x, diffexp){
 writeLines(paste("Unique number of differentially co-expressed interactions at an FDR <= 0.05  with either of the differentially expressed TFs", length(uniqueFeatures %>% unlist %>% unique)))
 
 tmp = ldply(uniqueFeatures, function(x){
-  data.frame(value = paste(x, collapse = ';'))
+  tmp = data.frame(value = paste(x, collapse = ';'))
+  tmp$value = gsub('_','\\\\_', tmp$value)
 }, .id = 'Comparison')
 writeLines("They are")
 kable(tmp)
 
-TF.TF.fisher = ldply(TF.TF.fisher, .id = "Comparison") %>%
-  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique))
+# Store results to synapse
+TF.TF.fisher = ldply(TF.TF.fisher, .id = "Comparison")
+write.table(TF.TF.fisher, file='changeCoExp_TF_TF.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('changeCoExp_TF_TF.tsv', name = 'Fishers Change in Coexpression TF_TF', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 
-rm(list = c('tmp', 'all.comparisons'))
+rm(list = c('TF.TF.fisher','tmp', 'all.comparisons'))
 WGCNA::collectGarbage()
 ```
 
@@ -497,19 +523,21 @@ all.comparisons = t(combn(setdiff(unique(TF.nonTF.metadata$Diffname_short), c())
 # Perform Fisher analysis across all possible diff state comparisons
 TF.nonTF.fisher = apply(all.comparisons, 1, changeCoExp, 
                         TF.nonTF.metadata, TF.nonTF.coexp, 
-                        var1 = 'TF', var2 = 'nonTF', FDR = 0.05, logFC = 0)
+                        var1 = 'TF', var2 = 'nonTF', FDR = 1.1, logFC = 0)
 names(TF.nonTF.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
 
 # Extract co-expression values from differential coexpression
 D = mapply(function(x,y){
   group = str_split(y,'_vs_')[[1]]
-  x = plyr::rename(x, c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
+  x = dplyr::filter(x, fdr <= 0.05) %>%
+    plyr::rename(c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
     dplyr::select(one_of(c('feature','TF','nonTF',group)))
 }, TF.nonTF.fisher, names(TF.nonTF.fisher), SIMPLIFY = F) %>%
   plyr::join_all(type = "full", by = c("feature", "TF", "nonTF"))
 
 writeLines("Number of differentially co-expressed interactions at an FDR <= 0.05 with either the TF or the nonTF are differentially expressed are")
 tmp = sapply(TF.nonTF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   TFs = (intersect(x$TF, diffexp[['TF']]$feature))
   nonTFs = (intersect(x$nonTF, diffexp[['nonTF']]$feature))
   x = dplyr::filter(x, TF %in% TFs | nonTF %in% nonTFs)
@@ -520,6 +548,7 @@ kable(tmp)
 
 # Extract co-expression matrix at each differentiation stage
 uniqueFeatures = lapply(TF.nonTF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   TFs = (intersect(x$TF, diffexp[['TF']]$feature))
   nonTFs = (intersect(x$nonTF, diffexp[['nonTF']]$feature))
   x = dplyr::filter(x, TF %in% TFs | nonTF %in% nonTFs) %>%
@@ -535,10 +564,13 @@ writeLines("They are")
 writeLines("<Results suppressed due to large size>")
 # kable(tmp)
 
-TF.nonTF.fisher = ldply(TF.nonTF.fisher, .id = "Comparison") %>%
-  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique))
+# Write results to synapse
+TF.nonTF.fisher = ldply(TF.nonTF.fisher, .id = "Comparison")
+write.table(TF.nonTF.fisher, file='changeCoExp_TF_nonTF.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('changeCoExp_TF_nonTF.tsv', name = 'Fishers Change in Coexpression TF_nonTF', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 
-rm(list = c('tmp', 'all.comparisons'))
+rm(list = c('TF.nonTF.fisher', 'tmp', 'all.comparisons'))
 WGCNA::collectGarbage()
 ```
 
@@ -596,19 +628,21 @@ all.comparisons = t(combn(setdiff(unique(mirna.mrna.metadata$Diffname_short), c(
 # Perform Fisher analysis across all possible diff state comparisons
 mirna.TF.fisher = apply(all.comparisons, 1, changeCoExp, 
                         mirna.mrna.metadata, mirna.TF.coexp, 
-                        var1 = 'mrna', var2 = 'mirna', FDR = 0.05, logFC = 0)
+                        var1 = 'mrna', var2 = 'mirna', FDR = 1.1, logFC = 0)
 names(mirna.TF.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
 
 # Extract co-expression values from differential coexpression
 D = mapply(function(x,y){
   group = str_split(y,'_vs_')[[1]]
-  x = plyr::rename(x, c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
+  x = dplyr::filter(x, fdr <= 0.05) %>%
+    plyr::rename(c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
     dplyr::select(one_of(c('feature','mrna','mirna',group)))
 }, mirna.TF.fisher, names(mirna.TF.fisher), SIMPLIFY = F) %>%
   plyr::join_all(type = "full", by = c("feature", "mrna", "mirna"))
 
 writeLines("Number of differentially co-expressed interactions at an FDR <= 0.05 with either the TF or the miRNA are differentially expressed are")
 tmp = sapply(mirna.TF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   mRNA = (intersect(x$mrna, diffexp[['TF']]$feature))
   miRNA = (intersect(x$mirna, diffexp[['mirna']]$feature))
   x = dplyr::filter(x, mrna %in% mRNA | mirna %in% miRNA)
@@ -619,6 +653,7 @@ kable(tmp)
 
 # Extract co-expression matrix at each differentiation stage
 uniqueFeatures = lapply(mirna.TF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   mRNA = (intersect(x$mrna, diffexp[['TF']]$feature))
   miRNA = (intersect(x$mirna, diffexp[['mirna']]$feature))
   x = dplyr::filter(x, mrna %in% mRNA | mirna %in% miRNA) %>%
@@ -628,15 +663,20 @@ uniqueFeatures = lapply(mirna.TF.fisher, function(x, diffexp){
 writeLines(paste("Unique number of differentially co-expressed interactions at an FDR <= 0.05 with either a differentially expressed TF or miRNA are", length(uniqueFeatures %>% unlist %>% unique)))
 
 tmp = ldply(uniqueFeatures, function(x){
-  data.frame(value = paste(x, collapse = ';'))
+  tmp = data.frame(value = paste(x, collapse = ';'))
+  tmp$value = gsub('_','\\\\_', tmp$value)
+  return(tmp)
 }, .id = 'Comparison')
 writeLines("They are")
 kable(tmp)
 
-mirna.TF.fisher = ldply(mirna.TF.fisher, .id = "Comparison") %>%
-  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique))
+# Store results in synapse
+mirna.TF.fisher = ldply(mirna.TF.fisher, .id = "Comparison") 
+write.table(mirna.TF.fisher, file='changeCoExp_mirna_TF.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('changeCoExp_mirna_TF.tsv', name = 'Fishers Change in Coexpression mirna_TF', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 
-rm(list = c('tmp', 'all.comparisons'))
+rm(list = c('mirna.TF.fisher', 'tmp', 'all.comparisons'))
 WGCNA::collectGarbage()
 ```
 
@@ -694,19 +734,21 @@ all.comparisons = t(combn(setdiff(unique(methyl.mrna.metadata$Diffname_short), c
 # Perform Fisher analysis across all possible diff state comparisons
 methyl.TF.fisher = apply(all.comparisons, 1, changeCoExp, 
                          methyl.mrna.metadata, methyl.TF.coexp, 
-                         var1 = 'mrna', var2 = 'methyl', FDR = 0.05, logFC = 0)
+                         var1 = 'mrna', var2 = 'methyl', FDR = 1.1, logFC = 0)
 names(methyl.TF.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
 
 # Extract co-expression values from differential coexpression
 D = mapply(function(x,y){
   group = str_split(y,'_vs_')[[1]]
-  x = plyr::rename(x, c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
+  x = dplyr::filter(x, fdr <= 0.05) %>%
+    plyr::rename(c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
     dplyr::select(one_of(c('feature','mrna','methyl',group)))
 }, methyl.TF.fisher, names(methyl.TF.fisher), SIMPLIFY = F) %>%
   plyr::join_all(type = "full", by = c("feature", "mrna", "methyl"))
 
 writeLines("Number of differentially co-expressed interactions at an FDR <= 0.05 with either the TF or the methylation probe are differentially expressed are")
 tmp = sapply(methyl.TF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   mRNA = (intersect(x$mrna, diffexp[['TF']]$feature))
   methyl = (intersect(x$methyl, diffexp[['methyl']]$feature))
   x = dplyr::filter(x, mrna %in% mRNA | methyl %in% methyl)
@@ -717,6 +759,7 @@ kable(tmp)
 
 # Extract co-expression matrix at each differentiation stage
 uniqueFeatures = lapply(methyl.TF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   mRNA = (intersect(x$mrna, diffexp[['TF']]$feature))
   methyl = (intersect(x$methyl, diffexp[['methyl']]$feature))
   x = dplyr::filter(x, mrna %in% mRNA | methyl %in% methyl) %>%
@@ -726,15 +769,20 @@ uniqueFeatures = lapply(methyl.TF.fisher, function(x, diffexp){
 writeLines(paste("Unique number of differentially co-expressed interactions at an FDR <= 0.05 with either a differentially expressed TF or methyl probe are", length(uniqueFeatures %>% unlist %>% unique)))
 
 tmp = ldply(uniqueFeatures, function(x){
-  data.frame(value = paste(x, collapse = ';'))
+  tmp = data.frame(value = paste(x, collapse = ';'));
+  tmp$value = gsub('_','\\\\_',tmp$value)
+  return(tmp)
 }, .id = 'Comparison')
 writeLines("They are")
 kable(tmp)
 
-methyl.TF.fisher = ldply(methyl.TF.fisher, .id = "Comparison") %>%
-  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique))
+# Store results in synapse
+methyl.TF.fisher = ldply(methyl.TF.fisher, .id = "Comparison")
+write.table(methyl.TF.fisher, file='changeCoExp_methyl_TF.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('changeCoExp_methyl_TF.tsv', name = 'Fishers Change in Coexpression methyl_TF', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 
-rm(list = c('tmp', 'all.comparisons'))
+rm(list = c('methyl.TF.fisher', 'tmp', 'all.comparisons'))
 WGCNA::collectGarbage()
 ```
 
@@ -778,19 +826,21 @@ all.comparisons = t(combn(setdiff(unique(mirna.mrna.metadata$Diffname_short), c(
 # Perform Fisher analysis across all possible diff state comparisons
 mirna.nonTF.fisher = apply(all.comparisons, 1, changeCoExp, 
                         mirna.mrna.metadata, mirna.nonTF.coexp, 
-                        var1 = 'mrna', var2 = 'mirna', FDR = 0.05, logFC = 0)
+                        var1 = 'mrna', var2 = 'mirna', FDR = 1.1, logFC = 0)
 names(mirna.nonTF.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
 
 # Extract co-expression values from differential coexpression
 D = mapply(function(x,y){
   group = str_split(y,'_vs_')[[1]]
-  x = plyr::rename(x, c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
+  x = dplyr::filter(x, fdr <= 0.05) %>%
+    plyr::rename(c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
     dplyr::select(one_of(c('feature','mrna','mirna',group)))
 }, mirna.nonTF.fisher, names(mirna.nonTF.fisher), SIMPLIFY = F) %>%
   plyr::join_all(type = "full", by = c("feature", "mrna", "mirna"))
 
 writeLines("Number of differentially co-expressed interactions at an FDR <= 0.05 with either the nonTF or the miRNA are differentially expressed are")
 tmp = sapply(mirna.nonTF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   mRNA = (intersect(x$mrna, diffexp[['nonTF']]$feature))
   miRNA = (intersect(x$mirna, diffexp[['mirna']]$feature))
   x = dplyr::filter(x, mrna %in% mRNA | mirna %in% miRNA)
@@ -801,6 +851,7 @@ kable(tmp)
 
 # Extract co-expression matrix at each differentiation stage
 uniqueFeatures = lapply(mirna.nonTF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   mRNA = (intersect(x$mrna, diffexp[['nonTF']]$feature))
   miRNA = (intersect(x$mirna, diffexp[['mirna']]$feature))
   x = dplyr::filter(x, mrna %in% mRNA | mirna %in% miRNA) %>%
@@ -810,13 +861,21 @@ uniqueFeatures = lapply(mirna.nonTF.fisher, function(x, diffexp){
 writeLines(paste("Unique number of differentially co-expressed interactions at an FDR <= 0.05 with either a differentially expressed nonTF or miRNA are", length(uniqueFeatures %>% unlist %>% unique)))
 
 tmp = ldply(uniqueFeatures, function(x){
-  data.frame(value = paste(x, collapse = ';'))
+  tmp = data.frame(value = paste(x, collapse = ';'))
+  tmp$value = gsub('_','\\\\_',tmp$value)
+  return(tmp)
 }, .id = 'Comparison')
 writeLines("They are")
 kable(tmp)
 
-mirna.nonTF.fisher = ldply(mirna.nonTF.fisher, .id = "Comparison") %>%
-  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique))
+# Store results in synapse
+mirna.nonTF.fisher = ldply(mirna.nonTF.fisher, .id = "Comparison")
+write.table(mirna.nonTF.fisher, file='changeCoExp_mirna_nonTF.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('changeCoExp_mirna_nonTF.tsv', name = 'Fishers Change in Coexpression mirna_nonTF', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+
+rm(list = c('mirna.nonTF.fisher', 'tmp', 'all.comparisons'))
+WGCNA::collectGarbage()
 ```
 
 ```{r cluster.mirna.nonTF, fig.height=35, fig.width=15, results='asis', echo=FALSE, cache=FALSE}
@@ -873,19 +932,21 @@ all.comparisons = t(combn(setdiff(unique(methyl.mrna.metadata$Diffname_short), c
 # Perform Fisher analysis across all possible diff state comparisons
 methyl.nonTF.fisher = apply(all.comparisons, 1, changeCoExp, 
                             methyl.mrna.metadata, methyl.nonTF.coexp, 
-                            var1 = 'mrna', var2 = 'methyl', FDR = 0.05, logFC = 0)
+                            var1 = 'mrna', var2 = 'methyl', FDR = 1.1, logFC = 0)
 names(methyl.nonTF.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
 
 # Extract co-expression values from differential coexpression
 D = mapply(function(x,y){
   group = str_split(y,'_vs_')[[1]]
-  x = plyr::rename(x, c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
+  x = dplyr::filter(x, fdr <= 0.05) %>%
+    plyr::rename(c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
     dplyr::select(one_of(c('feature','mrna','methyl',group)))
 }, methyl.nonTF.fisher, names(methyl.nonTF.fisher), SIMPLIFY = F) %>%
   plyr::join_all(type = "full", by = c("feature", "mrna", "methyl"))
 
 writeLines("Number of differentially co-expressed interactions at an FDR <= 0.05 with either the nonTF or the methylation probe are differentially expressed are")
 tmp = sapply(methyl.nonTF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   mRNA = (intersect(x$mrna, diffexp[['nonTF']]$feature))
   methyl = (intersect(x$methyl, diffexp[['methyl']]$feature))
   x = dplyr::filter(x, mrna %in% mRNA | methyl %in% methyl)
@@ -896,6 +957,7 @@ kable(tmp)
 
 # Extract co-expression matrix at each differentiation stage
 uniqueFeatures = lapply(methyl.nonTF.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   mRNA = (intersect(x$mrna, diffexp[['nonTF']]$feature))
   methyl = (intersect(x$methyl, diffexp[['methyl']]$feature))
   x = dplyr::filter(x, mrna %in% mRNA | methyl %in% methyl) %>%
@@ -905,13 +967,14 @@ uniqueFeatures = lapply(methyl.nonTF.fisher, function(x, diffexp){
 writeLines(paste("Unique number of differentially co-expressed interactions at an FDR <= 0.05 with either a differentially expressed nonTF or methyl probe are", length(uniqueFeatures %>% unlist %>% unique)))
 
 tmp = ldply(uniqueFeatures, function(x){
-  data.frame(value = paste(x, collapse = ';'))
+  tmp = data.frame(value = paste(x, collapse = ';'))
+  tmp$value = gsub('_','\\\\_',tmp$value)
+  return(tmp)
 }, .id = 'Comparison')
 writeLines("They are")
 kable(tmp)
 
-methyl.nonTF.fisher = ldply(methyl.nonTF.fisher, .id = "Comparison") %>%
-  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique))
+methyl.nonTF.fisher = ldply(methyl.nonTF.fisher, .id = "Comparison")
 ```
 
 ```{r cluster.methyl.nonTF, fig.height=25, fig.width=15, results='asis', echo=FALSE}
@@ -965,19 +1028,21 @@ all.comparisons = t(combn(setdiff(unique(methyl.mirna.metadata$Diffname_short), 
 # Perform Fisher analysis across all possible diff state comparisons
 methyl.mirna.fisher = apply(all.comparisons, 1, changeCoExp, 
                             methyl.mirna.metadata, methyl.mirna.coexp, 
-                            var1 = 'mirna', var2 = 'methyl', FDR = 0.05, logFC = 0)
+                            var1 = 'mirna', var2 = 'methyl', FDR = 1.1, logFC = 0)
 names(methyl.mirna.fisher) = apply(all.comparisons, 1, paste, collapse = '_vs_')
 
 # Extract co-expression values from differential coexpression
 D = mapply(function(x,y){
   group = str_split(y,'_vs_')[[1]]
-  x = plyr::rename(x, c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
+  x = dplyr::filter(x, fdr <= 0.05) %>%
+    plyr::rename(c(correlation.group1 = group[1], correlation.group2 = group[2])) %>%
     dplyr::select(one_of(c('feature','mirna','methyl',group)))
 }, methyl.mirna.fisher, names(methyl.mirna.fisher), SIMPLIFY = F) %>%
   plyr::join_all(type = "full", by = c("feature", "mirna", "methyl"))
 
 writeLines("Number of differentially co-expressed interactions at an FDR <= 0.05 with either the miRNA or the methylation probe that are differentially expressed are")
 tmp = sapply(methyl.mirna.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   miRNA = (intersect(x$mrna, diffexp[['mirna']]$feature))
   methylProbe = (intersect(x$mirna, diffexp[['methyl']]$feature))
   x = dplyr::filter(x, mirna %in% miRNA | methyl %in% methylProbe)
@@ -988,6 +1053,7 @@ kable(tmp)
 
 # Extract co-expression matrix at each differentiation stage
 uniqueFeatures = lapply(methyl.mirna.fisher, function(x, diffexp){
+  x = dplyr::filter(x, fdr <= 0.05)
   miRNA = (intersect(x$mrna, diffexp[['mirna']]$feature))
   methylProbe = (intersect(x$mirna, diffexp[['methyl']]$feature))
   x = dplyr::filter(x, mirna %in% miRNA | methyl %in% methylProbe) %>%
@@ -1002,55 +1068,15 @@ tmp = ldply(uniqueFeatures, function(x){
 writeLines("They are")
 kable(tmp)
 
-methyl.mirna.fisher = ldply(methyl.mirna.fisher, .id = "Comparison") %>%
-  dplyr::filter(feature %in% (uniqueFeatures %>% unlist %>% unique))
+# Store results in synapse
+methyl.mirna.fisher = ldply(methyl.mirna.fisher, .id = "Comparison")
+write.table(methyl.mirna.fisher, file='changeCoExp_methyl_mirna.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('changeCoExp_methyl_mirna.tsv', name = 'Fishers Change in Coexpression methyl_mirna', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 ```
 
 ### Store results in synapse
-```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache = FALSE}
-ActivityName <- 'Analyse integrated differential co-expression results between assays'
-  
-ThisFileName <- 'AnalyseDiffCoExp_All.Rmd'
-
-# Github link
-ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
-                    ref="branch", 
-                    refName='discordant_anal')
-
-ThisFile <- getPermlink(repository = ThisRepo,
-                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
-
-# Populate wiki with results
-CODE <- Folder(name = 'Differential Coexpression Analysis Features',parentId = parentId)
-CODE <- synStore(CODE)
-
-# Store coexpression
-changeCoexp <- list(TF_TF = TF.TF.fisher,
-                    TF_nonTF = TF.nonTF.fisher,
-                    mirna_TF = mirna.TF.fisher,
-                    methyl_TF = methyl.TF.fisher,
-                    mirna_nonTF = mirna.nonTF.fisher,
-                    methyl_nonTF = methyl.nonTF.fisher,
-                    methyl_mirna = methyl.mirna.fisher)
-
-changeCoexp_obj = mapply(function(x,y, parentId, used, executed, activityName){
-  write.table(x, file=paste0('changeCoExp_',y,'.tsv'), sep = '\t', quote=F, row.names=F)
-  obj = File(paste0('changeCoExp_',y,'.tsv'), name = paste('Fishers Change in Coexpression',y), parentId = parentId)
-  obj = synStore(obj, used = used, executed = executed, activityName = activityName)
-}, changeCoexp, names(changeCoexp), MoreArgs = list(CODE$properties$id, as.character(ALL_USED_IDs), ThisFile, ActivityName),
-SIMPLIFY = F)
-
-# Interactions feature list
-diffCoexpFeatures = lapply(changeCoexp, function(x){
-  tmp = dplyr::select(x, Comparison, feature) %>% 
-    group_by(feature) %>% 
-    summarise(ncount = n(), Comparison = paste(Comparison, collapse = ','))
-}) %>%
-  ldply(.id = 'regulation')
-write.table(diffCoexpFeatures, file='diffCoExpFeatures.tsv', sep = '\t', quote=F, row.names=F)
-obj = File('diffCoExpFeatures.tsv', name = 'Differentially Coexpressed Features (all assays combined)', parentId = CODE$properties$id)
-obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
-
+```{r synapsestore2, echo=FALSE, include=FALSE, eval=TRUE, cache = FALSE}
 # Clusters
 clusters = list(TF.TF = clust.TF.TF$cluster,
                 TF.nonTF = clust.TF.nonTF$cluster,
