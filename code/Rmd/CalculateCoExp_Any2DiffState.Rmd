@@ -5,7 +5,7 @@ date: '`r date()`'
 output: html_document
 ---
 ```{r knit2synapse, eval = FALSE, include=FALSE}
-library(sysnapseClient)
+library(synapseClient)
 library(knit2synapse)
 
 synapseLogin()

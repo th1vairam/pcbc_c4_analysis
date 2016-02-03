@@ -10,9 +10,9 @@ library(knit2synapse)
 
 synapseLogin()
 
-knit2synapse::knitToFolderEntity(file = 'AnalyseDiffCoExp_All.Rmd',
+knit2synapse::knitToFolderEntity(file = 'ConsolidateResults.Rmd',
                                  parentId = "syn5194922",
-                                 entityName = 'Differential Coexpression Analysis Features')
+                                 entityName = 'Filtered counts and interactions for networks')
 ```
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
@@ -28,6 +28,8 @@ library(data.table)
 library(stringr)
 library(tidyr)
 library(reshape2)
+
+library(igraph)
 
 library(circlize)
 library(tools)
@@ -125,6 +127,8 @@ counts = lapply(counts.ids, function(id){
   row.names(x) = x[,1]
   x = as.matrix(x[,-(1)])
 })
+counts[[1]] = exp(counts[[1]]-0.5)
+counts[[2]] = exp(counts[[2]]-0.5)
 
 # Get associated covariates
 covariates.ids = list(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669')
@@ -155,6 +159,12 @@ counts = mapply(function(count, covariate){
 }, counts, covariates, SIMPLIFY = F)
 
 counts = ldply(counts, .id = 'Assay')
+counts$Assay = as.character(counts$Assay)
+
+ind = which((counts$feature %in% unique(TFsMapping$feature)) & (counts$Assay == "mrna"))
+counts$Assay[ind] = 'TF'
+ind = which(!(counts$feature %in% unique(TFsMapping$feature)) & (counts$Assay == "mrna"))
+counts$Assay[ind] = 'nonTF'
 
 WGCNA::collectGarbage()
 ```
@@ -167,7 +177,12 @@ coExp.ids = c(TF.TF = 'syn5588503', TF.nonTF = 'syn5584105',
               methyl.mirna = 'syn5578564')
 ALL_USED_IDs = c(ALL_USED_IDs, coExp.ids)
 
-coExp = lapply(coExp.ids, downloadFile)
+coExp = lapply(coExp.ids, function(id){
+  tmp = downloadFile(id)
+  colnames(tmp)[2:3] = c('from','to')
+  return(tmp)
+}) %>%
+  ldply(.id = 'Assay')
 ```
 
 ### Download differential expression results from synapse
@@ -176,7 +191,8 @@ diffExp.ids = c(TF = 'syn5521879', nonTF = 'syn5521883',
                 mirna = 'syn5521885', methyl = 'syn5521887')
 ALL_USED_IDs = c(ALL_USED_IDs, diffExp.ids)
 
-diffExp = lapply(diffExp.ids, downloadFile)
+diffExp = lapply(diffExp.ids, downloadFile) %>%
+  ldply(.id = 'Assay')
 ```
 
 ### Download differential co-expression results from synapse
@@ -186,87 +202,130 @@ diffCoExp.ids = c(TF.TF = 'syn5594542', TF.nonTF = 'syn5586707',
                   methyl.TF = 'syn5579746', methyl.nonTF = 'syn5583718')
 ALL_USED_IDs = c(ALL_USED_IDs, diffCoExp.ids)
 
-diffCoExp = lapply(diffCoExp.ids, downloadFile)
+diffCoExp = lapply(diffCoExp.ids, function(id){
+  tmp = downloadFile(id)
+  colnames(tmp)[3:4] = c('from','to')
+  return(tmp)
+}) %>%
+  ldply(.id = 'Assay')
 ```
 
 ### Filter features
 Molecular entities (mRNA, miRNA or DNA methylation probes) are selected if they are differentially expressed or co-expressed in at least one of the comparisons between differentiation states 
 ```{r extract.features}
-diffFeatures = list()
 # Get differentially (co)-expressed TFs
-diffFeatures[['TF']] = c(diffExp$TF$feature %>% unique,
-                    diffCoExp$TF.TF$TF.regulator %>% unique,
-                    diffCoExp$TF.TF$TF.regulated %>% unique,
-                    diffCoExp$TF.nonTF$TF %>% unique,
-                    diffCoExp$mirna.TF$mrna %>% unique,
-                    diffCoExp$methyl.TF$mrna %>% unique) %>% unique
-
-# Get differentially (co)-expressed nonTFs
-diffFeatures[['nonTF']] = c(diffExp$nonTF$feature %>% unique,
-                            diffCoExp$TF.nonTF$nonTF %>% unique,
-                            diffCoExp$mirna.nonTF$mrna %>% unique,
-                            diffCoExp$methyl.nonTF$mrna %>% unique) %>% unique
-
-# Get differentially (co)-expressed mirna
-diffFeatures[['mirna']] = c(diffExp$mirna$feature %>% unique,
-                            diffCoExp$mirna.TF$mirna %>% unique,
-                            diffCoExp$mirna.nonTF$mirna %>% unique) %>% unique
-
-# Get differentially (co)-expressed methyl
-diffFeatures[['methyl']] = c(diffExp$methyl$feature %>% unique,
-                             diffCoExp$methyl.TF$methyl %>% unique,
-                             diffCoExp$methyl.nonTF$methyl %>% unique) %>% unique
+diffFeatures =  c(diffExp$feature,
+                  diffCoExp$from,
+                  diffCoExp$to) %>% 
+  unique
 ```
 
 ### Filter expresion matrices
 ```{r filter.counts}
-filteredCounts = lapply(diffFeatures,function(x, count){
-  dplyr::filter(count, feature %in% x)
-}, counts)
-
-filteredCounts = lapply(names(filteredCounts), function(x, filteredcounts){
-  tmp = filteredCounts[[x]]
-  tmp$Assay = x
-  return(tmp)
-}, filteredCounts) %>%
-  ldply(.id = NULL)
+filteredCounts = dplyr::filter(counts, feature %in% diffFeatures)
+filteredCounts$Assay = as.character(filteredCounts$Assay)
+ind = which((filteredCounts$feature %in% as.character(unique(TFsMapping$feature))) & (filteredCounts$Assay == 'mrna'))
+filteredCounts$Assay[ind] = 'TF'
+ind = which(!(filteredCounts$feature %in% unique(TFsMapping$feature)) & (filteredCounts$Assay == 'mrna'))
+filteredCounts$Assay[ind] = 'nonTF'
 ```
 
 ### Filter co-expression interactions
 ```{r filter.int}
-filteredInteractions = list()
+filteredInteractions = dplyr::filter(coExp, from %in% diffFeatures, to %in% diffFeatures)
+```
 
-filteredInteractions[['TF.TF']] = coExp$TF.TF %>%
-  dplyr::filter(TF.regulator %in% diffFeatures$TF, 
-                TF.regulated %in% diffFeatures$TF) %>%
-  dplyr::rename(from = TF.regulator, to = TF.regulated)
+### Network with all nodes and interactions
+```{r createGraph}
+edges = dplyr::select(filteredInteractions,
+                      from, to, Assay, SC, DE, MESO5, ECTO, MESO15, MESO30, EB)
+vertices = dplyr::select(filteredCounts,
+                         feature, Assay, SC.scaled, DE.scaled, MESO5.scaled, ECTO.scaled, MESO15.scaled, MESO30.scaled, EB.scaled)
 
-filteredInteractions[['TF.nonTF']] = coExp$TF.nonTF %>%
-  dplyr::filter(TF %in% diffFeatures$TF, 
-                nonTF %in% diffFeatures$nonTF) %>%
-  dplyr::rename(from = TF, to = nonTF)
+g = igraph::graph_from_data_frame(edges, directed = F, vertices = vertices)
 
-filteredInteractions[['mirna.TF']] = coExp$mirna.mrna %>%
-  dplyr::filter(mrna %in% diffFeatures$TF, 
-                mirna %in% diffFeatures$mirna) %>%
-  dplyr::rename(from = mirna, to = mrna)
+scc = components(g)
+```
 
-filteredInteractions[['mirna.nonTF']] = coExp$mirna.mrna %>%
-  dplyr::filter(mrna %in% diffFeatures$nonTF, 
-                mirna %in% diffFeatures$mirna) %>%
-  dplyr::rename(from = mirna, to = mrna)
+#### Extract diff comparison specific sub-networks
+```{r sub.graphs}
+diffStates = gsub('All__','',unique(diffExp$comparison))
 
-filteredInteractions[['methyl.TF']] = coExp$methyl.mrna %>%
-  dplyr::filter(mrna %in% diffFeatures$TF, 
-                methyl %in% diffFeatures$methyl) %>%
-  dplyr::rename(from = methyl, to = mrna)
+# Get differentially (co)-expressed features, counts, coexp and graphs at each diffstate
+consolidatedData =  lapply(diffStates, function(x, diffexp, diffcoexp, count, coexp){
+  ### Filter differential expression features
+  filtered.diffEntities = diffexp$feature[grep(x, diffexp$comparison)]
+  
+  ### Filter differential co-expression features
+  filtered.diffInteractions = diffcoexp[grep(x, diffcoexp$Comparison),] %>%
+    dplyr::filter(from %in% filtered.diffEntities, to %in% filtered.diffEntities, fdr <= 0.05) %>%
+    unique
+  
+  ### Filter counts
+  filtered.counts = dplyr::filter(count, 
+                                  feature %in% unique(c(filtered.diffInteractions$from, 
+                                                        filtered.diffInteractions$to)))
+  
+  ### Filter co-expression interactions
+  filtered.interactions = dplyr::filter(coexp, feature %in% filtered.diffInteractions$feature)
+  
+  ### Create graphs
+  edges = dplyr::select(filtered.interactions,
+                        from, to, Assay, SC, DE, MESO5, ECTO, MESO15, MESO30, EB) %>%
+    dplyr::mutate(SC.sign = sign(SC), SC = abs(SC),
+                  DE.sign = sign(DE), DE = abs(DE),
+                  MESO5.sign = sign(MESO5), MESO5 = abs(MESO5),
+                  ECTO.sign = sign(ECTO), ECTO = abs(ECTO),
+                  MESO15.sign = sign(MESO15), MESO15 = abs(MESO15),
+                  MESO30.sign = sign(MESO30), MESO30 = abs(MESO30),
+                  EB.sign = sign(EB), EB = abs(EB))
+  
+  vertices = dplyr::select(filtered.counts,
+                           feature, Assay, SC.scaled, DE.scaled, MESO5.scaled, ECTO.scaled, MESO15.scaled, MESO30.scaled, EB.scaled)
+  
+  g = igraph::graph_from_data_frame(edges, directed = F, vertices = vertices)
+  
+  nodeDegree = degree(g)
+  
+  return(list(diffEntities = filtered.diffEntities,
+              counts = filtered.counts,
+              interactions = filtered.interactions,
+              graph = g, scc = scc,
+              nodeDegree = nodeDegree))
+}, diffExp, diffCoExp, counts, coExp)
+names(consolidatedData) = diffStates
+```
 
-filteredInteractions[['methyl.nonTF']] = coExp$methyl.mrna %>%
-  dplyr::filter(mrna %in% diffFeatures$nonTF, 
-                methyl %in% diffFeatures$methyl) %>%
-  dplyr::rename(from = methyl, to = mrna)
+#### Prioratise state specific markers (combined node degree)
+```{r state.specific.markers}
+diffStates = c('SC','DE','MESO5','ECTO','MESO15','MESO30','EB')
 
-filteredInteractions = ldply(filteredInteractions, .id = 'Assay')
+allNodeDegrees = lapply(diffStates, function(x, consolidated.data){
+  ind = grep(x, names(consolidated.data))
+  tmp = mapply(function(y, name.y){
+    if (length(y$nodeDegree) != 0){
+      tmp = data.frame(feature = names(y$nodeDegree), nd = y$nodeDegree)
+      colnames(tmp) = c('feature',name.y)
+      return(unique(tmp))
+    } else{
+      tmp = data.frame(feature = NA, nd = NA)
+      colnames(tmp) = c('feature',name.y)
+      return(unique(tmp))
+    }
+  }, consolidated.data[ind], names(consolidated.data)[ind], SIMPLIFY = F) %>%
+    join_all(type='full')
+  return(tmp)
+}, consolidatedData)
+names(allNodeDegrees) = diffStates
+
+combinedNodeDegree = mapply(function(x,y){
+  x[is.na(x)] = 0
+  tmp = data.frame(feature = x[,1], comb.degree = rowSums(x[,-(1)]))
+  colnames(tmp) = c('feature',y)
+  return(tmp)
+}, allNodeDegrees, names(allNodeDegrees), SIMPLIFY = F) %>%
+  join_all(type='full') %>%
+  unique
 ```
 
 ### Store results in synapse
@@ -284,18 +343,44 @@ ThisFile <- getPermlink(repository = ThisRepo,
                         repositoryPath=paste0('code/Rmd/', ThisFileName))    
 
 # Populate wiki with results
-CODE <- Folder(name = 'Filtered Resulst for networks',parentId = parentId)
+CODE <- Folder(name = 'Filtered counts and interactions for networks',parentId = parentId)
 CODE <- synStore(CODE)
 
 # Write counts to synapse
 write.table(filteredCounts, file='Counts.tsv', sep = '\t', quote=F, row.names=F)
-counts_obj = File('Counts.tsv', name = 'Filtered counts', parentId = parentId)
+counts_obj = File('Counts.tsv', name = 'Filtered counts', parentId = CODE$properties$id)
 counts_obj = synStore(counts_obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 
 # Write interactions to synapse
 write.table(filteredInteractions, file='Interactions.tsv', sep = '\t', quote=F, row.names=F)
-int_obj = File('Interactions.tsv', name = 'Filtered interactions', parentId = parentId)
+int_obj = File('Interactions.tsv', name = 'Filtered interactions', parentId = CODE$properties$id)
 int_obj = synStore(int_obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+
+# Write network files to synapse
+networks.comp = mapply(function(consolidated.data, consolidated.data.name, folder, used, thisFile, activityName){
+  print(consolidated.data.name)
+  g = consolidated.data$g
+  g = as_data_frame(g, what = "both")
+  
+  # Write nodes and attributes to a file
+  write.table(g$vertices, file = paste0('Nodes_',consolidated.data.name,'.tsv'), sep = '\t', row.names=F, quote=F)
+  node_obj = File(paste0('Nodes_',consolidated.data.name,'.tsv'), 
+                  name = paste('Nodes',consolidated.data.name), 
+                  parentId = folder$properties$id)
+  node_obj = synStore(node_obj, used = used, executed = thisFile, activityName = activityName)
+  
+  # Write edges and attributes to a file
+  write.table(g$edges, file = paste0('Edges_',consolidated.data.name,'.tsv'), sep = '\t', row.names=F, quote=F)
+  edge_obj = File(paste0('Edges_',consolidated.data.name,'.tsv'), 
+                  name = paste('Edges',consolidated.data.name), 
+                  parentId = folder$properties$id)
+  edge_obj = synStore(edge_obj, used = used, executed = thisFile, activityName = activityName)
+}, consolidatedData, names(consolidatedData), SIMPLIFY = F, MoreArgs = list(CODE, as.character(ALL_USED_IDs), ThisFile, ActivityName))
+
+# Write node degrees to a file
+write.table(combinedNodeDegree, file='NodeDegrees.tsv', sep = '\t', quote=F, row.names=F)
+nd_obj = File('NodeDegrees.tsv', name = 'Node Degrees', parentId = CODE$properties$id)
+nd_obj = synStore(nd_obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 ```
 ### Source Code
 [Source R Markdown](`r ThisFile`)
