@@ -29,30 +29,19 @@ library(stringr)
 library(tidyr)
 library(reshape2)
 
-library(circlize)
-library(tools)
-library(ggplot2)
-library(RColorBrewer)
-library(ComplexHeatmap)
 library(matrixStats)
 library(biomaRt)
-library(fpc)
-library(reshape2)
-library(EBcoexpress)
 
 library(knitr)
 library(knit2synapse)
 library(synapseClient)
 library(rGithubClient) ## Needs the dev branch
 
-## Requires ggdendro
-devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
-
 synapseLogin()
 
-# source utility files from ../R/lib folder
-file.sources = list.files('../R/lib',pattern="*.R", full.names = T)
-tmp = sapply(file.sources,source,.GlobalEnv)
+# Source needed files from lib folder
+source('../R/lib/get450KProbeMapping.R')
+source('../R/lib/rownameToFirstColumn.R')
 
 options(xtable.type="html")
 
@@ -65,10 +54,27 @@ knitr::opts_chunk$set(
   cache = TRUE)
 ```
 
-```{r synapseStore.params}
+```{r synapseStore.params, cache=FALSE}
 parentId = "syn5194922"
 SYNAPSE_STORE = T  
 ALL_USED_IDs = c()
+
+# Create folder to store results in synapse
+ActivityName <- 'Calculate co-expression between assays'
+
+ThisFileName <- 'CalculateCoExp_All.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='discordant_anal')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'Coexpression Between Different Assays At Each Differentiation Stage', parentId = parentId)
+CODE <- synStore(CODE)
 ```
 
 ```{r fxns}
@@ -77,7 +83,8 @@ downloadFile <- function(id){
 }
 
 # Function to calculate change in co-expression analysis using Fishers Z method
-calculateCor <- function(metaData, omics1Mat, omics2Mat, features, var1 = "omics1", var2 = "omics2"){
+calculateCor <- function(metaData, omics1Mat, omics2Mat, features, 
+                         var1 = "feature1", var2 = "feature2"){
   ## For group1
   omics1Mat = omics1Mat[,metaData$biologicalSampleName]
   omics2Mat = omics2Mat[,metaData$biologicalSampleName]
@@ -102,17 +109,17 @@ calculateCor <- function(metaData, omics1Mat, omics2Mat, features, var1 = "omics
 #### Download mrna data
 ```{r download.mrna.data}
 # Get metadata
-mrna_metdata_id <- "syn3156503"
-ALL_USED_IDs = c(ALL_USED_IDs, mrna_metdata_id)
+mrna_metadata_id <- "syn3156503"
+ALL_USED_IDs = c(ALL_USED_IDs, mrna_metadata = mrna_metadata_id)
 
-mrna_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', mrna_metdata_id))
+mrna_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', mrna_metadata_id))
 mrna_metadata <- mrna_metadata_obj@values
 
 mrna_metadata[mrna_metadata == 'N/A'] = NA
 
 # Get mrna raw counts
 mrna_id <- "syn5011097"
-ALL_USED_IDs <- c(ALL_USED_IDs, mrna_id)
+ALL_USED_IDs <- c(ALL_USED_IDs, mrna_count = mrna_id)
 
 mrna_mat <- downloadFile(mrna_id)
 
@@ -127,17 +134,17 @@ mrna_metadata_filtered <- mrna_metadata %>%
 #### Download mirna data
 ```{r download.mirna.data}
 # Get metadata
-mirna_metdata_id <- "syn3219876"
-ALL_USED_IDs <- c(ALL_USED_IDs, mirna_metdata_id)
+mirna_metadata_id <- "syn3219876"
+ALL_USED_IDs <- c(ALL_USED_IDs, mirna_metadata = mirna_metadata_id)
 
-mirna_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', mirna_metdata_id))
+mirna_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', mirna_metadata_id))
 mirna_metadata <- mirna_metadata_obj@values
 
 mirna_metadata[mirna_metadata == 'N/A'] = NA
 
 # Get mirna raw counts
 mirna_id <- "syn5014456"
-ALL_USED_IDs = c(ALL_USED_IDs, mirna_id)  
+ALL_USED_IDs = c(ALL_USED_IDs, mirna_count = mirna_id)  
 
 mirna_mat <- downloadFile(mirna_id)
 
@@ -152,17 +159,17 @@ mirna_metadata_filtered <- mirna_metadata %>%
 #### Download DNA methylation data
 ```{r download.methyl.data}
 # Get metadata
-methyl_metdata_id <- "syn3156828"; 
-ALL_USED_IDs <- c(ALL_USED_IDs, methyl_metdata_id)
+methyl_metadata_id <- "syn3156828"; 
+ALL_USED_IDs <- c(ALL_USED_IDs, methyl_metadata = methyl_metadata_id)
 
-methyl_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', methyl_metdata_id))
+methyl_metadata_obj <- synTableQuery(sprintf('SELECT * FROM %s', methyl_metadata_id))
 methyl_metadata <- methyl_metadata_obj@values
 
 methyl_metadata[methyl_metadata == 'N/A'] = NA
 
 # Get methyl raw counts
 methyl_id <- "syn4487642"
-ALL_USED_IDs = c(ALL_USED_IDs, methyl_id)  
+ALL_USED_IDs = c(ALL_USED_IDs, methyl_count = methyl_id)  
 
 methyl_mat <- downloadFile(methyl_id)
 
@@ -178,7 +185,7 @@ methyl_metadata_filtered <- methyl_metadata %>%
 ```{r tf.dna.mapping}
 # Download TFs from Enrichr genesets
 load(synGet('syn4867851')@filePath)
-ALL_USED_IDs = c(ALL_USED_IDs,'syn4867851')
+ALL_USED_IDs = c(ALL_USED_IDs,geneset = 'syn4867851')
 
 # Get unique TF - gene mapping from three data bases: ChEA, TRANSFAC&JASPAR and ENCODE
 ind = grep('HUMAN', names(GeneSets$ChEA))
@@ -213,7 +220,7 @@ WGCNA::collectGarbage()
 ```{r miRNA.mRNA.mapping}
 # Get miRNA mapping files
 miRNA.mRNA.id = 'syn3461627'
-ALL_USED_IDs <- c(ALL_USED_IDs, miRNA.mRNA.id)
+ALL_USED_IDs <- c(ALL_USED_IDs, mirna.mrna.map = miRNA.mRNA.id)
 miRNA.mRNA = fread(synGet(miRNA.mRNA.id)@filePath, data.table=F, header=F)
 setnames(miRNA.mRNA, c('V1','V2'), c('hsa_id','ensembl_gene_id'))
 
@@ -233,7 +240,7 @@ miRNA.mRNA <- left_join(miRNA.mRNA, human_ensg2symbol, by = 'ensembl_gene_id') %
 ```{r miRNA.mRNA.exp.mapping}
 # Get miRNA mapping files
 miRNA.mRNA2.id = 'syn5049680'
-ALL_USED_IDs <- c(ALL_USED_IDs, miRNA.mRNA2.id)
+ALL_USED_IDs <- c(ALL_USED_IDs, mirna.mrna.map2 = miRNA.mRNA2.id)
 miRNA.mRNA2 = fread(synGet(miRNA.mRNA2.id)@filePath, data.table=F, header=T)
 
 miRNA.mRNA2 <- miRNA.mRNA2 %>%
@@ -247,7 +254,7 @@ miRNA.mRNA = unique(bind_rows(miRNA.mRNA, miRNA.mRNA2))
 ```{r methyl.mirna.mapping}
 # Get miRNA methyl mapping files
 methyl.mirna.id = 'syn4895962'
-ALL_USED_IDs <- c(ALL_USED_IDs, methyl.mirna.id)
+ALL_USED_IDs <- c(ALL_USED_IDs, methyl.mirna = methyl.mirna.id)
 methyl.mirna = fread(synGet(methyl.mirna.id)@filePath, data.table=F, header=F)
 
 methyl.mirna <- methyl.mirna %>%  
@@ -297,6 +304,7 @@ metadata.TF.TF <- mrna_metadata_filtered %>%
   unique
 mrna_mat_median = mrna_mat_median[,metadata.TF.TF$biologicalSampleName]
 
+# Extract TF's matrix from the mRNA matrix
 TF_mat_median = mrna_mat_median[(rownames(mrna_mat_median) %in% unique(TFsMapping$feature)),]
 
 # Split metadata in terms of diffstate
@@ -304,14 +312,32 @@ metadata.TF.TF <- split(metadata.TF.TF, metadata.TF.TF$Diffname_short)
 ```
 Calculating coexpression between `r dim(TF_mat_median)[1]` TFs in `r dim(TF_mat_median)[2]` samples
 ```{r coexpp.TF.TF}
+# Extract interaction features
 features = data.frame(omics1 = TFsMapping$feature, omics2 = TFsMapping$target) %>%
   dplyr::filter(omics1 %in% rownames(TF_mat_median), omics2 %in% rownames(TF_mat_median))
 
-TF.TF.correlation = lapply(metadata.TF.TF, calculateCor, TF_mat_median, TF_mat_median, features, 'TF.regulator', 'TF.regulated')
-TF.TF.correlation = join_all(TF.TF.correlation, by = c("feature","TF.regulator","TF.regulated")) %>%
-  dplyr::select(feature, TF.regulator, TF.regulated, DE, EB, ECTO, MESO15, MESO30, MESO5, SC)
+# Calculate co-expression
+TF.TF.correlation = lapply(metadata.TF.TF, calculateCor, 
+                           TF_mat_median, TF_mat_median, features)
 
+# Format data to store in synapse
 metadata.TF.TF = rbindlist(metadata.TF.TF)
+TF.TF.correlation = join_all(TF.TF.correlation, by = c("feature","feature1","feature2")) %>%
+  dplyr::mutate(Assay1 = 'TF', Assay2 = 'TF', nSamples = dim(metadata.TF.TF)[1]) %>%
+  dplyr::select(feature, feature1, Assay1, feature2, Assay2, nSamples, 
+                DE, EB, ECTO, MESO15, MESO30, MESO5, SC)
+
+# Store metadata in synapse
+write.table(metadata.TF.TF, file = 'Metadata_TF_TF.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('Metadata_TF_TF.tsv', name = 'Metadata TF_TF', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('mrna_metadata')]), 
+               executed = ThisFile, activityName = ActivityName)
+
+# Store coexpression matrix in synapse
+write.table(TF.TF.correlation, file = 'CoExp_TF_TF.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('CoExp_TF_TF.tsv', name = 'Coexpression TF_TF', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('mrna_metadata', 'mrna_count', 'geneset')]), 
+               executed = ThisFile, activityName = ActivityName)
 ```
 
 
@@ -359,11 +385,29 @@ Calculating coexpression between `r dim(TF_mat_median)[1]` TFs and  `r dim(nonTF
 features = data.frame(omics1 = TFsMapping$feature, omics2 = TFsMapping$target) %>%
   dplyr::filter(omics1 %in% rownames(TF_mat_median), omics2 %in% rownames(nonTF_mat_median))
 
-TF.nonTF.correlation = lapply(metadata.TF.nonTF, calculateCor, TF_mat_median, nonTF_mat_median, features, 'TF', 'nonTF')
-TF.nonTF.correlation = join_all(TF.nonTF.correlation, by = c("feature","TF","nonTF")) %>%
-  dplyr::select(feature, TF, nonTF, DE, EB, ECTO, MESO15, MESO30, MESO5, SC)
 
+# Calculate co-expression
+TF.nonTF.correlation = lapply(metadata.TF.nonTF, calculateCor, 
+                           TF_mat_median, nonTF_mat_median, features)
+
+# Format data to store in synapse
 metadata.TF.nonTF = rbindlist(metadata.TF.nonTF)
+TF.nonTF.correlation = join_all(TF.nonTF.correlation, by = c("feature","feature1","feature2")) %>%
+  dplyr::mutate(Assay1 = 'TF', Assay2 = 'nonTF', nSamples = dim(metadata.TF.nonTF)[1]) %>%
+  dplyr::select(feature, feature1, Assay1, feature2, Assay2, nSamples, 
+                DE, EB, ECTO, MESO15, MESO30, MESO5, SC)
+
+# Store metadata in synapse
+write.table(metadata.TF.nonTF, file = 'Metadata_TF_nonTF.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('Metadata_TF_nonTF.tsv', name = 'Metadata TF_nonTF', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('mrna_metadata')]), 
+               executed = ThisFile, activityName = ActivityName)
+
+# Store coexpression matrix in synapse
+write.table(TF.nonTF.correlation, file = 'CoExp_TF_nonTF.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('CoExp_TF_nonTF.tsv', name = 'Coexpression TF_nonTF', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('mrna_metadata', 'mrna_count', 'geneset')]), 
+               executed = ThisFile, activityName = ActivityName)
 ```
 
 
@@ -427,11 +471,31 @@ Calculating coexpression between `r dim(mrna_mat_median)[1]` mrnas and  `r dim(m
 features = data.frame(omics1 = miRNA.mRNA$feature, omics2 = miRNA.mRNA$target) %>%
   dplyr::filter(omics1 %in% rownames(mirna_mat_median), omics2 %in% rownames(mrna_mat_median))
 
-mirna.mrna.correlation = lapply(metadata.mirna.mrna, calculateCor, mirna_mat_median, mrna_mat_median, features, 'mirna', 'mrna')
-mirna.mrna.correlation = join_all(mirna.mrna.correlation, by = c("feature","mirna","mrna")) %>%
-  dplyr::select(feature, mirna, mrna, DE, EB, ECTO, MESO15, MESO30, MESO5, SC)
 
+# Calculate co-expression
+mirna.mrna.correlation = lapply(metadata.mirna.mrna, calculateCor, 
+                                mirna_mat_median, mrna_mat_median, features)
+
+# Format data to store in synapse
 metadata.mirna.mrna = rbindlist(metadata.mirna.mrna)
+mirna.mrna.correlation = join_all(mirna.mrna.correlation, by = c("feature","feature1","feature2")) %>%
+  dplyr::mutate(Assay1 = 'mirna', Assay2 = 'mrna', nSamples = dim(metadata.mirna.mrna)[1]) %>%
+  dplyr::select(feature, feature1, Assay1, feature2, Assay2, nSamples, 
+                DE, EB, ECTO, MESO15, MESO30, MESO5, SC)
+
+# Store metadata in synapse
+write.table(metadata.mirna.mrna, file = 'Metadata_mirna_mrna.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('Metadata_mirna_mrna.tsv', name = 'Metadata mirna_mrna', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('mirna_metadata','mrna_metadata')]), 
+               executed = ThisFile, activityName = ActivityName)
+
+# Store coexpression matrix in synapse
+write.table(mirna.mrna.correlation, file = 'CoExp_mirna_mrna.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('CoExp_mirna_mrna.tsv', name = 'Coexpression mirna_mrna', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('mrna_metadata', 'mrna_count', 'geneset',
+                                                       'mirna_metadata','mirna_count', 'mirna.mrna.map',
+                                                       'mirna.mrna.map2')]), 
+               executed = ThisFile, activityName = ActivityName)
 ```
 
 
@@ -488,15 +552,30 @@ Performing analysis with `r dim(mrna_mat_median)[1]` mrnas and  `r dim(methyl_ma
 features = data.frame(omics1 = methyl.mrna$feature, omics2 = methyl.mrna$target) %>%
   dplyr::filter(omics1 %in% rownames(methyl_mat_median), omics2 %in% rownames(mrna_mat_median))
 
-methyl.mrna.correlation = lapply(metadata.methyl.mrna, 
-                                 calculateCor, 
-                                 methyl_mat_median, 
-                                 mrna_mat_median, 
-                                 features, 'methyl', 'mrna')
-methyl.mrna.correlation = join_all(methyl.mrna.correlation, by = c("feature","methyl","mrna")) %>%
-  dplyr::select(feature, methyl, mrna, DE, EB, ECTO, MESO5, SC)
 
+# Calculate co-expression
+methyl.mrna.correlation = lapply(metadata.methyl.mrna, calculateCor,
+                                 methyl_mat_median, mrna_mat_median, features)
+
+# Format data to store in synapse
 metadata.methyl.mrna = rbindlist(metadata.methyl.mrna)
+methyl.mrna.correlation = join_all(methyl.mrna.correlation, by = c("feature","feature1","feature2")) %>%
+  dplyr::mutate(Assay1 = 'mirna', Assay2 = 'mrna', nSamples = dim(metadata.methyl.mrna)[1]) %>%
+  dplyr::select(feature, feature1, Assay1, feature2, Assay2, nSamples, 
+                DE, EB, ECTO, MESO5, SC)
+
+# Store metadata in synapse
+write.table(metadata.methyl.mrna, file = 'Metadata_methyl_mrna.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('Metadata_methyl_mrna.tsv', name = 'Metadata methyl_mrna', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('methyl_metadata','mrna_metadata')]), 
+               executed = ThisFile, activityName = ActivityName)
+
+# Store coexpression matrix in synapse
+write.table(methyl.mrna.correlation, file = 'CoExp_methyl_mrna.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('CoExp_methyl_mrna.tsv', name = 'Coexpression methyl_mrna', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('mrna_metadata', 'mrna_count', 'geneset',
+                                                       'methyl_metadata','methyl_count')]), 
+               executed = ThisFile, activityName = ActivityName)
 ```
 
 
@@ -553,62 +632,30 @@ Performing analysis with `r dim(mirna_mat_median)[1]` mirnas and  `r dim(methyl_
 features = data.frame(omics1 = methyl.mirna$feature, omics2 = methyl.mirna$target) %>%
   dplyr::filter(omics1 %in% rownames(methyl_mat_median), omics2 %in% rownames(mirna_mat_median))
 
-methyl.mirna.correlation = lapply(metadata.methyl.mirna, 
-                                 calculateCor, 
-                                 methyl_mat_median, 
-                                 mirna_mat_median, 
-                                 features, 'methyl', 'mirna')
-methyl.mirna.correlation = join_all(methyl.mirna.correlation, by = c("feature","methyl","mirna")) %>%
-  dplyr::select(feature, methyl, mirna, DE, EB, ECTO, MESO5, SC)
 
+# Calculate co-expression
+methyl.mirna.correlation = lapply(metadata.methyl.mirna, calculateCor,
+                                  methyl_mat_median, mirna_mat_median, features)
+
+# Format data to store in synapse
 metadata.methyl.mirna = rbindlist(metadata.methyl.mirna)
-```
+methyl.mirna.correlation = join_all(methyl.mirna.correlation, by = c("feature","feature1","feature2")) %>%
+  dplyr::mutate(Assay1 = 'mirna', Assay2 = 'mrna', nSamples = dim(metadata.methyl.mirna)[1]) %>%
+  dplyr::select(feature, feature1, Assay1, feature2, Assay2, nSamples, 
+                DE, EB, ECTO, MESO5, SC)
 
+# Store metadata in synapse
+write.table(metadata.methyl.mirna, file = 'Metadata_methyl_mirna.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('Metadata_methyl_mirna.tsv', name = 'Metadata methyl_mirna', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('methyl_metadata','mirna_metadata')]), 
+               executed = ThisFile, activityName = ActivityName)
 
-### Store results in synapse
-```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache=FALSE}
-ActivityName <- 'Calculate co-expression between assays'
-
-ThisFileName <- 'CalculateCoExp_All.Rmd'
-
-# Github link
-ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
-                    ref="branch", 
-                    refName='discordant_anal')
-
-ThisFile <- getPermlink(repository = ThisRepo,
-                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
-
-# Populate wiki with results
-CODE <- Folder(name = 'Coexpression Between Different Assays At Each Differentiation Stage', parentId = parentId)
-CODE <- synStore(CODE)
-
-# Store metadata
-metadata <- list(TF_TF = metadata.TF.TF,
-                 TF_nonTF = metadata.TF.nonTF,
-                 mirna_mrna = metadata.mirna.mrna, 
-                 methyl_mrna = metadata.methyl.mrna,
-                 methyl_mirna = metadata.methyl.mirna)
-metadata_obj = mapply(function(x,y, parentId, used, executed, activityName){
-  write.table(x, file=paste0('Metadata_',y,'.tsv'), sep = '\t', quote=F, row.names=F)
-  obj = File(paste0('Metadata_',y,'.tsv'), name = paste('Metadata',y), parentId = parentId)
-  obj = synStore(obj, used = used, executed = executed, activityName = activityName)
-}, metadata, names(metadata), MoreArgs = list(CODE$properties$id, ALL_USED_IDs, ThisFile, ActivityName),
-SIMPLIFY = F)
-
-
-# Store coexpression
-CoExp <- list(TF_TF = TF.TF.correlation,
-              TF_nonTF = TF.nonTF.correlation,
-              mirna_mrna = mirna.mrna.correlation, 
-              methyl_mrna = methyl.mrna.correlation,
-              methyl_mirna = methyl.mirna.correlation)
-CoExp_obj = mapply(function(x,y, parentId, used, executed, activityName){
-  write.table(x, file=paste0('CoExp_',y,'.tsv'), sep = '\t', quote=F, row.names=F)
-  obj = File(paste0('CoExp_',y,'.tsv'), name = paste('Coexpression',y), parentId = parentId)
-  obj = synStore(obj, used = used, executed = executed, activityName = activityName)
-}, CoExp, names(CoExp), MoreArgs = list(CODE$properties$id, ALL_USED_IDs, ThisFile, ActivityName),
-SIMPLIFY = F)
+# Store coexpression matrix in synapse
+write.table(methyl.mirna.correlation, file = 'CoExp_methyl_mirna.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('CoExp_methyl_mirna.tsv', name = 'Coexpression methyl_mirna', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs[c('mirna_metadata', 'mirna_count', 'geneset',
+                                                       'methyl_metadata','methyl_count', 'methyl.mirna')]), 
+               executed = ThisFile, activityName = ActivityName)
 ```
 
 ### Source Code
