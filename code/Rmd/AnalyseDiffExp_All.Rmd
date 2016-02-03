@@ -64,6 +64,8 @@ knitr::opts_chunk$set(
 parentId = "syn5194922"
 SYNAPSE_STORE = T
   
+thisFileName = 'AnalyseDiffExp_All.Rmd'
+
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
                     ref="branch", 
@@ -199,10 +201,17 @@ row.names(mRNACounts) = mRNACounts[,1]
 mRNACounts = as.matrix(mRNACounts[,-(1)])
 mRNACounts = 2^(mRNACounts) - 0.5
 
-# Get sample weights
+# Get covariates
 mRNACovariates = fread(synGet(mRNACovariatesId)@filePath, data.table=FALSE, header = T)
 row.names(mRNACovariates) = mRNACovariates[,1]
 mRNACovariates = mRNACovariates[,-(1)]
+
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE", "MESO5", "ECTO", "MESO15", "MESO30", "EB")
+mRNACovariates$Diffname_short = factor(mRNACovariates$Diffname_short, 
+                                       levels = orderedDiffState)
+mRNACovariates = mRNACovariates[order(mRNACovariates$Diffname_short),]
+mRNACounts = mRNACounts[,rownames(mRNACovariates)]
 
 mRNACovariates = split(mRNACovariates, mRNACovariates$Diffname_short)
 mRNACounts = sapply(mRNACovariates, function(covariates, counts){
@@ -225,13 +234,20 @@ row.names(miRNACounts) = miRNACounts[,1]
 miRNACounts = as.matrix(miRNACounts[,-(1)])
 miRNACounts = 2^(miRNACounts) - 0.5
 
-# Get sample weights
+# Get covariates
 miRNACovariates = fread(synGet(miRNACovariatesId)@filePath, data.table=FALSE, header = T)
 row.names(miRNACovariates) = miRNACovariates[,1]
 miRNACovariates = miRNACovariates[,-(1)]
 
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE", "MESO5", "ECTO", "MESO15", "MESO30", "EB")
+miRNACovariates$Diffname_short = factor(miRNACovariates$Diffname_short, 
+                                        levels = orderedDiffState)
+miRNACovariates = miRNACovariates[order(miRNACovariates$Diffname_short),]
+miRNACounts = miRNACounts[,rownames(miRNACovariates)]
+
 miRNACovariates = split(miRNACovariates, miRNACovariates$Diffname_short)
-miRNACounts = sapply(miRNACovariates, function(covariates, counts){
+miRNACounts_mat_median = sapply(miRNACovariates, function(covariates, counts){
   tmp = rowMedians(counts[, rownames(covariates)], na.rm=T)
   names(tmp) = rownames(counts)
   return(tmp)
@@ -250,13 +266,20 @@ methylCounts = fread(synGet(methylCountsId)@filePath, data.table=FALSE, header =
 row.names(methylCounts) = methylCounts[,1]
 methylCounts = as.matrix(methylCounts[,-(1)])
 
-# Get sample weights
+# Get covariates
 methylCovariates = fread(synGet(methylCovariatesId)@filePath, data.table=FALSE, header = T)
 row.names(methylCovariates) = methylCovariates[,1]
 methylCovariates = methylCovariates[,-(1)]
 
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState <- c("SC", "DE", "MESO5", "ECTO", "EB")
+methylCovariates$Diffname_short = factor(methylCovariates$Diffname_short, 
+                                       levels = orderedDiffState)
+methylCovariates = methylCovariates[order(methylCovariates$Diffname_short),]
+methylCounts = methylCounts[,rownames(methylCovariates)]
+
 methylCovariates = split(methylCovariates, methylCovariates$Diffname_short)
-methylCounts = sapply(methylCovariates, function(covariates, counts){
+methylCounts_mat_median = sapply(methylCovariates, function(covariates, counts){
   tmp = rowMedians(counts[, rownames(covariates)], na.rm=T)
   names(tmp) = rownames(counts)
   return(tmp)
@@ -408,14 +431,15 @@ ggheatmap.show(ggheatmap(WGCNA::bicor(mRNA.TF.exp), brewer.pal(5, 'YlOrRd')))
 
 # Scale expression counts
 mRNA.exp1 = mRNA.TF.exp; mRNA.exp1[mRNA.exp1<=0] = 0;
-mRNA.exp1 = t(apply(mRNA.exp1, 1, function(x){ x = x/max(x)}));#t(apply(mRNA.exp1, 1, function(x){ x = scale(x)})); #
+mRNA.exp1 = t(apply(mRNA.exp1, 1, function(x){ x = x/max(x, na.rm=T)}));#t(apply(mRNA.exp1, 1, function(x){ x = scale(x)})); #
+mRNA.exp1 = na.omit(mRNA.exp1)
 writeLines(paste('Clustering expression of',dim(mRNA.TF.exp)[1],'TFs'))
 
 # Kmeans clustering of scaled expression data
-mRNA.TF.cluster = pamk(mRNA.exp1[,-c(2)], 2:15, seed = 123456) # exclude DE in clustering
+mRNA.TF.cluster = pamk(mRNA.exp1[,-c(2)], 2:15, seed = 123456, usepam = T) # exclude DE in clustering
 set.seed(123456);mRNA.TF.cluster = kmeans(mRNA.exp1, mRNA.TF.cluster$nc)
 
-annotate = d.mRNA.TF %>% 
+annotate.TF = d.mRNA.TF %>% 
   dplyr::select(feature, ismiRNADiscordant, 
                 isMethylDiscordant, isMethylConcordant) %>%
   melt %>%
@@ -430,17 +454,20 @@ annotate = d.mRNA.TF %>%
   mutate(
     cluster = factor(cluster, labels = c("Early signatures", "SC", "MESO30", "ECTO",
                                          "MESO05", "EB", "Late Signatures", "MESO15")),
-         miRNA.Discordant = factor(miRNA.Discordant, labels = c("None", "Discordant")),
-         Methyl.Discordant = factor(Methyl.Discordant, labels = c("None", "Discordant")),
-         Methyl.Concordant = factor(Methyl.Concordant, labels = c("None", "Concordant")))
+    cluster = factor(cluster, levels = c("Early signatures", "SC", "MESO05", "ECTO",
+                                         "MESO15", "MESO30", "EB", "Late Signatures")),
+    miRNA.Discordant = factor(miRNA.Discordant, labels = c("None", "Discordant")),
+    Methyl.Discordant = factor(Methyl.Discordant, labels = c("None", "Discordant")),
+    Methyl.Concordant = factor(Methyl.Concordant, labels = c("None", "Concordant")))
 
-rownames(annotate) = annotate$feature
+rownames(annotate.TF) = annotate.TF$feature
+annotate.TF = annotate.TF[rownames(mRNA.exp1),]
 
-annotate = annotate[order(annotate$cluster),-(1)]
-mRNA.exp1 = mRNA.exp1[rownames(annotate), orderedDiffState]
+annotate.TF = annotate.TF[order(annotate.TF$cluster),-(1)]
+mRNA.exp1 = mRNA.exp1[rownames(annotate.TF), orderedDiffState]
 
-figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
-ha1 = HeatmapAnnotation(df = annotate, which = "row", 
+figure_size = list(title_gp = gpar(fontsize = 22), labels_gp = gpar(fontsize = 12))
+ha1 = HeatmapAnnotation(df = annotate.TF, which = "row", 
                         col = list(miRNA.Discordant = c("Discordant" = "red", "None" = "white"),
                                    Methyl.Discordant = c("Discordant" = "blue", "None" = "white"),
                                    Methyl.Concordant = c("Concordant" = "green", "None" = "white")),
@@ -450,25 +477,29 @@ ha1 = HeatmapAnnotation(df = annotate, which = "row",
                           Methyl.Concordant = c(list(title = "Methylation"), figure_size),                          
                           cluster = c(list(title = "Cluster"), figure_size)))
 
-Heatmap(mRNA.exp1, name = 'Scaled median mRNA counts', column_title = 'Transcription Factors', 
-        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
-        column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
-        row_title_gp = gpar(fontsize = 22, fontface = "bold"),
-        column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
-        show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_hclust = F,
-        heatmap_legend_param = figure_size) + ha1
+h.TFs = Heatmap(mRNA.exp1, name = 'median(counts)', column_title = 'Transcription Factors', 
+                cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "YlOrRd"), 
+                split = annotate.TF$cluster,
+                column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
+                row_title_gp = gpar(fontsize = 22, fontface = "bold"),
+                column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
+                show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_hclust = F,
+                heatmap_legend_param = figure_size) + ha1
+h.TFs
 ```
 
 Separate differentiation state signatures as gct
 ```{r mRNA.TF.signatures}
 # Extract signatures
 TF.signatures = list()
-for (i in 1:max(mRNA.TF.cluster$cluster))
-  TF.signatures = c(TF.signatures, list(names(mRNA.TF.cluster$cluster)[mRNA.TF.cluster$cluster == i]))
-names(TF.signatures) = c("EARLY", "SC", "MESO30", "ECTO","MESO05", "EB", "LATE", "MESO15")
-
-TF.signatures = lapply(TF.signatures, function(x){paste(x, collapse = ',')}) %>% ldply
-colnames(TF.signatures) = c('Annotation','TFs')
+annotate.TF = rownameToFirstColumn(annotate.TF, 'hgnc_symbols')
+annotate.TF = split(annotate.TF, annotate.TF$cluster)
+TF.signatures = lapply(annotate.TF, 
+                       function(x){
+                         dplyr::select(x,hgnc_symbols) %>%
+                           unlist %>%
+                           paste(collapse = ',')
+                       }) %>% ldply
 
 kable(TF.signatures)
 ```
@@ -490,7 +521,7 @@ mRNA.nonTF.exp1 = t(apply(mRNA.nonTF.exp1, 1, function(x){ x = x/max(x)}));#t(ap
 writeLines(paste('Clustering expression of',dim(mRNA.nonTF.exp)[1],'nonTFs'))
 
 # Kmeans clustering of scaled expression data
-mRNA.nonTF.cluster = pamk(mRNA.nonTF.exp1[,-c(2)], 2:15, seed = 123456) # exclude DE in clustering
+mRNA.nonTF.cluster = pamk(mRNA.nonTF.exp1[,-c(2)], 2:15, seed = 123456, usepam=F) # exclude DE in clustering
 set.seed(123456); mRNA.nonTF.cluster = kmeans(mRNA.nonTF.exp1, mRNA.nonTF.cluster$nc)
 
 annotate = d.mRNA.nonTF %>% 
@@ -507,16 +538,17 @@ annotate = d.mRNA.nonTF %>%
                 cluster = DF) %>%
   mutate(
     cluster = factor(cluster, labels = c('Early','SC','Late','MESO15','MESO30','ECTO','MESO5','EB')),
-         miRNA.Discordant = factor(miRNA.Discordant, labels = c("None", "Discordant")),
-         Methyl.Discordant = factor(Methyl.Discordant, labels = c("None", "Discordant")),
-         Methyl.Concordant = factor(Methyl.Concordant, labels = c("None", "Concordant")))
+    cluster = factor(cluster, levels = c('Early','SC','MESO5','ECTO','MESO15','MESO30','EB','Late')),
+    miRNA.Discordant = factor(miRNA.Discordant, labels = c("None", "Discordant")),
+    Methyl.Discordant = factor(Methyl.Discordant, labels = c("None", "Discordant")),
+    Methyl.Concordant = factor(Methyl.Concordant, labels = c("None", "Concordant")))
 
 rownames(annotate) = annotate$feature
 
 annotate = annotate[order(annotate$cluster),-(1)]
 mRNA.nonTF.exp1 = mRNA.nonTF.exp1[rownames(annotate), orderedDiffState]
 
-figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
+figure_size = list(title_gp = gpar(fontsize = 22), labels_gp = gpar(fontsize = 12))
 ha1 = HeatmapAnnotation(df = annotate, which = "row", 
                         col = list(miRNA.Discordant = c("Discordant" = "red", "None" = "white"),
                                    Methyl.Discordant = c("Discordant" = "blue", "None" = "white"),
@@ -527,8 +559,8 @@ ha1 = HeatmapAnnotation(df = annotate, which = "row",
                           Methyl.Concordant = c(list(title = "Methylation"), figure_size),                          
                           cluster = c(list(title = "Cluster"), figure_size)))
 
-Heatmap(mRNA.nonTF.exp1, name = 'Scaled median nonTF mRNA counts', column_title = 'Non Transcription Factors', 
-        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
+h.nonTF = Heatmap(mRNA.nonTF.exp1, name = 'median(counts)', column_title = 'Non Transcription Factors', 
+        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "YlOrRd"), split = annotate$cluster,
         column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
         row_title_gp = gpar(fontsize = 22, fontface = "bold"),
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
@@ -556,7 +588,7 @@ d.miRNA$isTargetTF = 0;
 d.miRNA$isTargetTF[d.miRNA$target %in% TFsMapping$feature] = 1
 
 # Extract median mRNA counts
-miRNA.exp = miRNACounts[d.miRNA %>% dplyr::select(feature) %>% unique %>% unlist, orderedDiffState]
+miRNA.exp = miRNACounts_mat_median[d.miRNA %>% dplyr::select(feature) %>% unique %>% unlist, orderedDiffState]
 cat('----\n')
 cat('Correlation between differentiation states (based on miRNA expression)')
 ggheatmap.show(ggheatmap(WGCNA::bicor(miRNA.exp), brewer.pal(5, 'YlOrRd')))
@@ -570,7 +602,7 @@ writeLines(paste('Clustering expression of',dim(miRNA.exp1)[1],'miRNAs'))
 miRNA.cluster = pamk(miRNA.exp1, 2:15, seed = 123456) # exclude DE in clustering
 set.seed(123456); miRNA.cluster = kmeans(miRNA.exp1, miRNA.cluster$nc)
 
-annotate = d.miRNA %>% 
+annotate.miRNA = d.miRNA %>% 
   dplyr::select(feature, isTargetTF) %>%
   melt %>%
   group_by(feature, variable) %>%
@@ -581,38 +613,44 @@ annotate = d.miRNA %>%
                 cluster = DF) %>%
   mutate(TF = factor(TF, labels = c('None','Exist')), 
          cluster = factor(cluster, labels = c("SC and DE", "SC", "EB", "Early", "Late", "MESO15", "Late","MESO30","Late",
-                                              "SC2","SC","MESO05","DE and MESO05","ECTO")))
+                                              "SC2","SC","MESO05","DE and MESO05","ECTO")),
+         cluster = factor(cluster, levels = c("Early", "SC", "SC2", "SC and DE", "DE and MESO05", "MESO05",
+                                              "ECTO", "MESO15", "MESO30", "EB", "Late")))
 
-rownames(annotate) = annotate$feature
+rownames(annotate.miRNA) = annotate.miRNA$feature
 
-annotate = annotate[order(annotate$cluster),-(1)]
-miRNA.exp1 = miRNA.exp1[rownames(annotate), orderedDiffState]
+annotate.miRNA = annotate.miRNA[order(annotate.miRNA$cluster),-(1)]
+miRNA.exp1 = miRNA.exp1[rownames(annotate.miRNA), orderedDiffState]
 
-figure_size = list(title_gp = gpar(fontsize = 22), labels_gp = gpar(fontsize = 18))
-ha1 = HeatmapAnnotation(df = annotate, which = "row", 
+figure_size = list(title_gp = gpar(fontsize = 22), labels_gp = gpar(fontsize = 12))
+ha1 = HeatmapAnnotation(df = annotate.miRNA, which = "row", 
                         col = list(TF = c("Exist" = "red", "None" = "white")),
                         annotation_legend_param = list(
                           TF = c(list(title = "targetsTF"),figure_size),                          
                           cluster = c(list(title = "Cluster"), figure_size)))
 
-Heatmap(miRNA.exp1, name = 'Scaled median miRNA counts', column_title = 'miRNA', 
-        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
+h.miRNA = Heatmap(miRNA.exp1, name = 'median(counts)', column_title = 'miRNA', 
+        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "YlOrRd"), split = annotate.miRNA$cluster,
         column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
         row_title_gp = gpar(fontsize = 22, fontface = "bold"),
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
         show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_hclust = F,
         heatmap_legend_param = figure_size) + ha1
+h.miRNA
 ```
 
 Separate differentiation state signatures as gct
 ```{r miRNA.signatures}
+# Extract signatures
 miRNA.signatures = list()
-for (name in levels(annotate$cluster)){
-  miRNA.signatures[[name]] = rownames(annotate)[annotate$cluster == name]
-}
-
-miRNA.signatures = lapply(miRNA.signatures, function(x){paste(x, collapse = ',')}) %>% ldply
-colnames(miRNA.signatures) = c('Annotation','miRNAs')
+annotate.miRNA = rownameToFirstColumn(annotate.miRNA, 'hgnc_symbols')
+annotate.miRNA = split(annotate.miRNA, annotate.miRNA$cluster)
+miRNA.signatures = lapply(annotate.miRNA, 
+                       function(x){
+                         dplyr::select(x,hgnc_symbols) %>%
+                           unlist %>%
+                           paste(collapse = ',')
+                       }) %>% ldply
 
 kable(miRNA.signatures)
 ```
@@ -626,7 +664,7 @@ d.methyl$isTargetTF = 0;
 d.methyl$isTargetTF[d.methyl$target %in% TFsMapping$feature] = 1
 
 # Extract median methylation counts
-methyl.exp = methylCounts[d.methyl %>% dplyr::select(feature) %>% unique %>% unlist, orderedDiffState]
+methyl.exp = methylCounts_mat_median[d.methyl %>% dplyr::select(feature) %>% unique %>% unlist, orderedDiffState]
 cat('----\n')
 cat('Correlation between differentiation states (based on methyl expression)')
 ggheatmap.show(ggheatmap(WGCNA::bicor(methyl.exp), brewer.pal(5, 'YlOrRd')))
@@ -634,8 +672,8 @@ ggheatmap.show(ggheatmap(WGCNA::bicor(methyl.exp), brewer.pal(5, 'YlOrRd')))
 writeLines(paste('Clustering expression of',dim(methyl.exp)[1],'methylation probes'))
 
 # Kmeans clustering of scaled expression data
-methyl.cluster = pamk(methyl.exp, 2:15, seed = 123456) # exclude DE in clustering
-set.seed(123456);methyl.cluster = kmeans(methyl.exp, methyl.cluster$nc)
+# methyl.cluster = pamk(methyl.exp, 2:15, seed = 123456) # exclude DE in clustering
+set.seed(123456);methyl.cluster = kmeans(methyl.exp, 3)#methyl.cluster$nc)
 
 annotate = d.methyl %>% 
   dplyr::select(feature, isTargetTF) %>%
@@ -647,7 +685,8 @@ annotate = d.methyl %>%
   dplyr::rename(TF = isTargetTF,
                 cluster = DF) %>%
   mutate(TF = factor(TF, labels = c("None","Exist")), 
-         cluster = factor(cluster, labels = c("Late", "Early", "ECTO")))
+         cluster = factor(cluster, labels = c("Late", "Early", "ECTO")),
+         cluster = factor(cluster, levels = c("Early", "ECTO", "Late")))
 
 rownames(annotate) = annotate$feature
 
@@ -658,8 +697,8 @@ ha1 = HeatmapAnnotation(df = annotate, which = "row", col = list(TF = c("Exist" 
                         annotation_legend_param = list(
                           TF = c(list(title = "targetsTF"),figure_size),                          
                           cluster = c(list(title = "Cluster"), figure_size)))
-Heatmap(methyl.exp, name = 'Scaled median beta', column_title = 'Methylation Probes', 
-        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), split = annotate$cluster,
+Heatmap(methyl.exp, name = 'median(beta)', column_title = 'Methylation Probes', 
+        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "YlOrRd"), split = annotate$cluster,
         column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
         row_title_gp = gpar(fontsize = 22, fontface = "bold"),
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
