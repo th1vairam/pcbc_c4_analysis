@@ -326,7 +326,7 @@ Calculating coexpression between `r dim(TF_mat_median)[1]` TFs in `r dim(TF_mat_
 # Extract interaction features
 features = data.frame(omics1 = TFsMapping$feature, omics2 = TFsMapping$target) %>%
   dplyr::filter(omics1 %in% rownames(TF_mat_median), omics2 %in% rownames(TF_mat_median))
-features = features[1:1000,]
+
 
 # Calculate co-expression
 TF.TF.correlation = lapply(metadata.TF.TF, calculateCor, 
@@ -406,7 +406,7 @@ Calculating coexpression between `r dim(TF_mat_median)[1]` TFs and  `r dim(nonTF
 ```{r coexpp.TF.nonTF}
 features = data.frame(omics1 = TFsMapping$feature, omics2 = TFsMapping$target) %>%
   dplyr::filter(omics1 %in% rownames(TF_mat_median), omics2 %in% rownames(nonTF_mat_median))
-features = features[1:1000,]
+
 
 # Calculate co-expression
 TF.nonTF.correlation = lapply(metadata.TF.nonTF, calculateCor, 
@@ -502,7 +502,7 @@ Calculating coexpression between `r dim(mrna_mat_median)[1]` mrnas and  `r dim(m
 ```{r coexpp.mirna.mrna}
 features = data.frame(omics1 = miRNA.mRNA$feature, omics2 = miRNA.mRNA$target) %>%
   dplyr::filter(omics1 %in% rownames(mirna_mat_median), omics2 %in% rownames(mrna_mat_median))
-features = features[1:1000,]
+
 
 # Calculate co-expression
 mirna.mrna.correlation = lapply(metadata.mirna.mrna, calculateCor, 
@@ -593,7 +593,7 @@ Performing analysis with `r dim(mrna_mat_median)[1]` mrnas and  `r dim(methyl_ma
 ```{r coexpp.methyl.mrna}
 features = data.frame(omics1 = methyl.mrna$feature, omics2 = methyl.mrna$target) %>%
   dplyr::filter(omics1 %in% rownames(methyl_mat_median), omics2 %in% rownames(mrna_mat_median))
-features = features[1:1000,]
+
 
 # Calculate co-expression
 methyl.mrna.correlation = lapply(metadata.methyl.mrna, calculateCor,
@@ -683,7 +683,7 @@ Performing analysis with `r dim(mirna_mat_median)[1]` mirnas and  `r dim(methyl_
 ```{r coexpp.methyl.mirna}
 features = data.frame(omics1 = methyl.mirna$feature, omics2 = methyl.mirna$target) %>%
   dplyr::filter(omics1 %in% rownames(methyl_mat_median), omics2 %in% rownames(mirna_mat_median))
-features = features[1:1000,]
+
 
 # Calculate co-expression
 methyl.mirna.correlation = lapply(metadata.methyl.mirna, calculateCor,
