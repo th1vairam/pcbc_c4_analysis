@@ -44,7 +44,7 @@ ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis",
                     refName="diff_exp")
 
 ThisFile <- getPermlink(repository = ThisRepo,
-                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+                        repositoryPath=paste0('code/R/', ThisFileName))    
 
 ### Functions 
 downloadFile <- function(id){
@@ -198,12 +198,22 @@ allInteractions = rbind(allInteractions, allInteractions1) %>% unique
 
 #### Reshape interactions ad gct files
 library(doParallel)
-registerDoParallel(cores=16)
-newInteractions = ddply(allInteractions[1:1000,], 'feature',.fun=function(x){
-  target = paste(unique(x$target),collapse=',')
-  return(target)
-},.parallel = T);
-colnames(newInteractions) = c("feature", "targets")
+cl = registerDoParallel(cores=16)
+newInteractions = list()
+for (i in 1:ceiling(dim(counts)[1]/1e3)){
+  start.ind = (i-1)*1e3+1
+  end.ind = min((i)*1e3, dim(counts)[1])
+  newInteractions1 <- foreach(x = counts$feature[start.ind:end.ind], .combine = c, .verbose = TRUE) %dopar% {
+    y = allInteractions %>%
+      dplyr::filter(feature %in% x)
+    targets = list(unique(as.character(y$target)))
+    names(targets) = x
+    targets
+  }
+  newInteractions = c(newInteractions, newInteractions1)
+  writeLines(paste('Completed',i))
+}
+save(list = 'newInteractions', file = 'allInteractions.Rdata')
 
 # Store median counts in synapse
 write.table(counts, file='medianCounts.tsv', sep = '\t', quote=F, row.names=F)
@@ -213,8 +223,7 @@ obj = synStore(obj, used = as.character(ALL_USED_IDs[c('mrna_count', 'mirna_coun
                executed = ThisFile, activityName = ActivityName)
 
 # Store interaction gct files in synapse
-write.table(newInteractions, file='interactionsGCT.tsv', sep = '\t', quote=F, row.names=F)
-obj = File('interactionsGCT.tsv', name = 'All Interactions (gct format)', parentId = parentId)
+obj = File('allInteractions.Rdata', name = 'All Interactions (gct format)', parentId = parentId)
 obj = synStore(obj, used = as.character(ALL_USED_IDs[c('genesets', 'mirna.mrna.map' ,'mirna.mrna.map2', 'methyl.mirna', 
                                                        'methyl_beta', 'splicing_psi')]), 
                executed = ThisFile, activityName = ActivityName)
