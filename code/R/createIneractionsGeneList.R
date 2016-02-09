@@ -23,6 +23,10 @@ library(knit2synapse)
 library(synapseClient)
 library(rGithubClient) ## Needs the dev branch
 
+library(parallel)
+library(doParallel)
+library(foreach)
+
 synapseLogin()
 
 # source utility files from ./lib folder
@@ -190,29 +194,24 @@ methyl.mrna <- get450KProbeMapping(counts$feature[counts$Assay == 'methyl'])$Ann
   unique
 
 #### Combine all interactions together
-allInteractions = rbindlist(list(TFsMapping, miRNA.mRNA, miRNA.mRNA2, methyl.mirna, methyl.mrna, PSI.mapping)) %>%
+allInteractions = rbindlist(list(TF_mrna = TFsMapping, 
+                                 mirna_mrna = miRNA.mRNA, 
+                                 methyl_mirna = methyl.mirna, 
+                                 methyl_mrna = methyl.mrna, 
+                                 splicing_mrna = PSI.mapping), idcol = 'Assay') %>%
   unique %>%
   dplyr::filter(feature %in% counts$feature, target %in% counts$feature)
-allInteractions1 = data.frame(target = allInteractions$feature, feature = allInteractions$target)
+allInteractions1 = data.frame(target = allInteractions$feature, 
+                              feature = allInteractions$target,
+                              Assay = allInteractions$Assay)
 allInteractions = rbind(allInteractions, allInteractions1) %>% unique
 
 #### Reshape interactions ad gct files
-library(doParallel)
-cl = registerDoParallel(cores=16)
-newInteractions = list()
-for (i in 1:ceiling(dim(counts)[1]/1e3)){
-  start.ind = (i-1)*1e3+1
-  end.ind = min((i)*1e3, dim(counts)[1])
-  newInteractions1 <- foreach(x = counts$feature[start.ind:end.ind], .combine = c, .verbose = TRUE) %dopar% {
-    y = allInteractions %>%
-      dplyr::filter(feature %in% x)
-    targets = list(unique(as.character(y$target)))
-    names(targets) = x
-    targets
-  }
-  newInteractions = c(newInteractions, newInteractions1)
-  writeLines(paste('Completed',i))
-}
+cl <- makeCluster(14)
+registerDoParallel(cl)
+newInteractions <- dlply(allInteractions, .(Assay, feature), .fun = function(x){
+  target = list(as.character(unique(x$target)))
+}, .parallel = TRUE)
 save(list = 'newInteractions', file = 'allInteractions.Rdata')
 
 # Store median counts in synapse
