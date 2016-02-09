@@ -1,0 +1,233 @@
+---
+title: "Coallate all interactions together"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'collateAllInteractions.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'All Interactions')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(plyr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+
+library(matrixStats)
+library(biomaRt)
+
+library(knitr)
+library(knit2synapse)
+library(synapseClient)
+library(rGithubClient) ## Needs the dev branch
+
+library(parallel)
+library(doParallel)
+library(foreach)
+
+cl <- makeCluster(14)
+registerDoParallel(cl)
+
+synapseLogin()
+
+# Source needed files from lib folder
+source('../R/lib/get450KProbeMapping.R')
+source('../R/lib/rownameToFirstColumn.R')
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r synapseStore.params, cache=FALSE}
+parentId = "syn5194922"
+SYNAPSE_STORE = T  
+ALL_USED_IDs = c()
+
+# Create folder to store results in synapse
+ActivityName <- 'Collate all interactions'
+
+ThisFileName <- 'collateAllInteractions.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='discordant_anal')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'All Interactions', parentId = parentId)
+CODE <- synStore(CODE)
+```
+
+```{r fxns}
+downloadFile <- function(id){
+  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
+}
+```
+
+### Download all features from median counts files in synapse
+#### Download median counts data
+```{r download.counts.data}
+# Get median counts data
+counts_id = "syn5637772"
+ALL_USED_IDs = c(ALL_USED_IDs, counts = counts_id)
+
+counts_mat <- downloadFile(counts_id)
+```
+
+### Download comparison reference and mapping files from synapse
+#### Get TF-DNA mapping from Enrichr genesets
+```{r tf.dna.mapping}
+# Download TFs from Enrichr genesets
+load(synGet('syn4867851')@filePath)
+ALL_USED_IDs = c(ALL_USED_IDs,geneset = 'syn4867851')
+
+# Get unique TF - gene mapping from three data bases: ChEA, TRANSFAC&JASPAR and ENCODE
+ind = grep('HUMAN', names(GeneSets$ChEA))
+TFsMapping1 = mapply(function(x, y){
+  TFname = str_split(x, '-')[[1]][1]
+  return(list(data.frame(feature = TFname, target = y)))
+}, names(GeneSets$ChEA)[ind], GeneSets$ChEA[ind]) %>%
+  rbindlist %>%
+  unique
+
+ind = grep('human', names(GeneSets$TRANSFAC_and_JASPAR_PWMs))
+TFsMapping2 = mapply(function(x, y){
+  TFname = str_split(x, ' ')[[1]][1]
+  return(list(data.frame(feature = TFname, target = y)))
+}, names(GeneSets$TRANSFAC_and_JASPAR_PWMs)[ind], GeneSets$TRANSFAC_and_JASPAR_PWMs[ind]) %>%
+  rbindlist %>%
+  unique
+
+ind = grep('hg19', names(GeneSets$"ENCODE_TF_ChIP-seq_2015"))
+TFsMapping3 = mapply(function(x, y){
+  TFname = str_split(x, '_')[[1]][1]
+  return(list(data.frame(feature = TFname, target = y)))
+}, names(GeneSets$"ENCODE_TF_ChIP-seq_2015")[ind], GeneSets$"ENCODE_TF_ChIP-seq_2015"[ind]) %>%
+  rbindlist %>%
+  unique
+
+TFsMapping = rbindlist(list(TFsMapping1, TFsMapping2, TFsMapping3)) %>% 
+  unique %>%   
+  dplyr::mutate(feature.assay = 'mrna', target.assay = 'mrna', 
+                dataSource = 'ENCODE_TF_ChIP-seq_2015, TRANSFAC_and_JASPAR_PWMs, ChEA')
+rm(list= 'GeneSets')
+WGCNA::collectGarbage()
+```
+#### Get mRNA-miRNA mapping from synapse (miRDB version)
+```{r miRNA.mRNA.mapping}
+# Get miRNA mapping files
+miRNA.mRNA.id = 'syn3461627'
+ALL_USED_IDs <- c(ALL_USED_IDs, mirna.mrna.map = miRNA.mRNA.id)
+miRNA.mRNA = fread(synGet(miRNA.mRNA.id)@filePath, data.table=F, header=F)
+setnames(miRNA.mRNA, c('V1','V2'), c('hsa_id','ensembl_gene_id'))
+
+# Get human related mapping
+Hs = useMart("ENSEMBL_MART_ENSEMBL", host="www.ensembl.org") # use this one when biomart.org is down
+Hs = useDataset("hsapiens_gene_ensembl", Hs)
+human_ensg2symbol = getBM(attributes = c("ensembl_gene_id","hgnc_symbol"),
+                          filters = "ensembl_gene_id",                         
+                          values = unique(miRNA.mRNA$ensembl_gene_id),
+                          mart = Hs)
+
+miRNA.mRNA <- left_join(miRNA.mRNA, human_ensg2symbol, by = 'ensembl_gene_id') %>%
+  dplyr::rename(feature=hsa_id, target = hgnc_symbol) %>% 
+  dplyr::select(feature, target) %>%
+  dplyr::mutate(feature.assay = 'mirna', target.assay = 'mrna', 
+                dataSource = 'miRDB')
+```
+#### Get mRNA-miRNA mapping from synapse (mirTarBase version)
+```{r miRNA.mRNA.exp.mapping, include=FALSE}
+# Get miRNA mapping files
+miRNA.mRNA2.id = 'syn5049680'
+ALL_USED_IDs <- c(ALL_USED_IDs, mirna.mrna.map2 = miRNA.mRNA2.id)
+miRNA.mRNA2 = fread(synGet(miRNA.mRNA2.id)@filePath, data.table=F, header=T)
+
+miRNA.mRNA2 <- miRNA.mRNA2 %>%
+  dplyr::select(one_of(c("miRNA", "Target Gene"))) %>%
+  plyr::rename(c("miRNA" = "feature", "Target Gene" = "target")) %>%
+  unique %>%
+  dplyr::mutate(feature.assay = 'mirna', target.assay = 'mrna', 
+                dataSource = 'mirTarBase')
+
+# Combine miRDB and mirTarBase
+miRNA.mRNA3 <- rbindlist(list(miRNA.mRNA, miRNA.mRNA2)) %>%
+  unique %>%
+  ddply(.(feature, target, feature.assay, target.assay), .fun = function(x){
+    dataSource = paste(unique(x$dataSource), collapse = ',')
+  }, .progress = 'text')
+colnames(miRNA.mRNA3)[5] = 'dataSource'
+```
+#### Get miRNA-methylation mapping from synapse (Lorena version)
+```{r methyl.mirna.mapping}
+# Get miRNA methyl mapping files
+methyl.mirna.id = 'syn4895962'
+ALL_USED_IDs <- c(ALL_USED_IDs, methyl.mirna = methyl.mirna.id)
+methyl.mirna = fread(synGet(methyl.mirna.id)@filePath, data.table=F, header=F)
+
+methyl.mirna <- methyl.mirna %>%  
+  plyr::rename(c("V1" = "feature", "V2" = "target")) %>%
+  unique %>%
+  dplyr::mutate(feature.assay = 'methyl', target.assay = 'mirna', 
+                dataSource = 'Lorena')
+```
+#### Get methylation-mrna mapping
+```{r methyl.mrna.mapping}
+# Get mRNA methyl mapping
+methyl.mrna <- get450KProbeMapping(counts_mat$feature[counts_mat$Assay == 'methyl'])$Annotation %>%  
+  dplyr::select(methProbeIDs, nearestTx) %>%
+  dplyr::rename(feature = methProbeIDs, target = nearestTx) %>%
+  unique %>%
+  dplyr::mutate(feature.assay = 'methyl', target.assay = 'mrna', 
+                dataSource = 'FDb.InfiniumMethylation.hg19')
+```
+#### Get splicing junctions-mrna mapping
+```{r splicing.mrna.mapping}
+# Get splicing junctions mRNA mapping
+ALL_USED_IDs <- c(ALL_USED_IDs, splicing.mrna = 'syn5048714')
+splicing.mrna <- downloadFile('syn5048714') %>%  
+  dplyr::select(one_of(c('Minor-Isoform','Symbol'))) %>%
+  plyr::rename(c('Minor-Isoform' = 'feature', 'Symbol' = 'target')) %>%
+  unique %>%
+  dplyr::mutate(feature.assay = 'spliceJunction', target.assay = 'mrna', 
+                dataSource = 'AltAnalyze')
+```
+
+#### Combine all interactions
+```{r combine}
+allInteractions = rbindlist(list(TFsMapping, miRNA.mRNA3, methyl.mirna, methyl.mrna, splicing.mrna)) %>%
+  unique %>%
+  dplyr::filter(feature %in% counts_mat$feature, target %in% counts_mat$feature)
+
+# Store interactions in synapse
+write.table(allInteractions, file = 'collateAllInteractions.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('collateAllInteractions.tsv', name = 'All Interactions', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+```
+
+### Source Code
+[Source R Markdown](`r ThisFile`)
