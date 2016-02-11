@@ -60,7 +60,7 @@ knitr::opts_chunk$set(
   cache = TRUE)
 ```
 
-```{r synapseStore.params, cache=FALSE}
+```{r synapseStore.params, cache=FALSE, include=FALSE}
 parentId = "syn5194922"
 SYNAPSE_STORE = T  
 ALL_USED_IDs = c()
@@ -83,7 +83,7 @@ CODE <- Folder(name = 'All Interactions', parentId = parentId)
 CODE <- synStore(CODE)
 ```
 
-```{r fxns}
+```{r fxns, include=FALSE}
 downloadFile <- function(id){
   tmp = fread(synGet(id)@filePath, data.table=F, header=T)
 }
@@ -91,7 +91,7 @@ downloadFile <- function(id){
 
 ### Download all features from median counts files in synapse
 #### Download median counts data
-```{r download.counts.data}
+```{r download.counts.data, include=FALSE}
 # Get median counts data
 counts_id = "syn5637772"
 ALL_USED_IDs = c(ALL_USED_IDs, counts = counts_id)
@@ -101,7 +101,7 @@ counts_mat <- downloadFile(counts_id)
 
 ### Download comparison reference and mapping files from synapse
 #### Get TF-DNA mapping from Enrichr genesets
-```{r tf.dna.mapping}
+```{r tf.dna.mapping, include=FALSE}
 # Download TFs from Enrichr genesets
 load(synGet('syn4867851')@filePath)
 ALL_USED_IDs = c(ALL_USED_IDs,geneset = 'syn4867851')
@@ -139,7 +139,7 @@ rm(list= 'GeneSets')
 WGCNA::collectGarbage()
 ```
 #### Get mRNA-miRNA mapping from synapse (miRDB version)
-```{r miRNA.mRNA.mapping}
+```{r miRNA.mRNA.mapping, include=FALSE}
 # Get miRNA mapping files
 miRNA.mRNA.id = 'syn3461627'
 ALL_USED_IDs <- c(ALL_USED_IDs, mirna.mrna.map = miRNA.mRNA.id)
@@ -183,7 +183,7 @@ miRNA.mRNA3 <- rbindlist(list(miRNA.mRNA, miRNA.mRNA2)) %>%
 colnames(miRNA.mRNA3)[5] = 'dataSource'
 ```
 #### Get miRNA-methylation mapping from synapse (Lorena version)
-```{r methyl.mirna.mapping}
+```{r methyl.mirna.mapping, include=FALSE}
 # Get miRNA methyl mapping files
 methyl.mirna.id = 'syn4895962'
 ALL_USED_IDs <- c(ALL_USED_IDs, methyl.mirna = methyl.mirna.id)
@@ -196,7 +196,7 @@ methyl.mirna <- methyl.mirna %>%
                 dataSource = 'Lorena')
 ```
 #### Get methylation-mrna mapping
-```{r methyl.mrna.mapping}
+```{r methyl.mrna.mapping, include=FALSE}
 # Get mRNA methyl mapping
 methyl.mrna <- get450KProbeMapping(counts_mat$feature[counts_mat$Assay == 'methyl'])$Annotation %>%  
   dplyr::select(methProbeIDs, nearestTx) %>%
@@ -206,7 +206,7 @@ methyl.mrna <- get450KProbeMapping(counts_mat$feature[counts_mat$Assay == 'methy
                 dataSource = 'FDb.InfiniumMethylation.hg19')
 ```
 #### Get splicing junctions-mrna mapping
-```{r splicing.mrna.mapping}
+```{r splicing.mrna.mapping, include=FALSE}
 # Get splicing junctions mRNA mapping
 ALL_USED_IDs <- c(ALL_USED_IDs, splicing.mrna = 'syn5048714')
 splicing.mrna <- downloadFile('syn5048714') %>%  
@@ -218,7 +218,7 @@ splicing.mrna <- downloadFile('syn5048714') %>%
 ```
 
 #### Combine all interactions
-```{r combine}
+```{r combine, include=FALSE}
 allInteractions = rbindlist(list(TFsMapping, miRNA.mRNA3, methyl.mirna, methyl.mrna, splicing.mrna)) %>%
   unique %>%
   dplyr::filter(feature %in% counts_mat$feature, target %in% counts_mat$feature)
