@@ -231,9 +231,9 @@ for(comp in names(diffExp)){
 ```{r synapse.store}
 save(list = 'Interactions', file = 'interactions.RData')
 objFile = File('interactions.RData', name = "Interactions (RData list)", parentId = CODE$properties$id)
-objFile = synStore(objFile, used = as.character(ALL_USED_IDs), activityName = ActivityName, executed = thisFile)
+objFile = synStore(objFile, used = as.character(ALL_USED_IDs), activityName = ActivityName, executed = ThisFile)
 
 save(list = c('allEnrichmentResults', 'allEnrichmentPvals'), file = 'allEnrichResults.RData')
 objFile = File('allEnrichResults.RData', name = "Enrichment Results (RData list)", parentId = CODE$properties$id)
-objFile = synStore(objFile, used = as.character(ALL_USED_IDs), activityName = ActivityName, executed = thisFile)
+objFile = synStore(objFile, used = as.character(ALL_USED_IDs), activityName = ActivityName, executed = ThisFile)
 ```
