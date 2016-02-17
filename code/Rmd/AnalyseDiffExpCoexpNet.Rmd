@@ -1,0 +1,236 @@
+---
+title: "Integrated differential expression analysis in conjuction with coexpression at any differentiation states"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'AnalyseDiffExpCoexpNet.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Differential Expression Coexpression Networks')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(plyr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+library(reshape2)
+
+library(matrixStats)
+library(biomaRt)
+
+library(knitr)
+library(knit2synapse)
+library(synapseClient)
+library(rGithubClient) ## Needs the dev branch
+
+synapseLogin()
+
+# Load required files
+source('../R/lib/rownameToFirstColumn.R')
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r synapseStore.params, cache=FALSE}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+# Create folder to store results in synapse
+ActivityName <- 'Analyse differential expression in conjuction with coexpression between assays'
+
+ThisFileName <- 'AnalyseDiffExpCoexpNet.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='diff_exp')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'Differential Expression Coexpression Networks', parentId = parentId)
+CODE <- synStore(CODE)
+```
+
+```{r fxns}
+downloadFile <- function(id){
+  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
+}
+```
+
+#### Download coexpression results
+```{r getCoexp}
+coexp.id = 'syn5662375'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
+coexpression = downloadFile(coexp.id)
+```
+
+### Download differential expression results from synapse
+```{r download.diff.exp}
+diffExp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
+                methyl = 'syn4527629', splicing = 'syn5049321')
+ALL_USED_IDs = c(ALL_USED_IDs, diffExp.ids)
+
+orderedDiffState = c("DE", "EB", "ECTO", "MESO15", "MESO30", "MESO5", "SC")
+Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+diffExp = lapply(diffExp.ids, function(id){
+  x = downloadFile(id) %>%
+    dplyr::filter(adj.P.value <= 0.05) %>%
+    dplyr::select(1,4) 
+  colnames(x)[1] = 'feature'
+  return(x)
+}) %>% 
+  rbindlist %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::select(feature, Comparison) %>%
+  dplyr::filter(Comparison %in% Comparisons) %>%
+  left_join(counts %>% data.table %>% dplyr::select(feature, Assay))
+
+diffExp = split(diffExp, diffExp$Comparison)
+diffExp = lapply(diffExp, function(x){
+  x = split(x,x$Assay)
+})
+```
+
+#### Download all interactions from synapse
+```{r all.interactions}
+ALL_USED_IDs = c(ALL_USED_IDs, all.interactions = 'syn5643683')
+allInteractions = downloadFile('syn5643683') %>%
+  dplyr::mutate(Assay = paste(feature.assay,target.assay,sep = '_'))
+```
+
+#### Coallate counts and metadata
+Combine samples to unique biological sample name (take median values for replicates)
+```{r coallateData}
+counts.metadata = llply(unique(allInteractions$Assay),
+                        .fun = function(assay, Counts, MetaData){
+                          feature.assay = str_split(assay, '\\_')[[1]][1]
+                          target.assay = str_split(assay, '\\_')[[1]][2]
+                          
+                          # Match up biological sample between assays
+                          biosampleInBoth <- intersect(MetaData[[feature.assay]]$biologicalSampleName, 
+                                                       MetaData[[target.assay]]$biologicalSampleName)
+                          # Filter metadata
+                          feature.metadata <- MetaData[[feature.assay]] %>%
+                            filter(biologicalSampleName %in% biosampleInBoth)
+                          
+                          target.metadata <- MetaData[[target.assay]] %>%
+                            filter(biologicalSampleName %in% biosampleInBoth)
+                          
+                          # Take the median across multiple biological samples per feature
+                          feature.median <- Counts[[feature.assay]] %>%
+                            rownameToFirstColumn('feature') %>%
+                            dplyr::select(feature, one_of(feature.metadata$UID)) %>%
+                            melt %>%
+                            dplyr::rename(UID = variable, expression = value) %>%
+                            left_join(feature.metadata %>% dplyr::select(UID, biologicalSampleName)) %>%
+                            group_by(feature, biologicalSampleName) %>% 
+                            summarize(median_expression=median(expression)) %>% 
+                            dcast(feature ~ biologicalSampleName)
+                          
+                          rownames(feature.median) = feature.median$feature
+                          feature.median$feature = NULL
+                          
+                          target.median <- Counts[[target.assay]] %>%
+                            rownameToFirstColumn('feature') %>%
+                            dplyr::select(feature, one_of(target.metadata$UID)) %>%
+                            melt %>%
+                            dplyr::rename(UID = variable, expression = value) %>%
+                            left_join(target.metadata %>% dplyr::select(UID, biologicalSampleName)) %>%
+                            group_by(feature, biologicalSampleName) %>% 
+                            summarize(median_expression=median(expression)) %>% 
+                            dcast(feature ~ biologicalSampleName)
+                          
+                          rownames(target.median) = target.median$feature
+                          target.median$feature = NULL
+                          
+                          # Get unique metadata
+                          unique.metadata <- feature.metadata %>%
+                            dplyr::select(biologicalSampleName, Diffname_short, Originating_Lab, Cell_Type,
+                                          Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin,
+                                          Reprogramming_Gene_Combination, Culture_Conditions,
+                                          Cell_Type_of_Origin_Level2, Reprogramming_Vector_Type_Level2) %>%
+                            dplyr::filter(biologicalSampleName %in% biosampleInBoth) %>%
+                            dplyr::mutate(Diffname_short = gsub('-','',Diffname_short)) %>% 
+                            unique
+                          
+                          feature.median = feature.median[,unique.metadata$biologicalSampleName]
+                          target.median = target.median[,unique.metadata$biologicalSampleName]
+                          
+                          return(list(metdata = unique.metadata, 
+                                      feature = feature.median, 
+                                      target = target.median))
+                        },
+                        counts, metadata,
+                        .progress = 'text',
+                        .parallel = T)
+names(counts.metadata) = unique(allInteractions$Assay)
+```
+
+#### Calculate co-expression in all five different categories of interactions at any 2 diffstate
+```{r combine.samples}
+correlation = ddply(allInteractions, 
+                    .(feature, target, feature.assay, target.assay, dataSource, Assay), 
+                    .fun = function(interaction, Counts.Metadata){
+                      assay = interaction$Assay
+                      feature.assay = unique(interaction$feature.assay)
+                      target.assay = unique(interaction$target.assay)
+                      
+                      # Extract feature median value
+                      feature.median = Counts.Metadata[[assay]]$feature[interaction$feature,]
+                      
+                      # Extract target median value
+                      target.median = Counts.Metadata[[assay]]$target[interaction$target,]
+                      
+                      # Extract metadata
+                      unique.metadata = Counts.Metadata[[assay]]$metdata
+                      
+                      # Combine metadata for all combinations of any 2 diffstate
+                      all.combination = combn(sort(unique(unique.metadata$Diffname_short)),2)
+                      
+                      # Calculate co-expression
+                      correlation = apply(all.combination, 2, function(x){
+                        calculateCor(unique.metadata %>% dplyr::filter(Diffname_short %in% x),
+                                     feature.median, target.median, interaction)
+                      }) %>% as.data.frame %>% t
+                      colnames(correlation) = apply(all.combination,2,paste, collapse = '_vs_')
+                      
+                      return(correlation)
+                    }, counts.metadata,
+                    .progress = 'text',
+                    .parallel = T)
+```
+
+```{r synapse.store}
+# Store metadata in synapse
+write.table(correlation, file = 'correlationDiffComparison.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('correlationDiffComparison.tsv', name = 'Correaltion coefficients', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+```
+
+### Source Code
+[Source R Markdown](`r ThisFile`)
