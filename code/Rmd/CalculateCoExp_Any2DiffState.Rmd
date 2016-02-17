@@ -37,7 +37,13 @@ library(knit2synapse)
 library(synapseClient)
 library(rGithubClient) ## Needs the dev branch
 
+library(doParallel)
+registerDoParallel(40)
+
 synapseLogin()
+
+# Load required files
+source('../R/lib/rownameToFirstColumn.R')
 
 options(xtable.type="html")
 
@@ -120,7 +126,6 @@ rownames(PSI) = PSI$`Minor-Isoform`
 PSI = PSI[,-c(1,227:236)]
 
 counts = c(counts, list(spliceJunction = data.matrix(PSI)))
-counts = lapply(counts, function(x){x = x[1:100,]})
 ```
 #### Get metadata matrices
 ```{r download.metadata}
@@ -164,8 +169,6 @@ allInteractions = downloadFile('syn5643683') %>%
 #### Coallate counts and metadata
 Combine samples to unique biological sample name (take median values for replicates)
 ```{r coallateData}
-library(doParallel)
-registerDoParallel(2)
 counts.metadata = llply(unique(allInteractions$Assay),
                         .fun = function(assay, Counts, MetaData){
                           feature.assay = str_split(assay, '\\_')[[1]][1]
@@ -233,7 +236,7 @@ names(counts.metadata) = unique(allInteractions$Assay)
 
 #### Calculate co-expression in all five different categories of interactions at any 2 diffstate
 ```{r combine.samples}
-correlation = ddply(allInteractions[1:100,], 
+correlation = ddply(allInteractions, 
             .(feature, target, feature.assay, target.assay, dataSource, Assay), 
             .fun = function(interaction, Counts.Metadata){
               assay = interaction$Assay
