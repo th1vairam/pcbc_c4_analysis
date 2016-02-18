@@ -1,0 +1,239 @@
+---
+title: "Fishers enrichment analysis of gene sets for differential expression (all 4 assays) with literature mapping"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse}
+library(synapseClient)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'EnrichDiffExpNets.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Ranking Differentially Expressed Entities')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(plyr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+library(reshape2)
+
+library(biomaRt)
+library(tools)
+
+library(synapseClient)
+library(knit2synapse)
+library(rGithubClient) ## Needs the dev branch
+library(knitr)
+
+synapseLogin()
+
+# source utility files from ../R/lib folder
+file.sources = list.files('../R/lib',pattern="*.R", full.names = T)
+tmp = sapply(file.sources,source,.GlobalEnv)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = FALSE)
+```
+#### Synapse specific parameters
+```{r synapse.params}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+ActivityName <- 'Rank importance of differentially expressed molecular entities'
+
+ThisFileName <- 'EnrichDiffExpNets.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='diff_exp')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'Ranking Differentially Expressed Entities',parentId = parentId)
+CODE <- synStore(CODE)
+```
+
+#### Block of all utility functions
+```{r fxns}
+## Function to download files from synapse
+downloadFile <- function(id){
+  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
+}
+
+## Fishers enrichment analysis
+fisherEnrichment <- function(genesInSignificantSet, # A character vector of differentially expressed or some significant genes to test
+                             genesInGeneSet, # A character vector of genes in gene set like GO annotations, pathways etc...
+                             genesInBackground # Background genes that are 
+                             ){
+  genesInSignificantSet = intersect(genesInSignificantSet, genesInBackground) # back ground filtering
+  genesInNonSignificantSet = base::setdiff(genesInBackground, genesInSignificantSet)
+  genesInGeneSet = intersect(genesInGeneSet, genesInBackground) # back ground filtering
+  genesOutGeneSet = base::setdiff(genesInBackground,genesInGeneSet)
+  
+  pval = fisher.test(
+    matrix(c(length(intersect(genesInGeneSet, genesInSignificantSet)),             
+             length(intersect(genesInGeneSet, genesInNonSignificantSet)),
+             length(intersect(genesOutGeneSet, genesInSignificantSet)),
+             length(intersect(genesOutGeneSet, genesInNonSignificantSet))), 
+           nrow=2, ncol=2),
+    alternative="greater")
+  
+  OR = (length(intersect(genesInGeneSet, genesInSignificantSet)) * length(intersect(genesOutGeneSet, genesInNonSignificantSet))) / (length(intersect(genesInGeneSet, genesInNonSignificantSet)) * length(intersect(genesOutGeneSet, genesInSignificantSet)))
+  return(data.frame(pval = pval$p.value,
+                    ngenes = length(genesInGeneSet),
+                    noverlap = length(intersect(genesInGeneSet, genesInSignificantSet)),
+                    OR = OR))
+  }
+
+## Utility function for combining p-values using Fishers inverse chi-square method
+fishersBrownsPvalue <- function(pvalue){
+  pvalue = -2*log(pvalue, base = exp(1))
+  S <- 0
+  N <- dim(pvalue)[2]
+
+  correlation <- WGCNA::bicor(pvalue,use = 'pairwise.complete.obs');
+
+  for (i in 1:(N-1))
+    for (j in (i+1):N){
+      if (correlation[i,j] > 0){
+        S <- S + correlation[i,j]*(3.25+0.75*correlation[i,j])
+      } else if (correlation[i,j] <= 0){
+        S <- S + correlation[i,j]*(3.27+0.71*correlation[i,j])
+      }
+    }
+
+  combinedPvalue.chi <- rowSums(pvalue)*(4*N)/(4*N+2*S)
+  combinedPvalue <- sapply(combinedPvalue.chi, function(x,N){
+    pchisq(x, df = 2*N, lower.tail = FALSE)
+  },N)
+  names(combinedPvalue) = rownames(pvalue)
+
+  return(combinedPvalue)
+}
+```
+### Download median counts from synapse
+```{r download.median.counts}
+counts.ids = 'syn5637772'
+ALL_USED_IDs = c(ALL_USED_IDs, counts = counts.ids)
+
+counts = downloadFile(counts.ids)
+```
+### Download differential expression results from synapse
+```{r download.diff.exp}
+diffExp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
+                methyl = 'syn4527629', splicing = 'syn5049321')
+ALL_USED_IDs = c(ALL_USED_IDs, diffExp.ids)
+
+orderedDiffState = c("DE", "EB", "ECTO", "MESO15", "MESO30", "MESO5", "SC")
+Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+diffExp = lapply(diffExp.ids, function(id){
+  x = downloadFile(id) %>%
+    dplyr::filter(adj.P.value <= 0.05) %>%
+    dplyr::select(1,4) 
+  colnames(x)[1] = 'feature'
+  return(x)
+}) %>% 
+  rbindlist %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::select(feature, Comparison) %>%
+  dplyr::filter(Comparison %in% Comparisons) %>%
+  left_join(counts %>% data.table %>% dplyr::select(feature, Assay))
+
+diffExp = split(diffExp, diffExp$Comparison)
+diffExp = lapply(diffExp, function(x){
+  x = split(x,x$Assay)
+})
+```
+
+### Download interactions genelist from synapse
+```{r download.interactions}
+int.ids = 'syn5637774'
+ALL_USED_IDs = c(ALL_USED_IDs, interactions = int.ids)
+
+# Load interactions from synapse
+load(synGet(int.ids)@filePath)
+
+# Split genesets to different interactions
+names(newInteractions) = gsub('TF_mrna','mrna_mrna', names(newInteractions))
+int.assays = c("mrna_mrna", "mirna_mrna", "methyl_mirna", "methyl_mrna", "splicing_mrna") 
+interactions = lapply(int.assays, function(x, allInteractions){
+  ind = grep(x, names(allInteractions))
+  y = allInteractions[ind]
+  names(y) = gsub(paste0(x,'.'),'',names(y))
+  return(y)
+}, newInteractions)
+names(interactions) = int.assays
+```
+Perform enrichment analysis
+```{r enrich}
+allEnrichmentResults = list()
+allEnrichmentPvals = list()
+for(comp in names(diffExp)){
+  allEnrichmentResults[[comp]] = list()
+  for (int.assay in names(interactions)){
+    tmp.features = data.frame(feature = names(interactions[[int.assay]])) %>%
+      left_join(counts %>% data.table %>% dplyr::select(feature, Assay))
+    unqAssays = str_split(int.assay,'_')[[1]]
+    enrichmentResults = apply(tmp.features, 1, function(x, Interactions, Counts){
+      genesInGeneSet = Interactions[[x[1]]][[1]]
+      if (sum(unqAssays %in% x[2]) == 2){
+        genesInSignificantSet = diffExp[[comp]][['mrna']]$feature
+        genesInBackground = Counts$feature[Counts$Assay == 'mrna']
+      } else {
+        genesInSignificantSet = diffExp[[comp]][[setdiff(unqAssays, x[2])]]$feature
+        genesInBackground = Counts$feature[Counts$Assay == setdiff(unqAssays, x[2])]
+      }
+      cbind(t(x), fisherEnrichment(genesInSignificantSet, 
+                                genesInGeneSet, 
+                                genesInBackground))
+    }, interactions[[int.assay]], counts)
+    enrichmentResults = rbindlist(enrichmentResults)
+    colnames(enrichmentResults)[-(1:2)] = paste(colnames(enrichmentResults)[-(1:2)], int.assay, sep = '.')
+    allEnrichmentResults[[comp]][[int.assay]] = enrichmentResults
+    writeLines(paste('Completed',int.assay))
+ }
+ allEnrichmentResults[[comp]] = join_all(allEnrichmentResults[[comp]], type = "full")
+ tmp = allEnrichmentResults[[comp]][,c(1,2,grep('pval',colnames(allEnrichmentResults[[comp]])))]
+ tmp[is.na(tmp)] = 1
+ ind = which(colSums(tmp == 1) == dim(tmp)[1])
+ tmp = mutate(tmp, fisher.browns.P = fishersPvalue(tmp[,-c(1:2,ind)]),
+              fdr = p.adjust(fisher.browns.P, method = 'fdr'))
+ allEnrichmentPvals[[comp]] = tmp  
+ gc()
+ writeLines(paste('Completed',comp))
+}
+```
+
+#### Store results in synapse
+```{r synapse.store}
+save(list = 'Interactions', file = 'interactions.RData')
+objFile = File('interactions.RData', name = "Interactions (RData list)", parentId = CODE$properties$id)
+objFile = synStore(objFile, used = as.character(ALL_USED_IDs), activityName = ActivityName, executed = ThisFile)
+
+save(list = c('allEnrichmentResults', 'allEnrichmentPvals'), file = 'allEnrichResults.RData')
+objFile = File('allEnrichResults.RData', name = "Enrichment Results (RData list)", parentId = CODE$properties$id)
+objFile = synStore(objFile, used = as.character(ALL_USED_IDs), activityName = ActivityName, executed = ThisFile)
+```
