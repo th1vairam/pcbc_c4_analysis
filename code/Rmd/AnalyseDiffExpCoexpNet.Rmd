@@ -1,0 +1,245 @@
+---
+title: "Integrated differential expression analysis in conjuction with coexpression at any differentiation states"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'AnalyseDiffExpCoexpNet.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Differential Expression Coexpression Networks')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(plyr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+library(reshape2)
+
+library(matrixStats)
+library(biomaRt)
+
+library(knitr)
+library(knit2synapse)
+library(synapseClient)
+library(rGithubClient) ## Needs the dev branch
+
+synapseLogin()
+
+# Load required files
+source('../R/lib/rownameToFirstColumn.R')
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r synapseStore.params, cache=FALSE}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+# Create folder to store results in synapse
+ActivityName <- 'Analyse differential expression in conjuction with coexpression between assays'
+
+ThisFileName <- 'AnalyseDiffExpCoexpNet.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='diff_exp')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'Differential Expression Coexpression Networks', parentId = parentId)
+CODE <- synStore(CODE)
+```
+
+```{r fxns}
+downloadFile <- function(id){
+  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
+}
+```
+
+#### Get median counts results
+```{r getMedianCount}
+counts.id = 'syn5637772'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp = counts.id)
+counts = downloadFile(counts.id)
+```
+
+#### Get coexpression results
+```{r getCoexp}
+coexp.id = 'syn5662375'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
+coexpression = downloadFile(coexp.id)
+```
+
+#### Get all interactions from synapse
+```{r all.interactions}
+ALL_USED_IDs = c(ALL_USED_IDs, all.interactions = 'syn5643683')
+allInteractions = downloadFile('syn5643683') %>%
+  dplyr::mutate(Assay = paste(feature.assay,target.assay,sep = '_'))
+```
+
+### Get differential expression results from synapse
+```{r download.diff.exp}
+diffexp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
+                methyl = 'syn4527629', splicing = 'syn5049321')
+ALL_USED_IDs = c(ALL_USED_IDs, diffexp.ids)
+
+orderedDiffState = c("DE", "EB", "ECTO", "MESO15", "MESO30", "MESO5", "SC")
+Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+diffexp = lapply(diffexp.ids, function(id){
+  x = downloadFile(id) %>%
+    dplyr::select(-one_of('feature'))
+  colnames(x)[1] = 'feature'
+  x = x %>%
+    dplyr::filter(adj.P.value <= 0.05) %>%
+    tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+    dplyr::select(feature, Comparison, adj.P.value, logFC) 
+}) %>% 
+  rbindlist(idcol = 'Assay') 
+
+# Split differential expression results based on comparison
+diffexp = split(diffexp, diffexp$Comparison)
+diffexp = diffexp[Comparisons]
+```
+
+#### Get network enrichment results from synapse
+```{r netEnrich}
+net.enrich.id = 'syn5652878'
+ALL_USED_IDs = c(ALL_USED_IDs, net.enrich = net.enrich.id)
+load(synGet(net.enrich.id)@filePath)
+```
+
+#### Filter co-expression results (abs(r) >= 0.8 and fdr <= 0.05)
+```{r filterCoExp}
+filtered.coexpression = lapply(names(diffexp), function(comp, diffExp, coExp){
+  diffExp = diffExp[[comp]] %>%
+    dplyr::filter(adj.P.value <= 0.05)
+  coExp = dplyr::select(coExp, one_of(c("feature", "target", "feature.assay",
+                                        "target.assay", "dataSource", "Assay",comp))) %>%
+    setnames(comp, 'coexpression') %>%
+    dplyr::filter(feature %in% diffExp$feature, target %in% diffExp$feature,
+                  abs(coexpression) >= 0.8) %>%
+    dplyr::arrange(desc(abs(coexpression)))
+  
+  ind = which(coExp$Assay == "mirna_mrna" & coExp$coexpression >= 0)
+  coExp = coExp[-(ind),]
+}, diffexp, coexpression)
+names(filtered.coexpression) = names(diffexp)
+```
+
+#### Convert edgelist to graphs
+```{r convertGraph}
+# Convert edgelist to graphs
+allGraphs = lapply(filtered.coexpression, function(coExp){
+  g = graph_from_edgelist(dplyr::select(coExp, feature, target) %>% sapply(as.character) %>% as.matrix,
+                          directed = T)
+  E(g)$weight = abs(coExp$coexpression)
+  return(g)
+})
+```
+
+#### Extract sub-graphs
+```{r extractSubGraph}
+# Convert edgelist to graphs
+subGraphs = lapply(allGraphs, function(g){
+  indegree = degree(g, mode = "in")
+  outdegree = degree(g, mode = "out")
+  ind.remove = which((indegree != 0 & outdegree == 0) | (indegree == 0 & outdegree != 0) )
+  while(length(ind.remove) != 0){
+    g = induced_subgraph(g, -ind.remove)
+    indegree = degree(g, mode = "in")
+    outdegree = degree(g, mode = "out")
+    ind.remove = which((indegree != 0 & outdegree == 0) | (indegree == 0 & outdegree != 0) )
+  }
+  return(g)
+})
+```
+
+#### Calculate node degree
+```{r calculateDegree}
+# Calculate total degree and betweeness
+nodeDegree = lapply(allGraphs, function(g, Counts){
+  totalStrength = igraph::strength(g)
+  totalDegree = igraph::degree(g)
+  betweennessDegree = igraph::betweenness(g)
+  all.degree = data.frame(feature = names(totalStrength),
+                          totalStrength = totalStrength) %>%
+    full_join(data.frame(feature = names(totalDegree),
+                         totalDegree = totalDegree)) %>%
+    full_join(data.frame(feature = names(betweennessDegree),
+                        betweennessDegree = betweennessDegree)) %>%
+    left_join(dplyr::select(Counts, feature, Assay))
+  all.degree$rank = sapply(all.degree[,-c(1,5)], rank) %>% 
+    rowSums %>% 
+    rank
+  all.degree = arrange(all.degree, desc(rank))
+  return(all.degree)
+}, counts)
+```
+
+```{r combinedRanking}
+combn.rank = mapply(function(deg, enrich, diffExp){
+  all = left_join(deg, enrich) %>%
+    left_join(diffExp) %>%
+    dplyr::select(feature, Assay, totalStrength, totalDegree, betweennessDegree, adj.P.value, logFC,
+                  contains('pval.'), contains('OR.'))
+  ind  = grep('pval.',colnames(all))
+  all[,ind] = -log10(all[,ind])
+  all = split(all, all$Assay)
+  tmp1 = lapply(all, function(x){
+    ind = c(3:7,grep(unique(x$Assay), colnames(x)))
+    x1 = dplyr::select(x, feature, Assay) %>%
+      dplyr::mutate(comb.rank = sapply(x[,ind], rank) %>% rowSums %>% rank)
+  })
+}, nodeDegree, allEnrichmentResults, diffexp, SIMPLIFY = F)
+
+# Get top 5 of all
+tmp = lapply(combn.rank, function(x){
+  x = lapply(x, function(y){
+    y = y[order(y$comb.rank, decreasing = T),]
+    y = y[1:5,]
+  }) %>% rbindlist
+}) %>% rbindlist(idcol = 'Comparison')
+
+tmp = lapply(nodeDegree, function(x){
+  x = x[order(x$rank, decreasing = T),]
+  x = x[1:5,]
+}) %>% rbindlist(idcol = 'Comparison')
+
+```
+
+
+```{r synapse.store}
+# Store metadata in synapse
+write.table(correlation, file = 'correlationDiffComparison.tsv', sep = '\t', quote=F, row.names=F)
+obj = File('correlationDiffComparison.tsv', name = 'Correaltion coefficients', parentId = CODE$properties$id)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+```
+
+### Source Code
+[Source R Markdown](`r ThisFile`)
