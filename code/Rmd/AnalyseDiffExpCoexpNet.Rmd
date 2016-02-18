@@ -104,9 +104,10 @@ allInteractions = downloadFile('syn5643683') %>%
 
 ### Get differential expression results from synapse
 ```{r download.diff.exp}
-diffexp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
+### Download differential expression results from synapse
+diffExp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
                 methyl = 'syn4527629', splicing = 'syn5049321')
-ALL_USED_IDs = c(ALL_USED_IDs, diffexp.ids)
+ALL_USED_IDs = c(ALL_USED_IDs, diffExp.ids)
 
 orderedDiffState = c("DE", "EB", "ECTO", "MESO15", "MESO30", "MESO5", "SC")
 Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
@@ -232,7 +233,6 @@ tmp = lapply(nodeDegree, function(x){
 }) %>% rbindlist(idcol = 'Comparison')
 
 ```
-
 
 ```{r synapse.store}
 # Store metadata in synapse
