@@ -165,6 +165,24 @@ metadata = mapply(function(Counts, MetaData){
 ALL_USED_IDs = c(ALL_USED_IDs, all.interactions = 'syn5643683')
 allInteractions = downloadFile('syn5643683') %>%
   dplyr::mutate(Assay = paste(feature.assay,target.assay,sep = '_'))
+
+# Get all possible interactions (that are meaningful)
+mrna.mrna = combn(rownames(counts$mrna), 2) %>% t %>% 
+  data.frame %>% setnames(c('X1','X2'), c('feature', 'target')) %>%
+  dplyr::mutate(Assay = "mrna_mrna", feature.assay = "mrna", target.assay = "mrna", dataSource = "all")
+mirna.mrna = expand.grid(rownames(counts$mirna), rownames(counts$mrna)) %>%
+  setnames(c('Var1','Var2'), c('feature', 'target')) %>%
+  dplyr::mutate(Assay = "mirna_mrna", feature.assay = "mirna", target.assay = "mrna", dataSource = "all")
+methyl.mrna = expand.grid(rownames(counts$methyl), rownames(counts$mrna)) %>%
+  setnames(c('Var1','Var2'), c('feature', 'target')) %>%
+  dplyr::mutate(Assay = "methyl_mrna", feature.assay = "methyl", target.assay = "mrna", dataSource = "all")
+methyl.mirna = expand.grid(rownames(counts$methyl), rownames(counts$mirna)) %>%
+  setnames(c('Var1','Var2'), c('feature', 'target')) %>%
+  dplyr::mutate(Assay = "methyl_mirna", feature.assay = "methyl", target.assay = "mirna", dataSource = "all")
+mrna.splicing = expand.grid(rownames(counts$methyl), rownames(counts$mirna)) %>%
+  setnames(c('Var1','Var2'), c('feature', 'target')) %>%
+  dplyr::mutate(Assay = "methyl_mirna", feature.assay = "methyl", target.assay = "mirna", dataSource = "all")
+
 ```
 
 #### Coallate counts and metadata
