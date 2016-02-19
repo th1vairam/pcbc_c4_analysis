@@ -213,13 +213,25 @@ splicing.mrna <- downloadFile('syn5048714') %>%
   dplyr::select(one_of(c('Minor-Isoform','Symbol'))) %>%
   plyr::rename(c('Minor-Isoform' = 'feature', 'Symbol' = 'target')) %>%
   unique %>%
-  dplyr::mutate(feature.assay = 'spliceJunction', target.assay = 'mrna', 
+  dplyr::mutate(feature.assay = 'splicing', target.assay = 'mrna', 
                 dataSource = 'AltAnalyze')
+```
+#### Get mrna-splicing junctions mapping
+```{r mrna.splicing.mapping, include=FALSE}
+# Get splicing factors and junctions mapping
+ALL_USED_IDs <- c(ALL_USED_IDs, mrna.splicing = 'syn5669248')
+spliceFactors <- fread(synGet('syn5669248')@filePath, data.table = F, header=F) %>% unlist
+spliceJunctions <- splicing.mrna$feature %>% unique
+mrna.splicing <- expand.grid(as.character(spliceFactors), as.character(spliceJunctions)) %>%  
+  plyr::rename(c('Var1' = 'feature', 'Var2' = 'target')) %>%
+  unique %>%
+  dplyr::mutate(feature.assay = 'mrna', target.assay = 'splicing', 
+                dataSource = 'Nathan')
 ```
 
 #### Combine all interactions
 ```{r combine, include=FALSE}
-allInteractions = rbindlist(list(TFsMapping, miRNA.mRNA3, methyl.mirna, methyl.mrna, splicing.mrna)) %>%
+allInteractions = rbindlist(list(TFsMapping, miRNA.mRNA3, methyl.mirna, methyl.mrna, splicing.mrna, mrna.splicing)) %>%
   unique %>%
   dplyr::filter(feature %in% counts_mat$feature, target %in% counts_mat$feature)
 
