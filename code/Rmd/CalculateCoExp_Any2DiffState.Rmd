@@ -38,7 +38,7 @@ library(synapseClient)
 library(rGithubClient) ## Needs the dev branch
 
 library(doParallel)
-registerDoParallel(40)
+registerDoParallel(38)
 
 synapseLogin()
 
@@ -271,7 +271,7 @@ correlation = ddply(allInteractions,
 ```{r synapse.store}
 # Store metadata in synapse
 write.table(correlation, file = 'correlationDiffComparison.tsv', sep = '\t', quote=F, row.names=F)
-obj = File('correlationDiffComparison.tsv', name = 'Correaltion coefficients', parentId = CODE$properties$id)
+obj = File('correlationDiffComparison.tsv', name = 'Correlation coefficients', parentId = CODE$properties$id)
 obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 ```
 
