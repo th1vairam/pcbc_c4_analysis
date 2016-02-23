@@ -1,0 +1,239 @@
+---
+title: "Integrated differential expression analysis in conjuction with coexpression at any differentiation states"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'EmbryoGensisAnalysis.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Regulation of Embryogensis')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(plyr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+library(reshape2)
+
+library(matrixStats)
+library(biomaRt)
+
+library(knitr)
+library(knit2synapse)
+library(synapseClient)
+library(rGithubClient) ## Needs the dev branch
+
+synapseLogin()
+
+# Load required files
+source('../R/lib/rownameToFirstColumn.R')
+source('../R/lib/multiplot.R')
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r synapseStore.params, cache=FALSE, include=FALSE}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+# Create folder to store results in synapse
+ActivityName <- 'Analyse differential expression in conjuction with coexpression between assays'
+
+ThisFileName <- 'EmbryoGensisAnalysis.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='diff_exp')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'Regulation of Embryogensis', parentId = parentId)
+CODE <- synStore(CODE)
+```
+
+```{r fxns, include=FALSE}
+downloadFile <- function(id){
+  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
+}
+```
+
+#### Get embryogensis related gene list from synapse
+```{r all.interactions, include=FALSE}
+ALL_USED_IDs = c(ALL_USED_IDs, embryo = 'syn5680904')
+embryoGL = read.table(synGet('syn5680904')@filePath, header=F, sep = '\n') %>%
+  unique
+```
+
+#### Get all interactions from synapse
+```{r all.interactions, include=FALSE}
+ALL_USED_IDs = c(ALL_USED_IDs, all.interactions = 'syn5643683')
+allInteractions = downloadFile('syn5643683') %>%
+  dplyr::mutate(Assay = paste(feature.assay,target.assay,sep = '_'))
+```
+
+#### Get TFs list from synapse
+```{r getTFs, include=FALSE}
+ALL_USED_IDs = c(ALL_USED_IDs, TFdb = 'syn5672453')
+
+# Get TF checkpoints db from synapse
+TFs = read.table(synGet('syn5672453')@filePath, header=T, sep= '\t', fill = TRUE) %>%
+  dplyr::filter(entrez_human != 0) %>%
+  dplyr::select(entrez_human) %>%
+  setnames('entrez_human','entrezgene') %>%
+  dplyr::mutate(Assay = 'TF')
+
+# Get human related mapping
+Hs = useMart("ENSEMBL_MART_ENSEMBL", host="www.ensembl.org") # use this one when biomart.org is down
+Hs = useDataset("hsapiens_gene_ensembl", Hs)
+human_entrz2symbol = getBM(attributes = c("entrezgene","hgnc_symbol"),
+                          filters = "entrezgene",                         
+                          values = unique(TFs$entrezgene),
+                          mart = Hs)
+
+# Convert entrex gene ids to gene symbols
+TFs = left_join(TFs, human_entrz2symbol) %>%
+  dplyr::select(hgnc_symbol, Assay) %>%
+  setnames('hgnc_symbol','feature') %>%
+  unique
+
+# Combine the ones from TF mapping of Enrichr
+TFs = rbind(TFs,
+            dplyr::filter(allInteractions, Assay == "mrna_mrna") %>%
+              dplyr::select(feature) %>%  unique %>%
+              dplyr::mutate(Assay = 'TF')) %>%
+  unique
+```
+
+#### Get median counts from synapse
+```{r getMedianCount, include=FALSE}
+counts.id = 'syn5637772'
+ALL_USED_IDs = c(ALL_USED_IDs, counts = counts.id)
+counts = downloadFile(counts.id)
+counts$Assay[counts$feature %in% TFs$feature] = 'TF'
+gc()
+```
+
+#### Get differential expression from synapse
+```{r download.diff.exp, include=FALSE}
+### Download differential expression results from synapse
+diffexp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
+                methyl = 'syn4527629', splicing = 'syn5049321')
+ALL_USED_IDs = c(ALL_USED_IDs, diffexp.ids)
+
+orderedDiffState = c("DE", "EB", "ECTO", "MESO15", "MESO30", "MESO5", "SC")
+Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+diffexp = lapply(diffexp.ids, function(id){
+  x = downloadFile(id) %>%
+    dplyr::select(-one_of('feature'))
+  colnames(x)[1] = 'feature'
+  x = x %>%
+    dplyr::filter(adj.P.value <= 0.05) %>%
+    tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+    dplyr::select(feature, Comparison, adj.P.value, logFC) 
+}) %>% 
+  rbindlist(idcol = 'Assay') 
+diffexp$Assay[diffexp$feature %in% TFs$feature] = 'TF'
+
+# Split differential expression results based on comparison
+diffexp = split(diffexp, diffexp$Comparison)
+diffexp = diffexp[Comparisons]
+```
+
+#### Get coexpression from synapse
+```{r getCoexp, cache=FALSE, include=FALSE}
+coexp.id = 'syn5662375'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
+coexpression = downloadFile(coexp.id)
+
+ind = which(coexpression$feature %in% TFs$feature)
+coexpression$feature.assay[ind] = 'TF'
+coexpression$Assay[ind] = 'TF_mrna'
+```
+
+#### Analyse differential expression of genes in embryogensis
+```{r relativeControl1, include=FALSE}
+relative.control = lapply(names(diffexp), function(comp, diffExp, coExp){
+  DE = diffExp[[comp]] %>%
+    dplyr::filter(Assay %in% c('mrna', 'TF') & abs(logFC) >= 1.5) 
+  CE = dplyr::select(coExp, feature, target, Assay, one_of(comp)) %>%
+    setnames(comp, 'correlation') %>% as.data.table %>%
+    filter(abs(correlation) >= 0.8 & feature %in% diffExp[[comp]]$feature & target %in% DE$feature) %>%
+    dplyr::rename(regulator = feature, feature = target, intAssay = Assay) %>%
+    right_join(DE)
+  return(CE)
+}, diffexp, coexpression) %>% 
+  rbindlist
+    
+# Write to synapse
+write.table(relative.control, file = 'EmbryogensisRelativeControl.tsv', sep = '\t', row.names=F, quote=F)
+obj = File('EmbryogensisRelativeControl.tsv', name = 'Embryogensis Relative Control', parentId = CODE$properties$id)
+obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
+  
+# Summarise results
+emb = relative.control %>% 
+  dplyr::filter(feature %in% embryoGL$V1) %>%
+  group_by(Comparison, feature, intAssay) %>% 
+  summarise(n.regulators = length(unique(regulator))) %>% 
+  group_by(feature, intAssay) %>% 
+  summarise(Comparison = paste(Comparison, collapse = ','), n.regulators = paste(n.regulators, collapse = ','))
+
+# Write to synapse
+write.table(emb, file = 'EmbryogensisRelativeControlSummary.tsv', sep = '\t', row.names=F, quote=F)
+obj = File('EmbryogensisRelativeControlSummary.tsv', name = 'Embryogensis Relative Control Summary', parentId = CODE$properties$id)
+obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
+```
+
+```{r relativeControl2, results='asis', fig.height = 10, fig.width = 18}
+emb = relative.control %>% 
+  dplyr::filter(feature %in% embryoGL$V1) %>%
+  group_by(Comparison, intAssay) %>%
+  summarise(count = length(unique(feature))) %>%
+  dcast(Comparison ~ intAssay)
+
+orderedDiffState = c('SC','DE','MESO5','ECTO','MESO15','MESO30','EB')
+
+p = lapply(orderedDiffState, function(diffState, emb){
+  tmp = emb[grep(diffState, emb$Comparison),]
+  tmp$Comparison = gsub(diffState, '', tmp$Comparison) %>% gsub('_vs_','',.)
+  colnames(tmp) = gsub('_mrna','',colnames(tmp))
+  tmp[is.na(tmp)] = 0
+  tmp = tmp %>% tidyr::gather(Control, N.genes, -Comparison) %>%
+    dplyr::mutate(Comparison = factor(Comparison, levels = orderedDiffState)) %>%
+    dplyr::rename(DiffState = Comparison)
+  p = ggplot(tmp, aes(x = DiffState, y = N.genes))
+  p = p + geom_bar(aes(fill = Control), stat = 'identity') + ggtitle(diffState) 
+  p = p + theme(axis.text.x = element_text(angle=90))
+}, emb)
+writeLines(paste('At a FDR 0.05, absolute coexpression >= 0.8 and absolute logFC for mrna >= 1.5'))
+multiplot(plotlist = p, cols = 4)
+writeLines(paste('Total number of genes present in the embryogenesis gene sets are', length(embryoGL$V1)))
+```
+
+### Source Code
+[Source R Markdown](`r ThisFile`)
