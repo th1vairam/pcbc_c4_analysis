@@ -41,6 +41,7 @@ synapseLogin()
 
 # Load required files
 source('../R/lib/rownameToFirstColumn.R')
+source('../R/lib/multiplot.R')
 
 options(xtable.type="html")
 
@@ -81,20 +82,6 @@ downloadFile <- function(id){
 }
 ```
 
-#### Get median counts results
-```{r getMedianCount}
-counts.id = 'syn5637772'
-ALL_USED_IDs = c(ALL_USED_IDs, coexp = counts.id)
-counts = downloadFile(counts.id)
-```
-
-#### Get coexpression results
-```{r getCoexp}
-coexp.id = 'syn5662375'
-ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
-coexpression = downloadFile(coexp.id)
-```
-
 #### Get all interactions from synapse
 ```{r all.interactions}
 ALL_USED_IDs = c(ALL_USED_IDs, all.interactions = 'syn5643683')
@@ -102,12 +89,54 @@ allInteractions = downloadFile('syn5643683') %>%
   dplyr::mutate(Assay = paste(feature.assay,target.assay,sep = '_'))
 ```
 
-### Get differential expression results from synapse
+#### Get TFs list from synapse
+```{r getTFs}
+ALL_USED_IDs = c(ALL_USED_IDs, TFdb = 'syn5672453')
+
+# Get TF checkpoints db from synapse
+TFs = read.table(synGet('syn5672453')@filePath, header=T, sep= '\t', fill = TRUE) %>%
+  dplyr::filter(entrez_human != 0) %>%
+  dplyr::select(entrez_human) %>%
+  setnames('entrez_human','entrezgene') %>%
+  dplyr::mutate(Assay = 'TF')
+
+# Get human related mapping
+Hs = useMart("ENSEMBL_MART_ENSEMBL", host="www.ensembl.org") # use this one when biomart.org is down
+Hs = useDataset("hsapiens_gene_ensembl", Hs)
+human_entrz2symbol = getBM(attributes = c("entrezgene","hgnc_symbol"),
+                          filters = "entrezgene",                         
+                          values = unique(TFs$entrezgene),
+                          mart = Hs)
+
+# Convert entrex gene ids to gene symbols
+TFs = left_join(TFs, human_entrz2symbol) %>%
+  dplyr::select(hgnc_symbol, Assay) %>%
+  setnames('hgnc_symbol','feature') %>%
+  unique
+
+# Combine the ones from TF mapping of Enrichr
+TFs = rbind(TFs,
+            dplyr::filter(allInteractions, Assay == "mrna_mrna") %>%
+              dplyr::select(feature) %>%  unique %>%
+              dplyr::mutate(Assay = 'TF')) %>%
+  unique
+```
+
+#### Get median counts from synapse
+```{r getMedianCount}
+counts.id = 'syn5637772'
+ALL_USED_IDs = c(ALL_USED_IDs, counts = counts.id)
+counts = downloadFile(counts.id)
+counts$Assay[counts$feature %in% TFs$feature] = 'TF'
+gc()
+```
+
+#### Get differential expression from synapse
 ```{r download.diff.exp}
 ### Download differential expression results from synapse
-diffExp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
+diffexp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
                 methyl = 'syn4527629', splicing = 'syn5049321')
-ALL_USED_IDs = c(ALL_USED_IDs, diffExp.ids)
+ALL_USED_IDs = c(ALL_USED_IDs, diffexp.ids)
 
 orderedDiffState = c("DE", "EB", "ECTO", "MESO15", "MESO30", "MESO5", "SC")
 Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
@@ -122,17 +151,97 @@ diffexp = lapply(diffexp.ids, function(id){
     dplyr::select(feature, Comparison, adj.P.value, logFC) 
 }) %>% 
   rbindlist(idcol = 'Assay') 
+diffexp$Assay[diffexp$feature %in% TFs$feature] = 'TF'
 
 # Split differential expression results based on comparison
 diffexp = split(diffexp, diffexp$Comparison)
 diffexp = diffexp[Comparisons]
 ```
 
-#### Get network enrichment results from synapse
-```{r netEnrich}
-net.enrich.id = 'syn5652878'
-ALL_USED_IDs = c(ALL_USED_IDs, net.enrich = net.enrich.id)
-load(synGet(net.enrich.id)@filePath)
+#### Get coexpression from synapse
+```{r getCoexp}
+coexp.id = 'syn5662375'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
+coexpression = downloadFile(coexp.id)
+
+ind = which(coexpression$feature %in% TFs$feature)
+coexpression$feature.assay[ind] = 'TF'
+coexpression$Assay[ind] = 'TF_mrna'
+```
+
+#### Analyse differential expression results
+```{r analyseDiffExp, results=asis}
+# Get total counts of entities
+total.counts = group_by(counts, Assay) %>%
+  summarise(count = n()) %>%
+  setnames('count','totalCount')
+
+diffexp.summary = lapply(names(diffexp), function(x, diffExp, totalCounts){
+  x1 = group_by(diffExp[[x]], Assay) %>%
+    summarise(count = n()) %>%
+    left_join(totalCounts, copy=T) %>%
+    dplyr::mutate(count = round(count/totalCount,2)) %>%
+    setnames('count',x)
+}, diffexp, total.counts) %>% join_all(type = "full")
+writeLines('Percentage differentially expressed at an FDR 0.05')
+kable(dplyr::select(diffexp.summary, 
+                    one_of(setdiff(colnames(diffexp.summary), 'totalCount')), 
+                    totalCount))
+```
+
+#### Analyse differential expression control using genes
+```{r relativeControl, results='asis', fig.height = 15, fig.width = 15}
+total.counts = allInteractions %>% 
+  group_by(Assay) %>% 
+  summarise(count = n()) %>%
+  setnames('count','totalCounts')
+total.counts$Assay[total.counts$Assay == 'mrna_mrna'] = 'TF_mrna'
+
+orderedDiffState = c('SC','DE','MESO5','ECTO','MESO15','MESO30','EB')
+COlogFC = c(0,1,1.5,2)
+COCoexp = c(0.5,0.8,0.9,0.95)
+pdf(file = 'relativeControl.pdf', width = 20, height = 15)
+p = list()
+for (i in 1:4){
+  p[[i]] = list()
+  for (j in 1:4){
+    relative.control = lapply(names(diffexp), function(comp, diffExp, coExp, totalCounts, cologfc, cocoexp){
+      DE = diffExp[[comp]] %>%
+        dplyr::filter(Assay %in% c('mrna', 'TF') & abs(logFC) >= cologfc) 
+      CE = dplyr::select(coExp, feature, target, Assay, one_of(comp)) %>%
+        setnames(comp, 'correlation') %>% as.data.table %>%
+        filter(abs(correlation) >= cocoexp & feature %in% diffExp[[comp]]$feature & target %in% DE$feature) %>%
+        group_by(Assay) %>% summarise(count = 100*length(unique(target))/length(unique(DE$feature))) %>%
+        setnames('count',comp)
+      return(CE)
+    }, diffexp, coexpression, total.counts, COlogFC[i], COCoexp[j]) %>% join_all(type = "full")
+    
+    p[[i]][[j]] = lapply(orderedDiffState, function(diffState, relativeControl){
+      tmp = dplyr::select(relativeControl, Assay, contains(diffState))
+      colnames(tmp) = gsub(diffState, '', colnames(tmp)) %>% gsub('_vs_','',.)
+      tmp$Assay = gsub('_mrna','',tmp$Assay)
+      tmp = dplyr::select(tmp, Assay, one_of(setdiff(orderedDiffState, diffState))) %>%
+        tidyr::gather(DiffState, Percentage, -Assay) %>%
+        dplyr::mutate(DiffState = factor(DiffState, levels = setdiff(orderedDiffState, diffState)),
+                      Assay = factor(Assay, levels = c('TF','mirna','methyl','splicing'))) %>%
+        ggplot(aes(x = DiffState, y = Percentage))
+      tmp = tmp + geom_bar(aes(fill = Assay),  position=position_dodge(), stat = 'identity') + ggtitle(diffState) 
+      tmp = tmp + theme(axis.text.x = element_text(angle=90))
+    },relative.control)
+    writeLines(paste('At a FDR 0.05, absolute coexpression >=',COCoexp[j],'and absolute logFC for mrna >=', COlogFC[i]))
+    multiplot(plotlist = p[[i]][[j]], cols = 4)
+  }
+}
+dev.off()
+writeLines(paste('At a FDR 0.05, absolute coexpression >=',COCoexp[2],'and absolute logFC for mrna >=', COlogFC[3]))
+multiplot(plotlist = p[[3]][[2]], cols=4)
+writeLines('All percentages are percent of mrna differentially expresed at a given FDR and absolute logFC')
+
+# Write to synapse
+obj = File('relativeControl.pdf', name = 'Relative control at different cutoffs', parentId = CODE$properties$id)
+obj = synStore(obj, executed = ThisFile, 
+               used = as.character(c(diffexp.ids, coexp.id, counts.id, ALL_USED_IDs['TFdb'])),
+               activityName = ActivityName)
 ```
 
 #### Filter co-expression results (abs(r) >= 0.8 and fdr <= 0.05)
@@ -143,42 +252,98 @@ filtered.coexpression = lapply(names(diffexp), function(comp, diffExp, coExp){
   coExp = dplyr::select(coExp, one_of(c("feature", "target", "feature.assay",
                                         "target.assay", "dataSource", "Assay",comp))) %>%
     setnames(comp, 'coexpression') %>%
-    dplyr::filter(feature %in% diffExp$feature, target %in% diffExp$feature,
-                  abs(coexpression) >= 0.8) %>%
+    dplyr::filter(feature %in% diffExp$feature, 
+                  target %in% diffExp$feature,
+                  abs(coexpression) >= 0.8,
+                  feature != target) %>%
     dplyr::arrange(desc(abs(coexpression)))
   
   ind = which(coExp$Assay == "mirna_mrna" & coExp$coexpression >= 0)
   coExp = coExp[-(ind),]
 }, diffexp, coexpression)
 names(filtered.coexpression) = names(diffexp)
+
+# Write networks to synapse
+all.graph.folder = Folder(name = 'Filtered Graphs', parentId = CODE$properties$id)
+all.graph.folder = synStore(all.graph.folder)
+filtered.graph = lapply(names(filtered.coexpression), function(x, edgeList, Counts, diffExp){
+  # Write edges
+  write.table(edgeList[[x]], file = paste0('Edges_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
+  obj = File(paste0('Edges_',x,'.tsv'), name = paste('Edges',x), parentId = all.graph.folder$properties$id)
+  obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
+  
+  # Write vertices
+  features = unique(c(edgeList[[x]]$feature, edgeList[[x]]$target))
+  Counts = dplyr::filter(Counts, feature %in% features) %>%
+    left_join(diffExp[[x]])
+  write.table(Counts, file = paste0('Vertices_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
+  obj = File(paste0('Vertices_',x,'.tsv'), name = paste('Vertices',x), parentId = all.graph.folder$properties$id)
+  obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
+  
+  return(list(edge = edgeList[[x]], node = Counts))
+}, filtered.coexpression, counts, diffexp)
+names(filtered.graph) = names(filtered.coexpression)
 ```
 
 #### Convert edgelist to graphs
 ```{r convertGraph}
 # Convert edgelist to graphs
-allGraphs = lapply(filtered.coexpression, function(coExp){
+graph.object = lapply(filtered.coexpression, function(coExp){
   g = graph_from_edgelist(dplyr::select(coExp, feature, target) %>% sapply(as.character) %>% as.matrix,
                           directed = T)
-  E(g)$weight = abs(coExp$coexpression)
   return(g)
 })
+writeLines('Number of entities and intereactions of the whole network')
+tmp = sapply(graph.object, function(x){
+  data.frame(N.entity = igraph::vcount(x), N.interactions = igraph::ecount(x))
+})
+kable(tmp)
 ```
 
 #### Extract sub-graphs
 ```{r extractSubGraph}
 # Convert edgelist to graphs
-subGraphs = lapply(allGraphs, function(g){
+sub.graph.object = lapply(graph.object, function(g){
   indegree = degree(g, mode = "in")
   outdegree = degree(g, mode = "out")
-  ind.remove = which((indegree != 0 & outdegree == 0) | (indegree == 0 & outdegree != 0) )
+  ind.remove = which(outdegree == 0 | indegree == 0)
   while(length(ind.remove) != 0){
     g = induced_subgraph(g, -ind.remove)
     indegree = degree(g, mode = "in")
     outdegree = degree(g, mode = "out")
-    ind.remove = which((indegree != 0 & outdegree == 0) | (indegree == 0 & outdegree != 0) )
+    ind.remove = which(outdegree == 0 | indegree == 0)
   }
   return(g)
 })
+writeLines('Number of entities and intereactions of the core sub-network')
+tmp = sapply(sub.graph.object, function(x){
+  data.frame(N.entity = igraph::vcount(x), N.interactions = igraph::ecount(x))
+})
+kable(tmp)
+
+# Store subgraphs in synapse
+all.sub.graph.folder = Folder(name = 'Filtered Sub Graphs', parentId = CODE$properties$id)
+all.sub.graph.folder = synStore(all.sub.graph.folder)
+filtered.sub.graph = lapply(names(sub.graph.object), function(x, subGraphObj, filteredGraph){
+  # Extract edges
+  edges = subGraphObj[[x]] %>% 
+    as_data_frame %>%
+    dplyr::rename(feature = from, target = to) %>%
+    left_join(filteredGraph[[x]]$edge)
+  
+  # Write edges
+  write.table(edges, file = paste0('Edges_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
+  obj = File(paste0('Edges_',x,'.tsv'), name = paste('Edges',x), parentId = all.sub.graph.folder$properties$id)
+  obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
+  
+  # Write vertices
+  features = unique(c(edges$feature, edges[[x]]$target))
+  Nodes = dplyr::filter(filteredGraph[[x]]$node, feature %in% features)
+  write.table(Nodes, file = paste0('Vertices_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
+  obj = File(paste0('Vertices_',x,'.tsv'), name = paste('Vertices',x), parentId = all.sub.graph.folder$properties$id)
+  obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
+  return(list(edge = edges, node = Nodes))
+}, sub.graph.object, filtered.graph)
 ```
 
 #### Calculate node degree
@@ -201,44 +366,6 @@ nodeDegree = lapply(allGraphs, function(g, Counts){
   all.degree = arrange(all.degree, desc(rank))
   return(all.degree)
 }, counts)
-```
-
-```{r combinedRanking}
-combn.rank = mapply(function(deg, enrich, diffExp){
-  all = left_join(deg, enrich) %>%
-    left_join(diffExp) %>%
-    dplyr::select(feature, Assay, totalStrength, totalDegree, betweennessDegree, adj.P.value, logFC,
-                  contains('pval.'), contains('OR.'))
-  ind  = grep('pval.',colnames(all))
-  all[,ind] = -log10(all[,ind])
-  all = split(all, all$Assay)
-  tmp1 = lapply(all, function(x){
-    ind = c(3:7,grep(unique(x$Assay), colnames(x)))
-    x1 = dplyr::select(x, feature, Assay) %>%
-      dplyr::mutate(comb.rank = sapply(x[,ind], rank) %>% rowSums %>% rank)
-  })
-}, nodeDegree, allEnrichmentResults, diffexp, SIMPLIFY = F)
-
-# Get top 5 of all
-tmp = lapply(combn.rank, function(x){
-  x = lapply(x, function(y){
-    y = y[order(y$comb.rank, decreasing = T),]
-    y = y[1:5,]
-  }) %>% rbindlist
-}) %>% rbindlist(idcol = 'Comparison')
-
-tmp = lapply(nodeDegree, function(x){
-  x = x[order(x$rank, decreasing = T),]
-  x = x[1:5,]
-}) %>% rbindlist(idcol = 'Comparison')
-
-```
-
-```{r synapse.store}
-# Store metadata in synapse
-write.table(correlation, file = 'correlationDiffComparison.tsv', sep = '\t', quote=F, row.names=F)
-obj = File('correlationDiffComparison.tsv', name = 'Correaltion coefficients', parentId = CODE$properties$id)
-obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 ```
 
 ### Source Code
