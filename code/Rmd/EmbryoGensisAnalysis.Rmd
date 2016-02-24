@@ -83,7 +83,7 @@ downloadFile <- function(id){
 ```
 
 #### Get embryogensis related gene list from synapse
-```{r all.interactions, include=FALSE}
+```{r embryoGL, include=FALSE}
 ALL_USED_IDs = c(ALL_USED_IDs, embryo = 'syn5680904')
 embryoGL = read.table(synGet('syn5680904')@filePath, header=F, sep = '\n') %>%
   unique
@@ -225,7 +225,9 @@ p = lapply(orderedDiffState, function(diffState, emb){
   tmp[is.na(tmp)] = 0
   tmp = tmp %>% tidyr::gather(Control, N.genes, -Comparison) %>%
     dplyr::mutate(Comparison = factor(Comparison, levels = orderedDiffState)) %>%
-    dplyr::rename(DiffState = Comparison)
+    plyr::rename(c('Comparison' = 'DiffState'))
+  tmp = rbind(tmp, data.frame(DiffState = diffState, N.genes=0, Control = 'TF'))
+  tmp$Control[tmp$Control=='NA'] = 'None'
   p = ggplot(tmp, aes(x = DiffState, y = N.genes))
   p = p + geom_bar(aes(fill = Control), stat = 'identity') + ggtitle(diffState) 
   p = p + theme(axis.text.x = element_text(angle=90))
