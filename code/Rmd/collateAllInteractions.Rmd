@@ -37,11 +37,9 @@ library(synapseClient)
 library(rGithubClient) ## Needs the dev branch
 
 library(parallel)
-library(doParallel)
 library(foreach)
-
-cl <- makeCluster(14)
-registerDoParallel(cl)
+library(doParallel)
+registerDoParallel(38)
 
 synapseLogin()
 
@@ -136,9 +134,59 @@ TFsMapping = rbindlist(list(TFsMapping1, TFsMapping2, TFsMapping3)) %>%
   dplyr::mutate(feature.assay = 'mrna', target.assay = 'mrna', 
                 dataSource = 'ENCODE_TF_ChIP-seq_2015, TRANSFAC_and_JASPAR_PWMs, ChEA')
 rm(list= 'GeneSets')
-WGCNA::collectGarbage()
+gc()
 ```
-#### Get mRNA-miRNA mapping from synapse (miRDB version)
+
+#### Get TF-DNA mapping from MotifMap (Kenny version)
+```{r tf.dna.mapping1, include=FALSE}
+# Download TF-DNA mapping from motifmap
+motif.map = downloadFile('syn5679264')
+ALL_USED_IDs = c(ALL_USED_IDs, motif.map = 'syn5679264')
+
+TFsMapping1 = motif.map %>%
+  dplyr::filter(nlod == 1, fdr <= 0.05) %>%
+  dplyr::select(motifname, closestgene) %>%
+  dplyr::rename(feature = motifname, target = closestgene) %>%
+  dplyr::mutate(dataSource = 'motif_map', feature.assay = 'mrna', target.assay = 'mrna')
+
+comb <- function(x){paste(unique(x), collapse = ',')}
+TFsMapping = rbindlist(list(TFsMapping, TFsMapping1), use.names=T) %>%
+  dplyr::group_by(feature, target, feature.assay, target.assay) %>%
+  dplyr::summarise(dataSource = comb(dataSource)) %>%
+  unique
+gc()
+```
+
+#### Seperate TF-miRNA mapping from TF-DNA mappings
+```{r get mrna.mirna.mapping}
+# Get all miRNA mappings
+mrna.mirnas = TFsMapping[grep('MIR',TFsMapping$target),] %>%
+  dplyr::mutate(target = tolower(target),
+                target = gsub('mir','hsa-miR-', target),
+                target = gsub('hsa-hsa-miR--','hsa-miR-', target),
+                target = gsub('hsalet','hsa-let-', target),
+                target.assay = 'mirna') %>%
+  dplyr::rename(feature.wo.end = target)
+
+# Seperate all mirna names and combine them to remove 5p/3p ends
+extractMIRNames <- function(y){
+  y = str_split(y, '-') %>% unlist
+  y = paste(y[1:max(3,(length(y) - 1))], collapse = '-')
+  return(y)
+}
+
+mirnas = dplyr::filter(counts_mat, Assay == 'mirna') %>%
+  dplyr::select(feature) %>%
+  dplyr::mutate(feature.wo.end = feature) %>% 
+  group_by(feature) %>% 
+  dplyr::mutate_each(funs(extractMIRNames)) %>%
+  dplyr::rename(target = feature)
+
+mrna.mirnas = inner_join(mirnas, mrna.mirnas) %>%
+  dplyr::select(feature, target, feature.assay, target.assay, dataSource)
+```
+
+#### Get miRNA-mRNA mapping from synapse (miRDB version)
 ```{r miRNA.mRNA.mapping, include=FALSE}
 # Get miRNA mapping files
 miRNA.mRNA.id = 'syn3461627'
@@ -160,7 +208,7 @@ miRNA.mRNA <- left_join(miRNA.mRNA, human_ensg2symbol, by = 'ensembl_gene_id') %
   dplyr::mutate(feature.assay = 'mirna', target.assay = 'mrna', 
                 dataSource = 'miRDB')
 ```
-#### Get mRNA-miRNA mapping from synapse (mirTarBase version)
+#### Get miRNA-mRNA mapping from synapse (mirTarBase version)
 ```{r miRNA.mRNA.exp.mapping, include=FALSE}
 # Get miRNA mapping files
 miRNA.mRNA2.id = 'syn5049680'
@@ -231,7 +279,9 @@ mrna.splicing <- expand.grid(as.character(spliceFactors), as.character(spliceJun
 
 #### Combine all interactions
 ```{r combine, include=FALSE}
-allInteractions = rbindlist(list(TFsMapping, miRNA.mRNA3, methyl.mirna, methyl.mrna, splicing.mrna, mrna.splicing)) %>%
+allInteractions = rbindlist(list(TFsMapping, mrna.mirnas, miRNA.mRNA3, 
+                                 methyl.mirna, methyl.mrna, splicing.mrna, 
+                                 mrna.splicing), use.names=TRUE) %>%
   unique %>%
   dplyr::filter(feature %in% counts_mat$feature, target %in% counts_mat$feature)
 
