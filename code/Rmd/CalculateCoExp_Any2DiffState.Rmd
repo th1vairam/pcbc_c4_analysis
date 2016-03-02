@@ -167,8 +167,14 @@ allInteractions = downloadFile('syn5643683') %>%
 ```
 
 ### Get previously calculated coexpression from synapse
-```{r get.coexp}
+```{r get.coexp, cache=FALSE}
 correlation.old = downloadFile('syn5662375') 
+
+# Calculate the difference in correlation between current and previously calculated correlations
+allInteractions = allInteractions %>% 
+  dplyr::mutate(feature.target= paste(feature, target, sep='_')) %>%
+  dplyr::filter(!(feature.target %in% (paste(correlation.old$feature, correlation.old$target, sep = '_') %>% unique))) %>%
+  dplyr::select(-feature.target)
 ```
 
 #### Coallate counts and metadata
@@ -240,13 +246,7 @@ names(counts.metadata) = unique(allInteractions$Assay)
 ```
 
 #### Calculate co-expression in all five different categories of interactions at any 2 diffstate
-```{r combine.samples}
-# Calculate the difference in correlation between current and previously calculated correlations
-allInteractions = allInteractions %>% 
-  dplyr::mutate(feature.target= paste(feature, target, sep='_')) %>%
-  dplyr::filter(!(feature.target %in% (paste(correlation.old$feature, correlation.old$target, sep = '_') %>% unique))) %>%
-  dplyr::select(-feature.target)
-  
+```{r combine.samples, cache=FALSE}
 # Calculate the coexpression for remaining interactions
 correlation.new = ddply(allInteractions, 
                         .(feature, target, feature.assay, target.assay, dataSource, Assay), 
