@@ -90,7 +90,11 @@ allInteractions = downloadFile('syn5643683') %>%
 ```
 
 #### Get TFs list from synapse
+<<<<<<< HEAD
 ```{r getTFs, include=FALSE}
+=======
+```{r getTFs}
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 ALL_USED_IDs = c(ALL_USED_IDs, TFdb = 'syn5672453')
 
 # Get TF checkpoints db from synapse
@@ -123,7 +127,11 @@ TFs = rbind(TFs,
 ```
 
 #### Get median counts from synapse
+<<<<<<< HEAD
 ```{r getMedianCount, include=FALSE}
+=======
+```{r getMedianCount}
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 counts.id = 'syn5637772'
 ALL_USED_IDs = c(ALL_USED_IDs, counts = counts.id)
 counts = downloadFile(counts.id)
@@ -132,7 +140,11 @@ gc()
 ```
 
 #### Get differential expression from synapse
+<<<<<<< HEAD
 ```{r download.diff.exp, include=FALSE}
+=======
+```{r download.diff.exp}
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 ### Download differential expression results from synapse
 diffexp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
                 methyl = 'syn4527629', splicing = 'syn5049321')
@@ -149,6 +161,7 @@ diffexp = lapply(diffexp.ids[c('mrna','mirna')], function(id){
   x = x %>%
     dplyr::filter(adj.P.value <= 0.05) %>%
     tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+<<<<<<< HEAD
     dplyr::select(feature, Comparison, adj.P.value, logFC) %>%
     dplyr::filter(Comparison %in% Comparisons)
 }) 
@@ -175,6 +188,11 @@ diffexp[['splicing']] = diffexp[['splicing']] %>%
 
 # Combine list
 diffexp = rbindlist(diffexp, idcol = 'Assay', fill = T)
+=======
+    dplyr::select(feature, Comparison, adj.P.value, logFC) 
+}) %>% 
+  rbindlist(idcol = 'Assay') 
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 diffexp$Assay[diffexp$feature %in% TFs$feature] = 'TF'
 
 # Split differential expression results based on comparison
@@ -183,7 +201,11 @@ diffexp = diffexp[Comparisons]
 ```
 
 #### Get coexpression from synapse
+<<<<<<< HEAD
 ```{r getCoexp, cache=FALSE, include=FALSE}
+=======
+```{r getCoexp}
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 coexp.id = 'syn5662375'
 ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
 coexpression = downloadFile(coexp.id)
@@ -194,7 +216,11 @@ coexpression$Assay[ind] = 'TF_mrna'
 ```
 
 #### Analyse differential expression results
+<<<<<<< HEAD
 ```{r analyseDiffExp, results='asis'}
+=======
+```{r analyseDiffExp, results=asis}
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 # Get total counts of entities
 total.counts = group_by(counts, Assay) %>%
   summarise(count = n()) %>%
@@ -204,13 +230,18 @@ diffexp.summary = lapply(names(diffexp), function(x, diffExp, totalCounts){
   x1 = group_by(diffExp[[x]], Assay) %>%
     summarise(count = n()) %>%
     left_join(totalCounts, copy=T) %>%
+<<<<<<< HEAD
     dplyr::mutate(count = round(100*count/totalCount,2)) %>%
+=======
+    dplyr::mutate(count = round(count/totalCount,2)) %>%
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
     setnames('count',x)
 }, diffexp, total.counts) %>% join_all(type = "full")
 writeLines('Percentage differentially expressed at an FDR 0.05')
 kable(dplyr::select(diffexp.summary, 
                     one_of(setdiff(colnames(diffexp.summary), 'totalCount')), 
                     totalCount))
+<<<<<<< HEAD
 
 diffexp.summary = lapply(names(diffexp), function(x, diffExp, totalCounts){
   x1 = diffExp[[x]] %>%
@@ -234,10 +265,25 @@ kable(dplyr::select(diffexp.summary,
 #### Analyse differential expression control using genes
 ```{r relativeControl1, include=FALSE}
 orderedDiffState = c('SC','DE','MESO5','ECTO','MESO15','MESO30','EB')
+=======
+```
+
+#### Analyse differential expression control using genes
+```{r relativeControl, results='asis', fig.height = 15, fig.width = 15}
+total.counts = allInteractions %>% 
+  group_by(Assay) %>% 
+  summarise(count = n()) %>%
+  setnames('count','totalCounts')
+total.counts$Assay[total.counts$Assay == 'mrna_mrna'] = 'TF_mrna'
+
+orderedDiffState = c('SC','DE','MESO5','ECTO','MESO15','MESO30','EB')
+COlogFC = c(0,1,1.5,2)
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 COCoexp = c(0.5,0.8,0.9,0.95)
 pdf(file = 'relativeControl.pdf', width = 20, height = 15)
 p = list()
 for (i in 1:4){
+<<<<<<< HEAD
   relative.control = lapply(names(diffexp), function(comp, diffExp, coExp, cocoexp){
     DE.target = diffExp[[comp]] %>%
       dplyr::filter((Assay == 'TF' & abs(logFC) >= 1.098612) |
@@ -274,12 +320,48 @@ for (i in 1:4){
     multiplot(plotlist = p[[i]], cols = 4)
 }
 dev.off()
+=======
+  p[[i]] = list()
+  for (j in 1:4){
+    relative.control = lapply(names(diffexp), function(comp, diffExp, coExp, totalCounts, cologfc, cocoexp){
+      DE = diffExp[[comp]] %>%
+        dplyr::filter(Assay %in% c('mrna', 'TF') & abs(logFC) >= cologfc) 
+      CE = dplyr::select(coExp, feature, target, Assay, one_of(comp)) %>%
+        setnames(comp, 'correlation') %>% as.data.table %>%
+        filter(abs(correlation) >= cocoexp & feature %in% diffExp[[comp]]$feature & target %in% DE$feature) %>%
+        group_by(Assay) %>% summarise(count = 100*length(unique(target))/length(unique(DE$feature))) %>%
+        setnames('count',comp)
+      return(CE)
+    }, diffexp, coexpression, total.counts, COlogFC[i], COCoexp[j]) %>% join_all(type = "full")
+    
+    p[[i]][[j]] = lapply(orderedDiffState, function(diffState, relativeControl){
+      tmp = dplyr::select(relativeControl, Assay, contains(diffState))
+      colnames(tmp) = gsub(diffState, '', colnames(tmp)) %>% gsub('_vs_','',.)
+      tmp$Assay = gsub('_mrna','',tmp$Assay)
+      tmp = dplyr::select(tmp, Assay, one_of(setdiff(orderedDiffState, diffState))) %>%
+        tidyr::gather(DiffState, Percentage, -Assay) %>%
+        dplyr::mutate(DiffState = factor(DiffState, levels = setdiff(orderedDiffState, diffState)),
+                      Assay = factor(Assay, levels = c('TF','mirna','methyl','splicing'))) %>%
+        ggplot(aes(x = DiffState, y = Percentage))
+      tmp = tmp + geom_bar(aes(fill = Assay),  position=position_dodge(), stat = 'identity') + ggtitle(diffState) 
+      tmp = tmp + theme(axis.text.x = element_text(angle=90))
+    },relative.control)
+    writeLines(paste('At a FDR 0.05, absolute coexpression >=',COCoexp[j],'and absolute logFC for mrna >=', COlogFC[i]))
+    multiplot(plotlist = p[[i]][[j]], cols = 4)
+  }
+}
+dev.off()
+writeLines(paste('At a FDR 0.05, absolute coexpression >=',COCoexp[2],'and absolute logFC for mrna >=', COlogFC[3]))
+multiplot(plotlist = p[[3]][[2]], cols=4)
+writeLines('All percentages are percent of mrna differentially expresed at a given FDR and absolute logFC')
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 
 # Write to synapse
 obj = File('relativeControl.pdf', name = 'Relative control at different cutoffs', parentId = CODE$properties$id)
 obj = synStore(obj, executed = ThisFile, 
                used = as.character(c(diffexp.ids, coexp.id, counts.id, ALL_USED_IDs['TFdb'])),
                activityName = ActivityName)
+<<<<<<< HEAD
 ```
 
 ```{r relativeControl2, results='asis', fig.height = 10, fig.width = 18}
@@ -325,6 +407,8 @@ p = lapply(orderedDiffState, function(diffState, relativeControl){
   tmp = tmp + theme(axis.text.x = element_text(angle=90)) + ylim(0, 1500)
   },relative.control)
 multiplot(plotlist = p, cols = 4)
+=======
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 ```
 
 #### Filter co-expression results (abs(r) >= 0.8 and fdr <= 0.05)
@@ -371,6 +455,7 @@ filtered.graph = lapply(names(filtered.coexpression), function(x, edgeList, Coun
   return(list(edge = edgeList[[x]], node = Counts))
 }, filtered.coexpression, counts, diffexp)
 names(filtered.graph) = names(filtered.coexpression)
+<<<<<<< HEAD
 
 # Store all differentially expressed nodes in synapse
 diffexp.counts=  lapply(filtered.graph, function(x){
@@ -379,6 +464,8 @@ diffexp.counts=  lapply(filtered.graph, function(x){
 write.table(diffexp.counts, file = 'filteredMedianCounts.tsv', sep = '\t', row.names=F, quote=F)
 obj = File('filteredMedianCounts.tsv', name = 'Filtered Median Counts', parentId = CODE$properties$id)
 obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
+=======
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 ```
 
 #### Convert edgelist to graphs
@@ -459,7 +546,11 @@ nodeDegree = lapply(names(sub.graph.object), function(comp, subGraphs, filteredS
     rank
   all.degree = arrange(all.degree, desc(rank))
   return(all.degree)
+<<<<<<< HEAD
 }, sub.graph.object, filtered.sub.graph)
+=======
+}, counts)
+>>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 ```
 
 ### Source Code
