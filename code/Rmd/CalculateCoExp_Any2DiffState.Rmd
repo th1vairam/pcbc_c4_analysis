@@ -159,11 +159,16 @@ metadata = mapply(function(Counts, MetaData){
 }, counts, metadata, SIMPLIFY = F)
 ```
 
-### Download all interactions from synapse
+### Get all interactions from synapse
 ```{r all.interactions}
 ALL_USED_IDs = c(ALL_USED_IDs, all.interactions = 'syn5643683')
 allInteractions = downloadFile('syn5643683') %>%
   dplyr::mutate(Assay = paste(feature.assay,target.assay,sep = '_'))
+```
+
+### Get previously calculated coexpression from synapse
+```{r get.coexp}
+correlation.old = downloadFile('syn5662375') 
 ```
 
 #### Coallate counts and metadata
@@ -236,9 +241,16 @@ names(counts.metadata) = unique(allInteractions$Assay)
 
 #### Calculate co-expression in all five different categories of interactions at any 2 diffstate
 ```{r combine.samples}
-correlation = ddply(allInteractions, 
-            .(feature, target, feature.assay, target.assay, dataSource, Assay), 
-            .fun = function(interaction, Counts.Metadata){
+# Calculate the difference in correlation between current and previously calculated correlations
+allInteractions = allInteractions %>% 
+  dplyr::mutate(feature.target= paste(feature, target, sep='_')) %>%
+  dplyr::filter(!(feature.target %in% (paste(correlation.old$feature, correlation.old$target, sep = '_') %>% unique))) %>%
+  dplyr::select(-feature.target)
+  
+# Calculate the coexpression for remaining interactions
+correlation.new = ddply(allInteractions, 
+                        .(feature, target, feature.assay, target.assay, dataSource, Assay), 
+                        .fun = function(interaction, Counts.Metadata){
               assay = interaction$Assay
               feature.assay = unique(interaction$feature.assay)
               target.assay = unique(interaction$target.assay)
@@ -264,8 +276,10 @@ correlation = ddply(allInteractions,
               
               return(correlation)
               }, counts.metadata,
-            .progress = 'text',
-            .parallel = T)
+              .progress = 'text',
+              .parallel = TRUE)
+
+correlation = rbindlist(list(correlation.old, correlation.new), use.names = TRUE)
 ```
 
 ```{r synapse.store}
