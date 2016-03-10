@@ -28,6 +28,8 @@ library(data.table)
 library(stringr)
 library(tidyr)
 library(reshape2)
+library(ggplot2)
+library(igraph)
 
 library(matrixStats)
 library(biomaRt)
@@ -90,11 +92,7 @@ allInteractions = downloadFile('syn5643683') %>%
 ```
 
 #### Get TFs list from synapse
-<<<<<<< HEAD
 ```{r getTFs, include=FALSE}
-=======
-```{r getTFs}
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 ALL_USED_IDs = c(ALL_USED_IDs, TFdb = 'syn5672453')
 
 # Get TF checkpoints db from synapse
@@ -127,11 +125,7 @@ TFs = rbind(TFs,
 ```
 
 #### Get median counts from synapse
-<<<<<<< HEAD
 ```{r getMedianCount, include=FALSE}
-=======
-```{r getMedianCount}
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 counts.id = 'syn5637772'
 ALL_USED_IDs = c(ALL_USED_IDs, counts = counts.id)
 counts = downloadFile(counts.id)
@@ -140,11 +134,7 @@ gc()
 ```
 
 #### Get differential expression from synapse
-<<<<<<< HEAD
 ```{r download.diff.exp, include=FALSE}
-=======
-```{r download.diff.exp}
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 ### Download differential expression results from synapse
 diffexp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
                 methyl = 'syn4527629', splicing = 'syn5049321')
@@ -161,7 +151,6 @@ diffexp = lapply(diffexp.ids[c('mrna','mirna')], function(id){
   x = x %>%
     dplyr::filter(adj.P.value <= 0.05) %>%
     tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
-<<<<<<< HEAD
     dplyr::select(feature, Comparison, adj.P.value, logFC) %>%
     dplyr::filter(Comparison %in% Comparisons)
 }) 
@@ -188,11 +177,6 @@ diffexp[['splicing']] = diffexp[['splicing']] %>%
 
 # Combine list
 diffexp = rbindlist(diffexp, idcol = 'Assay', fill = T)
-=======
-    dplyr::select(feature, Comparison, adj.P.value, logFC) 
-}) %>% 
-  rbindlist(idcol = 'Assay') 
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 diffexp$Assay[diffexp$feature %in% TFs$feature] = 'TF'
 
 # Split differential expression results based on comparison
@@ -201,356 +185,378 @@ diffexp = diffexp[Comparisons]
 ```
 
 #### Get coexpression from synapse
-<<<<<<< HEAD
 ```{r getCoexp, cache=FALSE, include=FALSE}
-=======
-```{r getCoexp}
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
 coexp.id = 'syn5662375'
 ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
-coexpression = downloadFile(coexp.id)
+# coexpression = downloadFile(coexp.id)
+coexpression = fread('./correlationDiffComparison.tsv', data.table=F, header=T, sep = '\t')
 
+# Mark all TFs
 ind = which(coexpression$feature %in% TFs$feature)
 coexpression$feature.assay[ind] = 'TF'
-coexpression$Assay[ind] = 'TF_mrna'
+
+ind = which(coexpression$target %in% TFs$feature)
+coexpression$target.assay[ind] = 'TF'
+
+coexpression$Assay = paste(coexpression$feature.assay,coexpression$target.assay, sep = '_')
 ```
 
-#### Analyse differential expression results
-<<<<<<< HEAD
-```{r analyseDiffExp, results='asis'}
-=======
-```{r analyseDiffExp, results=asis}
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
-# Get total counts of entities
-total.counts = group_by(counts, Assay) %>%
-  summarise(count = n()) %>%
-  setnames('count','totalCount')
-
-diffexp.summary = lapply(names(diffexp), function(x, diffExp, totalCounts){
-  x1 = group_by(diffExp[[x]], Assay) %>%
-    summarise(count = n()) %>%
-    left_join(totalCounts, copy=T) %>%
-<<<<<<< HEAD
-    dplyr::mutate(count = round(100*count/totalCount,2)) %>%
-=======
-    dplyr::mutate(count = round(count/totalCount,2)) %>%
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
-    setnames('count',x)
-}, diffexp, total.counts) %>% join_all(type = "full")
-writeLines('Percentage differentially expressed at an FDR 0.05')
-kable(dplyr::select(diffexp.summary, 
-                    one_of(setdiff(colnames(diffexp.summary), 'totalCount')), 
-                    totalCount))
-<<<<<<< HEAD
-
-diffexp.summary = lapply(names(diffexp), function(x, diffExp, totalCounts){
-  x1 = diffExp[[x]] %>%
-    dplyr::filter((Assay == 'TF' & abs(logFC) >= 1.098612) |
-                    (Assay == 'mrna' & abs(logFC) >= 1.098612) |
-                    (Assay == 'mirna' & abs(logFC) >= 1.098612) |
-                    (Assay == 'methyl' & abs(changeBETA) >= 0.35) |
-                    (Assay == 'splicing' & abs(changePSI) >= 0.2)) %>%
-    group_by(Assay) %>%
-    summarise(count = n()) %>%
-    left_join(totalCounts, copy=T) %>%
-    dplyr::mutate(count = round(100*count/totalCount,2)) %>%
-    setnames('count',x)
-}, diffexp, total.counts) %>% join_all(type = "full")
-writeLines('Percentage differentially expressed at an FDR 0.05 and FC of 3 for mrna, mirna and change in beta of 0.35 for methylation probes and change in PSI of 0.2 for splicing junctions')
-kable(dplyr::select(diffexp.summary, 
-                    one_of(setdiff(colnames(diffexp.summary), 'totalCount')), 
-                    totalCount))
-```
-
-#### Analyse differential expression control using genes
-```{r relativeControl1, include=FALSE}
-orderedDiffState = c('SC','DE','MESO5','ECTO','MESO15','MESO30','EB')
-=======
-```
-
-#### Analyse differential expression control using genes
-```{r relativeControl, results='asis', fig.height = 15, fig.width = 15}
-total.counts = allInteractions %>% 
-  group_by(Assay) %>% 
-  summarise(count = n()) %>%
-  setnames('count','totalCounts')
-total.counts$Assay[total.counts$Assay == 'mrna_mrna'] = 'TF_mrna'
-
-orderedDiffState = c('SC','DE','MESO5','ECTO','MESO15','MESO30','EB')
-COlogFC = c(0,1,1.5,2)
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
-COCoexp = c(0.5,0.8,0.9,0.95)
-pdf(file = 'relativeControl.pdf', width = 20, height = 15)
-p = list()
-for (i in 1:4){
-<<<<<<< HEAD
-  relative.control = lapply(names(diffexp), function(comp, diffExp, coExp, cocoexp){
-    DE.target = diffExp[[comp]] %>%
-      dplyr::filter((Assay == 'TF' & abs(logFC) >= 1.098612) |
-                      (Assay == 'mrna' & abs(logFC) >= 1.098612))
-    DE.feature = diffExp[[comp]] %>%
-      dplyr::filter((Assay == 'TF' & abs(logFC) >= 1.098612) |
-                      (Assay == 'mirna' & abs(logFC) >= 1.098612) |
-                      (Assay == 'methyl' & abs(changeBETA) >= 0.35) |
-                      (Assay == 'splicing' & abs(changePSI) >= 0.2))
-    CE = dplyr::select(coExp, feature, target, Assay, one_of(comp)) %>%
-      setnames(comp, 'correlation') %>% as.data.table %>%
-      dplyr::filter(abs(correlation) >= cocoexp & feature %in% DE.feature$feature & target %in% DE.target$feature) %>%
-      dplyr::filter(feature != target) %>%
-      group_by(Assay) %>% summarise(count = 100*length(unique(target))/length(unique(DE.target$feature))) %>%
-      setnames('count',comp)
-    return(CE)
-    }, diffexp, coexpression, COCoexp[i]) %>% join_all(type = "full")
-    
-    p[[i]] = lapply(orderedDiffState, function(diffState, relativeControl){
-      tmp = dplyr::select(relativeControl, Assay, contains(diffState))
-      colnames(tmp) = gsub(diffState, '', colnames(tmp)) %>% gsub('_vs_','',.)
-      tmp$Assay = gsub('_mrna','',tmp$Assay)
-      tmp[,diffState] = 0
-      tmp = dplyr::select(tmp, Assay, one_of(orderedDiffState)) %>%
-        tidyr::gather(DiffState, Percentage, -Assay) %>%
-        dplyr::mutate(DiffState = factor(DiffState, levels = orderedDiffState),
-                      Assay = factor(Assay, levels = c('TF','mirna','methyl','splicing')))
-      tmp = ggplot(tmp, aes(x = DiffState, y = Percentage))
-      tmp = tmp + geom_bar(aes(fill = Assay),  stat = 'identity') 
-      tmp = tmp + ggtitle(paste(diffState, paste0('Coexp=',COCoexp[i]), sep = ',')) 
-      tmp = tmp + theme(axis.text.x = element_text(angle=90))
-    },relative.control)
-    writeLines(paste('At a FDR 0.05, absolute coexpression >=',COCoexp[i]))
-    multiplot(plotlist = p[[i]], cols = 4)
-}
-dev.off()
-=======
-  p[[i]] = list()
-  for (j in 1:4){
-    relative.control = lapply(names(diffexp), function(comp, diffExp, coExp, totalCounts, cologfc, cocoexp){
-      DE = diffExp[[comp]] %>%
-        dplyr::filter(Assay %in% c('mrna', 'TF') & abs(logFC) >= cologfc) 
-      CE = dplyr::select(coExp, feature, target, Assay, one_of(comp)) %>%
-        setnames(comp, 'correlation') %>% as.data.table %>%
-        filter(abs(correlation) >= cocoexp & feature %in% diffExp[[comp]]$feature & target %in% DE$feature) %>%
-        group_by(Assay) %>% summarise(count = 100*length(unique(target))/length(unique(DE$feature))) %>%
-        setnames('count',comp)
-      return(CE)
-    }, diffexp, coexpression, total.counts, COlogFC[i], COCoexp[j]) %>% join_all(type = "full")
-    
-    p[[i]][[j]] = lapply(orderedDiffState, function(diffState, relativeControl){
-      tmp = dplyr::select(relativeControl, Assay, contains(diffState))
-      colnames(tmp) = gsub(diffState, '', colnames(tmp)) %>% gsub('_vs_','',.)
-      tmp$Assay = gsub('_mrna','',tmp$Assay)
-      tmp = dplyr::select(tmp, Assay, one_of(setdiff(orderedDiffState, diffState))) %>%
-        tidyr::gather(DiffState, Percentage, -Assay) %>%
-        dplyr::mutate(DiffState = factor(DiffState, levels = setdiff(orderedDiffState, diffState)),
-                      Assay = factor(Assay, levels = c('TF','mirna','methyl','splicing'))) %>%
-        ggplot(aes(x = DiffState, y = Percentage))
-      tmp = tmp + geom_bar(aes(fill = Assay),  position=position_dodge(), stat = 'identity') + ggtitle(diffState) 
-      tmp = tmp + theme(axis.text.x = element_text(angle=90))
-    },relative.control)
-    writeLines(paste('At a FDR 0.05, absolute coexpression >=',COCoexp[j],'and absolute logFC for mrna >=', COlogFC[i]))
-    multiplot(plotlist = p[[i]][[j]], cols = 4)
-  }
-}
-dev.off()
-writeLines(paste('At a FDR 0.05, absolute coexpression >=',COCoexp[2],'and absolute logFC for mrna >=', COlogFC[3]))
-multiplot(plotlist = p[[3]][[2]], cols=4)
-writeLines('All percentages are percent of mrna differentially expresed at a given FDR and absolute logFC')
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
-
-# Write to synapse
-obj = File('relativeControl.pdf', name = 'Relative control at different cutoffs', parentId = CODE$properties$id)
-obj = synStore(obj, executed = ThisFile, 
-               used = as.character(c(diffexp.ids, coexp.id, counts.id, ALL_USED_IDs['TFdb'])),
-               activityName = ActivityName)
-<<<<<<< HEAD
-```
-
-```{r relativeControl2, results='asis', fig.height = 10, fig.width = 18}
-writeLines(paste('At a FDR 0.05, absolute coexpression >=',COCoexp[2]))
-multiplot(plotlist = p[[2]], cols=4)
-writeLines('All percentages are percent of mrna differentially expresed at a FDR 0.05 and absolute FC greater than or equal to 3')
-```
-
-Relative control with top 1000 differentially expressed genes
-```{r relativeControl3, include=FALSE}
-relative.control = lapply(names(diffexp), function(comp, diffExp, coExp, n = 5000){
-  DE.target = diffExp[[comp]] %>%
-    dplyr::filter(Assay == 'TF' | Assay == 'mrna')
-  DE.target$Rank = rank(-log10(DE.target$adj.P.value)) + rank(abs(DE.target$logFC))
-  DE.target = DE.target[order(Rank, decreasing = T),]
-  DE.target = DE.target[1:n,]
-  DE.feature = diffExp[[comp]] %>%
-    dplyr::filter((Assay == 'TF' & abs(logFC) >= 1.098612) |
-                    (Assay == 'mirna' & abs(logFC) >= 1.098612) |
-                    (Assay == 'methyl' & abs(changeBETA) >= 0.35) |
-                    (Assay == 'splicing' & abs(changePSI) >= 0.2))
-  CE = dplyr::select(coExp, feature, target, Assay, one_of(comp)) %>%
-    setnames(comp, 'correlation') %>% as.data.table %>%
-    dplyr::filter(abs(correlation) >= cocoexp & feature %in% DE.feature$feature & target %in% DE.target$feature) %>%
-    dplyr::filter(feature != target) %>%
-    group_by(Assay) %>% summarise(count = length(unique(target))) %>%
-    setnames('count',comp)
-  return(CE)
-  }, diffexp, coexpression) %>% join_all(type = "full")
-
-p = lapply(orderedDiffState, function(diffState, relativeControl){
-  tmp = dplyr::select(relativeControl, Assay, contains(diffState))
-  colnames(tmp) = gsub(diffState, '', colnames(tmp)) %>% gsub('_vs_','',.)
-  tmp$Assay = gsub('_mrna','',tmp$Assay)
-  tmp[,diffState] = 0
-  tmp = dplyr::select(tmp, Assay, one_of(orderedDiffState)) %>%
-    tidyr::gather(DiffState, Percentage, -Assay) %>%
-    dplyr::mutate(DiffState = factor(DiffState, levels = orderedDiffState),
-                  Assay = factor(Assay, levels = c('TF','mirna','methyl','splicing')))
-  tmp = ggplot(tmp, aes(x = DiffState, y = Percentage))
-  tmp = tmp + geom_bar(aes(fill = Assay),  stat = 'identity') 
-  tmp = tmp + ggtitle(paste(diffState,paste0('top ',n,' genes'), sep = ',')) 
-  tmp = tmp + theme(axis.text.x = element_text(angle=90)) + ylim(0, 1500)
-  },relative.control)
-multiplot(plotlist = p, cols = 4)
-=======
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
-```
-
-#### Filter co-expression results (abs(r) >= 0.8 and fdr <= 0.05)
+#### Filter differential and co-expression results (at an fdr <= 0.05, abs(r) >= 0.7, FC >= 2, absolute Delta(beta) >= 0.35 and absolute Delta(PSI) >= 0.2)
 ```{r filterCoExp, include=FALSE}
-filtered.coexpression = lapply(names(diffexp), function(comp, diffExp, coExp){
+filtered.Exp.Coxp = lapply(names(diffexp), function(comp, diffExp, coExp){
+  # Filter differential expression
   diffExp = diffExp[[comp]] %>%
-    dplyr::filter((Assay == 'TF' & abs(logFC) >= 1.098612) |
-                    (Assay == 'mrna' & abs(logFC) >= 1.098612) |
-                    (Assay == 'mirna' & abs(logFC) >= 1.098612) |
+    dplyr::filter((Assay == 'TF' & abs(logFC) >= 1) |
+                    (Assay == 'mrna' & abs(logFC) >= 1) |
+                    (Assay == 'mirna' & abs(logFC) >= 1) |
                     (Assay == 'methyl' & abs(changeBETA) >= 0.35) |
                     (Assay == 'splicing' & abs(changePSI) >= 0.2)) %>%
     dplyr::filter(adj.P.value <= 0.05)
+  
+  # Filter co-expression
   coExp = dplyr::select(coExp, one_of(c("feature", "target", "feature.assay",
                                         "target.assay", "dataSource", "Assay",comp))) %>%
     setnames(comp, 'coexpression') %>%
     dplyr::filter(feature %in% diffExp$feature, 
                   target %in% diffExp$feature,
-                  abs(coexpression) >= 0.8,
-                  feature != target) %>%
+                  abs(coexpression) >= 0.7,
+                  feature != target,
+                  !(Assay == "mirna_mrna" & coexpression >= 0)) %>%
     dplyr::arrange(desc(abs(coexpression)))
   
-  ind = which(coExp$Assay == "mirna_mrna" & coExp$coexpression >= 0)
-  coExp = coExp[-(ind),]
+  return(list(DE = diffExp, CE = coExp))
 }, diffexp, coexpression)
-names(filtered.coexpression) = names(diffexp)
+names(filtered.Exp.Coxp) = names(diffexp)
+```
 
-# Write networks to synapse
+#### Convert network files to graphs and store them in synapse
+```{r getGraphs, include=FALSE}
+activity = Activity(executed = ThisFile, used = as.character(ALL_USED_IDs), name = ActivityName)
+
+# Create folder to store networks in synapse
 all.graph.folder = Folder(name = 'Filtered Graphs', parentId = CODE$properties$id)
 all.graph.folder = synStore(all.graph.folder)
-filtered.graph = lapply(names(filtered.coexpression), function(x, edgeList, Counts, diffExp){
+
+# Store filtered networks in synapse 
+filtered.graph = lapply(names(filtered.Exp.Coxp), function(x, filteredExpCoxp, Counts){
   # Write edges
-  write.table(edgeList[[x]], file = paste0('Edges_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
+  CE = filteredExpCoxp[[x]]$CE
+  write.table(CE, file = paste0('Edges_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
   obj = File(paste0('Edges_',x,'.tsv'), name = paste('Edges',x), parentId = all.graph.folder$properties$id)
-  obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
+  obj = synStore(obj, activity)
   
   # Write vertices
-  features = unique(c(edgeList[[x]]$feature, edgeList[[x]]$target))
-  Counts = dplyr::filter(Counts, feature %in% features) %>%
-    left_join(diffExp[[x]])
-  write.table(Counts, file = paste0('Vertices_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
+  DE = left_join(filteredExpCoxp[[x]]$DE, Counts %>% as.data.table)
+  write.table(DE, file = paste0('Vertices_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
   obj = File(paste0('Vertices_',x,'.tsv'), name = paste('Vertices',x), parentId = all.graph.folder$properties$id)
-  obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
+  obj = synStore(obj, activity)
   
-  return(list(edge = edgeList[[x]], node = Counts))
-}, filtered.coexpression, counts, diffexp)
-names(filtered.graph) = names(filtered.coexpression)
-<<<<<<< HEAD
-
-# Store all differentially expressed nodes in synapse
-diffexp.counts=  lapply(filtered.graph, function(x){
-  x$node
-}) %>% rbindlist
-write.table(diffexp.counts, file = 'filteredMedianCounts.tsv', sep = '\t', row.names=F, quote=F)
-obj = File('filteredMedianCounts.tsv', name = 'Filtered Median Counts', parentId = CODE$properties$id)
-obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
-=======
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
+  return(list(edge = CE, node = DE))
+}, filtered.Exp.Coxp, counts)
+names(filtered.graph) = names(filtered.Exp.Coxp)
 ```
 
-#### Convert edgelist to graphs
-```{r convertGraph, results = 'asis'}
-# Convert edgelist to graphs
-graph.object = lapply(filtered.coexpression, function(coExp){
-  g = graph_from_edgelist(dplyr::select(coExp, feature, target) %>% sapply(as.character) %>% as.matrix,
-                          directed = T)
-  return(g)
-})
-writeLines('Number of entities and intereactions of the whole network')
-tmp = sapply(graph.object, function(x){
-  data.frame(N.entity = igraph::vcount(x), N.interactions = igraph::ecount(x))
-})
-kable(tmp)
-```
+#### Extract different modules of genomic signatures
+```{r geneSignatures, include=FALSE}
+orderedDiffState = c("SC", "DE", "MESO5", "ECTO", "MESO15", "MESO30", "EB")
 
-#### Extract sub-graphs
-```{r extractSubGraph, results='asis'}
-# Convert edgelist to graphs
-sub.graph.object = lapply(graph.object, function(g){
-  indegree = degree(g, mode = "in")
-  outdegree = degree(g, mode = "out")
-  ind.remove = which(outdegree == 0 | indegree == 0)
-  while(length(ind.remove) != 0){
-    g = induced_subgraph(g, -ind.remove)
-    indegree = degree(g, mode = "in")
-    outdegree = degree(g, mode = "out")
-    ind.remove = which(outdegree == 0 | indegree == 0)
+tmp = data.frame(comp = names(diffexp)) %>%
+  dplyr::mutate(diffState = comp) %>%
+  tidyr::separate(diffState, into = c('state1', 'state2'), sep = '_vs_')
+tmp1 =  dplyr::select(tmp, comp, state2, state1) %>%
+  dplyr::rename(state1 = state2, state2 = state1)
+allComp = rbind(tmp, tmp1)
+
+modules = list()
+relative.control = list()
+for (diffState1 in orderedDiffState){
+  modules[[diffState1]] = list()
+  relative.control[[diffState1]] = list()
+  for (diffState2 in orderedDiffState){
+    if (diffState1 != diffState2){
+      comp = dplyr::filter(allComp, state1 == diffState1 & state2 == diffState2) %>%
+        dplyr::select(comp) %>% unlist %>% as.character
+      
+      DE.feature = filtered.Exp.Coxp[[comp]]$DE %>%
+        dplyr::rename(feature.assay = Assay,
+                      feature.fdr = adj.P.value,
+                      feature.lfc = logFC,
+                      feature.cb = changeBETA,
+                      feature.cpsi = changePSI)
+      
+      DE.target = filtered.Exp.Coxp[[comp]]$DE %>%
+        dplyr::rename(target = feature,
+                      target.assay = Assay,
+                      target.fdr = adj.P.value,
+                      target.lfc = logFC,
+                      target.cb = changeBETA,
+                      target.cpsi = changePSI)
+      
+      CE = left_join(filtered.Exp.Coxp[[comp]]$CE,
+                     DE.feature) %>%
+        full_join(DE.target)
+      
+      relative.control[[diffState1]][[diffState2]] = CE
+      
+      # Get TF and nonTF specific modules
+      TF.nonTF.mods = CE %>% filter(target.assay %in% 'TF' | target.assay %in% 'mrna')  %>%
+        dplyr::mutate(CE.S = coexpression/abs(coexpression),
+                      S = target.lfc/abs(target.lfc)) %>%
+        group_by(feature.assay, target.assay, CE.S, S) %>%
+        summarise(target = paste(sort(unique(target)), collapse = ',')) %>%
+        ungroup %>%
+        dplyr::mutate(target.assay = gsub('mrna','nonTF',target.assay),
+                      feature.assay = paste0('All_', feature.assay),
+                      feature.assay = gsub('All_NA', 'None', feature.assay))
+      
+      # Get intersection modules
+      TF.nonTF.mods1 = CE %>% filter(target.assay %in% 'TF' | target.assay %in% 'mrna')  %>%
+        dplyr::mutate(CE.S = coexpression/abs(coexpression),
+                      S = target.lfc/abs(target.lfc)) %>%
+        dplyr::select(target, feature.assay, target.assay, CE.S, S) %>%
+        group_by(target, target.assay, CE.S, S) %>%
+        summarise(feature.assay = paste(sort(unique(feature.assay)), collapse = '_')) %>%
+        group_by(feature.assay, target.assay, CE.S, S) %>%
+        summarise(target = paste(sort(unique(target)), collapse = ',')) %>%
+        ungroup %>%
+        dplyr::mutate(target.assay = gsub('mrna','nonTF',target.assay),
+                      feature.assay = paste0('Only_', feature.assay))
+      TF.nonTF.mods1$feature.assay[TF.nonTF.mods1$feature.assay == 'Only_'] = 'None'
+      
+      # Combine and store module results
+      tmp = rbind(TF.nonTF.mods, TF.nonTF.mods1) %>%
+        unique
+      
+      if (all(c(diffState1, diffState2) == sort(c(diffState1, diffState2)))){
+        tmp$CE.S[tmp$CE.S == 1] = 'CONCORDANTLY'; tmp$CE.S[tmp$CE.S == -1] = 'DISCORDANTLY'
+        tmp$S[tmp$S == 1] = 'UP'; tmp$S[tmp$S == -1] = 'DOWN'
+      } else {
+        tmp$CE.S[tmp$CE.S == -1] = 'CONCORDANTLY'; tmp$CE.S[tmp$CE.S == 1] = 'DISCORDANTLY'
+        tmp$S[tmp$S == -1] = 'UP'; tmp$S[tmp$S == 1] = 'DOWN'
+      }
+      
+      modules[[diffState1]][[diffState2]] = tmp %>%
+        dplyr::mutate(SetName = paste0(feature.assay, '_regulating_', S, '_regulated_', target.assay, '_', CE.S)) %>%
+        dplyr::rename(Genes = target)
+    }
   }
-  return(g)
-})
-writeLines('Number of entities and intereactions of the core sub-network')
-tmp = sapply(sub.graph.object, function(x){
-  data.frame(N.entity = igraph::vcount(x), N.interactions = igraph::ecount(x))
-})
-kable(tmp)
+}
 
-# Store subgraphs in synapse
-all.sub.graph.folder = Folder(name = 'Filtered Sub Graphs', parentId = CODE$properties$id)
-all.sub.graph.folder = synStore(all.sub.graph.folder)
-filtered.sub.graph = lapply(names(sub.graph.object), function(x, subGraphObj, filteredGraph){
-  # Extract edges
-  edges = subGraphObj[[x]] %>% 
-    as_data_frame %>%
-    dplyr::rename(feature = from, target = to) %>%
-    left_join(filteredGraph[[x]]$edge)
-  
-  # Write edges
-  write.table(edges, file = paste0('Edges_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
-  obj = File(paste0('Edges_',x,'.tsv'), name = paste('Edges',x), parentId = all.sub.graph.folder$properties$id)
-  obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
-  
-  # Write vertices
-  features = unique(c(edges$feature, edges[[x]]$target))
-  Nodes = dplyr::filter(filteredGraph[[x]]$node, feature %in% features)
-  write.table(Nodes, file = paste0('Vertices_',x,'.tsv'), sep = '\t', row.names=F, quote=F)
-  obj = File(paste0('Vertices_',x,'.tsv'), name = paste('Vertices',x), parentId = all.sub.graph.folder$properties$id)
-  obj = synStore(obj, executed = ThisFile, used = as.character(ALL_USED_IDs), activityName = ActivityName)
-  return(list(edge = edges, node = Nodes))
-}, sub.graph.object, filtered.graph)
+# Write all gene sets to synapse
+tmp = lapply(modules, rbindlist, idcol = 'ToState') %>% 
+  rbindlist(idcol = 'FromState') %>%
+  dplyr::select(SetName, FromState, ToState, target.assay, CE.S, S, Genes)
+
+write.table(tmp, file = 'DifferentiationSignatures.tsv', sep = '\t', row.names=F, quote=F)
+obj = File('DifferentiationSignatures.tsv', name = 'Differentiation Signatures (gene list)', parentId = CODE$properties$id)
+obj = synStore(obj, activity)
+
+# Write relative control matrix to synapse
+tmp = lapply(relative.control, rbindlist, idcol = 'ToState') %>% rbindlist(idcol = 'FromState')
+write.table(tmp, file = 'relativeControl.tsv', sep = '\t', row.names=F, quote=F)
+obj = File('relativeControl.tsv', name = 'Relative control matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activity)
 ```
 
-#### Rank nodes in sub-graph
-```{r calculateDegree, eval=FALSE}
-# Calculate total degree and betweeness
-nodeDegree = lapply(names(sub.graph.object), function(comp, subGraphs, filteredSubGraphs){
-  filteredSubGraphs[[comp]]$
-  totalStrength = igraph::strength(subGraphs[[comp]])
-  betweennessDegree = igraph::betweenness(subGraphs[[comp]])
-  all.degree = data.frame(feature = names(totalStrength),
-                          totalStrength = totalStrength) %>%
-    full_join(data.frame(feature = names(betweennessDegree),
-                        betweennessDegree = betweennessDegree)) %>%
-    left_join(dplyr::select(filteredSubGraphs[[comp]], feature, Assay))
-  all.degree$rank = sapply(all.degree[,-c(1,5)], rank) %>% 
-    rowSums %>% 
-    rank
-  all.degree = arrange(all.degree, desc(rank))
-  return(all.degree)
-<<<<<<< HEAD
-}, sub.graph.object, filtered.sub.graph)
-=======
-}, counts)
->>>>>>> 8686dde840d02d14ed260454f26e68ea34b440e8
+#### Relative control venn diagrams
+```{r relativeControl2}
+dev.off()
+pdf(file = 'relativeControlVenns.pdf', width = 20, height = 15)
+par(mfrow=c(7,7))
+allVenns = list()
+for (diffState1 in orderedDiffState){
+  allVenns[[diffState1]] = list()
+  for (diffState2 in orderedDiffState){
+    if(diffState1 == diffState2){
+      plot.new()
+    }else if (diffState1 != diffState2){
+      tmp = relative.control[[diffState1]][[diffState2]] %>%
+        filter(target.assay == 'mrna' | target.assay == 'TF')
+      tmp$feature.assay[is.na(tmp$feature.assay)] = 'All'
+      
+      allVenns[[diffState1]][[diffState2]] =  tmp %>% 
+        dplyr::select(target, feature.assay) %>% 
+        rbind(data.frame(target = unique(tmp$target), feature.assay = 'All')) %>%
+        unique %>% as.matrix %>% venneuler %>%
+        plot(main = paste(diffState1, '-', diffState2, '#', length(unique(tmp$target))))
+    }
+  }
+}
+dev.off()
+
+# Write to synapse
+obj = File('relativeControlVenns.pdf', name = 'Relative control Venn Diagrams', parentId = CODE$properties$id)
+obj = synStore(obj, executed = ThisFile, 
+               used = as.character(c(diffexp.ids, coexp.id, counts.id, ALL_USED_IDs['TFdb'])),
+               activityName = ActivityName)
+```
+
+#### Relative control venn diagrams w/o MESO-15 and 30
+```{r relativeControl3}
+orderedDiffState2 = c("SC", "DE", "MESO5", "ECTO", "EB")
+colors = c(All = 0, TF =0.2, mirna =0.4, methyl = 0.6, splicing = 0.8)
+
+dev.off()
+pdf(file = 'relativeControlVenns2.pdf', width = 13, height = 13)
+par(mfrow=c(5,5))
+allVenns = list()
+for (diffState1 in orderedDiffState2){
+  allVenns[[diffState1]] = list()
+  for (diffState2 in orderedDiffState2){
+    if(diffState1 == diffState2){
+      plot.new()
+    }else if (diffState1 != diffState2){
+      tmp = relative.control[[diffState1]][[diffState2]] %>%
+        filter(target.assay == 'mrna' | target.assay == 'TF')
+      tmp$feature.assay[is.na(tmp$feature.assay)] = 'All'
+      
+      allVenns[[diffState1]][[diffState2]] =  tmp %>%
+        dplyr::select(target, feature.assay) %>% 
+        rbind(data.frame(target = unique(tmp$target), feature.assay = 'All')) %>%
+        unique %>% as.matrix %>% venneuler %>%
+        plot(main = paste(diffState1, '-', diffState2, '#', length(unique(tmp$target))))
+    }
+  }
+}
+dev.off()
+
+# Write to synapse
+obj = File('relativeControlVenns2.pdf', name = 'Relative control Venn Diagrams (WO MESO15-30)', parentId = CODE$properties$id)
+obj = synStore(obj, activity)
+```
+
+#### Relative control (Bar charts)
+```{r relativeControl4, fig.height=15, fig.width=15}
+allBars = list()
+for (diffState1 in orderedDiffState){
+  allBars[[diffState1]] = list()
+  for (diffState2 in orderedDiffState){
+    if(diffState1 == diffState2){
+      tmp = data.frame(DiffState = diffState1, Control = 'None', count = 0)
+      allBars[[diffState1]][[diffState2]] = tmp
+    }else if (diffState1 != diffState2){
+      tmp = relative.control[[diffState1]][[diffState2]] %>%
+        dplyr::filter(target.assay == 'mrna' | target.assay == 'TF') %>%
+        dplyr::select(target, feature.assay) %>% dplyr::rename(feature = target, Control = feature.assay) %>%
+        group_by(feature) %>% arrange(desc(Control)) %>%
+        summarise(Control = paste(sort(unique(Control)), collapse = '_')) %>%
+        group_by(Control) %>% summarise(count = n())
+      tmp$Control[1] = 'None'
+      tmp$count = tmp$count/sum(tmp$count)
+      allBars[[diffState1]][[diffState2]] = tmp
+    }
+  }
+  allBars[[diffState1]] = rbindlist(allBars[[diffState1]], idcol = 'DiffState2', use.names = T, fill = T) %>%
+    dplyr::mutate(DiffState2 = factor(DiffState2, levels = orderedDiffState),
+                  Control = factor(Control))
+}
+allBars = rbindlist(allBars, idcol = 'DiffState1', use.names = T, fill=T) %>%
+  dplyr::mutate(DiffState1 = factor(DiffState1, levels = orderedDiffState))
+p = ggplot(allBars, aes(x = Control, y = count)) + geom_bar(aes(fill = Control), stat = 'identity') + coord_flip()
+p = p + xlab('Mode of regulation') + ylab('Fraction')
+p = p + facet_grid(DiffState1 ~ DiffState2)
+
+
+pdf(file = 'relativeControlBar.pdf', width = 13, height = 13)
+p
+dev.off()
+
+# Write to synapse
+obj = File('relativeControlBar.pdf', name = 'Relative control bar charts', parentId = CODE$properties$id)
+obj = synStore(obj, activity)
+```
+
+#### Relative control w/o MESO-15 and 30 (Bar charts)
+```{r relativeControl5, fig.height=15, fig.width=15}
+allBars = list()
+for (diffState1 in orderedDiffState2){
+  allBars[[diffState1]] = list()
+  for (diffState2 in orderedDiffState2){
+    if(diffState1 == diffState2){
+      tmp = data.frame(DiffState = diffState1, Control = 'None', count = 0)
+      allBars[[diffState1]][[diffState2]] = tmp
+    }else if (diffState1 != diffState2){
+       tmp = relative.control[[diffState1]][[diffState2]] %>%
+        dplyr::filter(target.assay == 'mrna' | target.assay == 'TF') %>%
+        dplyr::select(target, feature.assay) %>% dplyr::rename(feature = target, Control = feature.assay) %>%
+        group_by(feature) %>% arrange(desc(Control)) %>%
+        summarise(Control = paste(sort(unique(Control)), collapse = '_')) %>%
+        group_by(Control) %>% summarise(count = n())
+      tmp$Control[1] = 'None'
+      tmp$count = tmp$count/sum(tmp$count)
+      allBars[[diffState1]][[diffState2]] = tmp
+    }
+  }
+  allBars[[diffState1]] = rbindlist(allBars[[diffState1]], idcol = 'DiffState2', use.names = T, fill = T) %>%
+    dplyr::mutate(DiffState2 = factor(DiffState2, levels = orderedDiffState2),
+                  Control = factor(Control))
+}
+allBars = rbindlist(allBars, idcol = 'DiffState1', use.names = T, fill=T) %>%
+  dplyr::mutate(DiffState1 = factor(DiffState1, levels = orderedDiffState2))
+p = ggplot(allBars, aes(x = Control, y = count)) + geom_bar(aes(fill = Control), stat = 'identity') + coord_flip()
+p = p + xlab('Mode of regulation') + ylab('Fraction')
+p = p + facet_grid(DiffState1 ~ DiffState2)
+
+pdf(file = 'relativeControlBar2.pdf', width = 13, height = 13)
+p
+dev.off()
+
+# Write to synapse
+obj = File('relativeControlBar2.pdf', name = 'Relative control bar charts (WO MESO15-30)', parentId = CODE$properties$id)
+obj = synStore(obj, activity)
+```
+
+#### Understanding differnetiation with reference to a differentiation state
+```{r sharedControl, fig.width=10, fig.height=15}
+pdf(file = 'sharedControlVenn.pdf', width = 20, height = 20)
+shared.control = list()
+for (diffState in orderedDiffState2){
+  shared.control[[diffState]] = list()
+  for (assay in c('TF', 'nonTF')){
+    shared.control[[diffState]][[assay]] = list()
+    for(direction in c('UP', 'DOWN')){
+    tmp = lapply(modules[[diffState]], 
+                 function(x, assay, direction){
+                   x %>%
+                     filter(target.assay == assay, S == direction) %>%
+                     dplyr::select(Genes) %>%
+                     unlist %>%
+                     str_split(',') %>%
+                     unlist %>%
+                     unique
+                   }, assay, direction) %>% 
+      ldply(.fun = function(x){x = data.frame(x)}) %>%
+      filter(.id != 'MESO15' & .id != 'MESO30') %>%
+      group_by(x) %>% summarise(.id = paste(unique(sort(.id)), collapse = '_')) %>%
+      ungroup %>% group_by(.id) %>% summarise(count = n(), Genes = paste(sort(unique(x)), collapse = ',')) 
+    shared.control[[diffState]][[assay]][[direction]] = tmp
+    }
+  }
+}
+
+tmp = lapply(shared.control, function(x){
+  lapply(x, function(y){
+    rbindlist(y, use.names=T, fill=T, idcol = 'Direction')
+  }) %>% rbindlist(use.names=T, fill=T, idcol = 'mrna')
+}) %>% rbindlist(use.names=T, fill=T, idcol = 'FromState') %>% 
+  dplyr::rename(DiffState = .id)
+
+p = list()
+p[[1]] = filter(tmp, mrna == 'nonTF') %>% ggplot(aes(x = DiffState, y = count)) 
+p[[1]] = p[[1]] + geom_bar(aes(fill = DiffState), stat = 'identity') + coord_flip()
+p[[1]] = p[[1]] + facet_grid(mrna~FromState)
+
+p[[2]] = filter(tmp, mrna == 'TF') %>% ggplot(aes(x = DiffState, y = count)) 
+p[[2]] = p[[2]] + geom_bar(aes(fill = DiffState), stat = 'identity') + coord_flip()
+p[[2]] = p[[2]] + facet_grid(mrna~FromState)
+
+multiplot(plotlist = p, cols = 1)
+dev.off()
+
+multiplot(plotlist = p, cols = 1)
+# Write to synapse
+obj = File('sharedControlVenn.pdf', name = 'Shared control venn diagram', parentId = CODE$properties$id)
+obj = synStore(obj, activity)
 ```
 
 ### Source Code
