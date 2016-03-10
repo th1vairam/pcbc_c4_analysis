@@ -13,12 +13,14 @@ synapseLogin()
 knit2synapse::knitToFolderEntity(file = 'AnalyseDiffExpCoexpNet.Rmd',
                                  parentId = "syn5194922",
                                  entityName = 'Differential Expression Coexpression Networks')
+
 ```
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
 ## It is assumed your working directory is where this file is
 
 # Clear R console screen output
+dev.off()
 cat("\014")
 
 # Load libraries
@@ -461,13 +463,14 @@ pdf(file = 'relativeControlBar.pdf', width = 13, height = 13)
 p
 dev.off()
 
+p
 # Write to synapse
 obj = File('relativeControlBar.pdf', name = 'Relative control bar charts', parentId = CODE$properties$id)
 obj = synStore(obj, activity)
 ```
 
 #### Relative control w/o MESO-15 and 30 (Bar charts)
-```{r relativeControl5, fig.height=15, fig.width=15}
+```{r relativeControl5, fig.height=13, fig.width=13}
 allBars = list()
 for (diffState1 in orderedDiffState2){
   allBars[[diffState1]] = list()
@@ -500,6 +503,7 @@ p = p + facet_grid(DiffState1 ~ DiffState2)
 pdf(file = 'relativeControlBar2.pdf', width = 13, height = 13)
 p
 dev.off()
+p
 
 # Write to synapse
 obj = File('relativeControlBar2.pdf', name = 'Relative control bar charts (WO MESO15-30)', parentId = CODE$properties$id)
@@ -507,7 +511,7 @@ obj = synStore(obj, activity)
 ```
 
 #### Understanding differnetiation with reference to a differentiation state
-```{r sharedControl, fig.width=10, fig.height=15}
+```{r sharedControl, fig.width=20, fig.height=15}
 pdf(file = 'sharedControlVenn.pdf', width = 20, height = 20)
 shared.control = list()
 for (diffState in orderedDiffState2){

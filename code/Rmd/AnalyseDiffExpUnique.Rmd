@@ -1,0 +1,195 @@
+---
+title: "Integrated differential expression analysis for entities that are uniquely expressed in a differentiation state"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'AnalyseDiffExpUnique.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Differential Expression Coexpression Networks (Unique to a diffstate)')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+dev.off()
+cat("\014")
+
+# Load libraries
+library(plyr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(tidyr)
+library(reshape2)
+library(ggplot2)
+library(igraph)
+
+library(matrixStats)
+library(biomaRt)
+
+library(knitr)
+library(knit2synapse)
+library(synapseClient)
+library(rGithubClient) ## Needs the dev branch
+
+synapseLogin()
+
+# Load required files
+source('../R/lib/rownameToFirstColumn.R')
+source('../R/lib/multiplot.R')
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r synapseStore.params, cache=FALSE, include=FALSE}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+# Create folder to store results in synapse
+ActivityName <- 'Analyse differential expression in conjuction with coexpression between assays'
+
+ThisFileName <- 'AnalyseDiffExpUnique.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='diff_exp')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'Differential Expression Coexpression Networks (Unique to a diffstate)', parentId = parentId)
+CODE <- synStore(CODE)
+```
+
+```{r fxns, include=FALSE}
+downloadFile <- function(id){
+  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
+}
+```
+
+#### Get all interactions from synapse
+```{r all.interactions, include=FALSE}
+ALL_USED_IDs = c(ALL_USED_IDs, all.interactions = 'syn5643683')
+allInteractions = downloadFile('syn5643683') %>%
+  dplyr::mutate(Assay = paste(feature.assay,target.assay,sep = '_'))
+```
+
+#### Get TFs list from synapse
+```{r getTFs, include=FALSE}
+ALL_USED_IDs = c(ALL_USED_IDs, TFdb = 'syn5672453')
+
+# Get TF checkpoints db from synapse
+TFs = read.table(synGet('syn5672453')@filePath, header=T, sep= '\t', fill = TRUE) %>%
+  dplyr::filter(entrez_human != 0) %>%
+  dplyr::select(entrez_human) %>%
+  setnames('entrez_human','entrezgene') %>%
+  dplyr::mutate(Assay = 'TF')
+
+# Get human related mapping
+Hs = useMart("ENSEMBL_MART_ENSEMBL", host="www.ensembl.org") # use this one when biomart.org is down
+Hs = useDataset("hsapiens_gene_ensembl", Hs)
+human_entrz2symbol = getBM(attributes = c("entrezgene","hgnc_symbol"),
+                          filters = "entrezgene",                         
+                          values = unique(TFs$entrezgene),
+                          mart = Hs)
+
+# Convert entrex gene ids to gene symbols
+TFs = left_join(TFs, human_entrz2symbol) %>%
+  dplyr::select(hgnc_symbol, Assay) %>%
+  setnames('hgnc_symbol','feature') %>%
+  unique
+
+# Combine the ones from TF mapping of Enrichr
+TFs = rbind(TFs,
+            dplyr::filter(allInteractions, Assay == "mrna_mrna") %>%
+              dplyr::select(feature) %>%  unique %>%
+              dplyr::mutate(Assay = 'TF')) %>%
+  unique
+```
+
+#### Get median counts from synapse
+```{r getMedianCount, include=FALSE}
+counts.id = 'syn5637772'
+ALL_USED_IDs = c(ALL_USED_IDs, counts = counts.id)
+counts = downloadFile(counts.id)
+counts$Assay[counts$feature %in% TFs$feature] = 'TF'
+gc()
+```
+
+#### Get median counts from synapse
+```{r getRelativeExpressionMat, include=FALSE}
+rc.id = 'syn5713477'
+ALL_USED_IDs = c(ALL_USED_IDs, rc = rc.id)
+rc = downloadFile(rc.id)
+gc()
+```
+
+```{r getStateSpecificEntities, fig.height=15, fig.width = 10}
+counts_mat = counts %>% dplyr::select(-feature, -Assay, -MESO15, -MESO30) %>% data.matrix
+counts_mat = t(apply(counts_mat, 1, function(x){x = exp(x); x = x/max(x, na.rm=T)}))
+rownames(counts_mat) = counts$feature
+counts_mat1 = counts_mat; counts_mat1[counts_mat1<=0.5] = 0; counts_mat1[counts_mat1>0.5] = 1
+
+ccoff = 0.99
+orderedDiffState = c("SC", "DE", "MESO5", "ECTO", "EB")
+h = list()
+
+rc.unique = list()
+for (i in 1:5){
+  base.exp = c(0,0,0,0,0)
+  base.exp[i] = 1
+  
+  counts_mat1[is.na(counts_mat1)] = 0
+  c = cor(t(counts_mat1), base.exp)
+  c[is.na(c)] = 0
+  
+  uniqueFeatures = data.frame(feature = rownames(counts_mat)[abs(c)>=ccoff]) %>%
+    left_join(dplyr::select(counts, feature, Assay))
+  
+  h[[i]] = Heatmap(counts_mat[uniqueFeatures$feature[uniqueFeatures$Assay=='TF'],], 
+          col = brewer.pal(5, 'RdPu'), 
+          cluster_columns = F, 
+          show_row_hclust = F,
+          name = 'Scaled median counts',
+          column_title = paste('Unique TFs in', orderedDiffState[i]))
+  draw(h[[i]])
+
+  rc.unique[[i]] = filter(rc,
+                          FromState == orderedDiffState[i], 
+                          target %in% uniqueFeatures$feature[uniqueFeatures$Assay == 'TF' | uniqueFeatures$Assay == 'mrna'],
+                          feature %in% uniqueFeatures$feature,
+                          ToState != 'MESO15',
+                          ToState != 'MESO30') %>%
+    arrange(desc(abs(coexpression)))
+}
+rc.unique = rbindlist(rc.unique)
+Heatmap(counts_mat[unique(rc.unique$target),], 
+        cluster_columns = F, 
+        show_row_dend = F, 
+        show_row_names = F, 
+        col = brewer.pal(5, 'RdPu'),
+        name = 'Scaled median counts',
+        column_title = paste('Unique TFs and nonTFs'))
+
+tmp = rc.unique %>%
+  group_by(FromState, ToState) %>%
+  summarise(count = n(), target = paste(sort(unique(target)), collapse = '\n'))
+```
