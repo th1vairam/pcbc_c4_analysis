@@ -142,13 +142,13 @@ rc = downloadFile(rc.id)
 gc()
 ```
 
-```{r getStateSpecificEntities, fig.height=15, fig.width = 10}
+```{r getStateSpecificEntities, fig.height=20, fig.width = 10}
 counts_mat = counts %>% dplyr::select(-feature, -Assay, -MESO15, -MESO30) %>% data.matrix
 counts_mat = t(apply(counts_mat, 1, function(x){x = exp(x); x = x/max(x, na.rm=T)}))
 rownames(counts_mat) = counts$feature
 counts_mat1 = counts_mat; counts_mat1[counts_mat1<=0.5] = 0; counts_mat1[counts_mat1>0.5] = 1
 
-ccoff = 0.99
+ccoff = 0.90
 orderedDiffState = c("SC", "DE", "MESO5", "ECTO", "EB")
 h = list()
 

@@ -37,15 +37,12 @@ library(matrixStats)
 library(biomaRt)
 
 library(knitr)
+library(CovariateAnalysis)
 library(knit2synapse)
 library(synapseClient)
-library(rGithubClient) ## Needs the dev branch
+library(githubr) ## Needs the dev branch
 
 synapseLogin()
-
-# Load required files
-source('../R/lib/rownameToFirstColumn.R')
-source('../R/lib/multiplot.R')
 
 options(xtable.type="html")
 
@@ -78,12 +75,6 @@ ThisFile <- getPermlink(repository = ThisRepo,
 # Populate wiki with results
 CODE <- Folder(name = 'Differential Expression Coexpression Networks', parentId = parentId)
 CODE <- synStore(CODE)
-```
-
-```{r fxns, include=FALSE}
-downloadFile <- function(id){
-  tmp = fread(synGet(id)@filePath, data.table=F, header=T)
-}
 ```
 
 #### Get all interactions from synapse
@@ -300,54 +291,50 @@ for (diffState1 in orderedDiffState){
       
       relative.control[[diffState1]][[diffState2]] = CE
       
-      # Get TF and nonTF specific modules
+      # Get differentially expressed genes
+      DE.mods = CE %>% filter(target.assay %in% 'TF' | target.assay %in% 'mrna')  %>%
+        dplyr::mutate(S = target.lfc/abs(target.lfc)) %>%
+        group_by(S) %>%
+        summarise(target = paste(sort(unique(target)), collapse = ',')) %>%
+        dplyr::rename(direction = S, genes = target) %>%
+        dplyr::mutate(assay = 'all', action = 'none')
+      
+      # Get intersection modules
       TF.nonTF.mods = CE %>% filter(target.assay %in% 'TF' | target.assay %in% 'mrna')  %>%
         dplyr::mutate(CE.S = coexpression/abs(coexpression),
                       S = target.lfc/abs(target.lfc)) %>%
-        group_by(feature.assay, target.assay, CE.S, S) %>%
+        dplyr::group_by(feature.assay, CE.S, S) %>%
         summarise(target = paste(sort(unique(target)), collapse = ',')) %>%
-        ungroup %>%
-        dplyr::mutate(target.assay = gsub('mrna','nonTF',target.assay),
-                      feature.assay = paste0('All_', feature.assay),
-                      feature.assay = gsub('All_NA', 'None', feature.assay))
-      
-      # Get intersection modules
-      TF.nonTF.mods1 = CE %>% filter(target.assay %in% 'TF' | target.assay %in% 'mrna')  %>%
-        dplyr::mutate(CE.S = coexpression/abs(coexpression),
-                      S = target.lfc/abs(target.lfc)) %>%
-        dplyr::select(target, feature.assay, target.assay, CE.S, S) %>%
-        group_by(target, target.assay, CE.S, S) %>%
-        summarise(feature.assay = paste(sort(unique(feature.assay)), collapse = '_')) %>%
-        group_by(feature.assay, target.assay, CE.S, S) %>%
-        summarise(target = paste(sort(unique(target)), collapse = ',')) %>%
-        ungroup %>%
-        dplyr::mutate(target.assay = gsub('mrna','nonTF',target.assay),
-                      feature.assay = paste0('Only_', feature.assay))
-      TF.nonTF.mods1$feature.assay[TF.nonTF.mods1$feature.assay == 'Only_'] = 'None'
+        dplyr::rename(assay = feature.assay,
+                      action = CE.S,
+                      direction = S,
+                      genes = target)
+      ind = is.na(TF.nonTF.mods$assay)
+      TF.nonTF.mods[ind, c('assay','action')] = 'none'
+      TF.nonTF.mods = TF.nonTF.mods  %>% filter(!(assay == 'mirna' & action == 1))
       
       # Combine and store module results
-      tmp = rbind(TF.nonTF.mods, TF.nonTF.mods1) %>%
+      tmp = rbindlist(list(DE.mods, TF.nonTF.mods), use.names=T) %>%
         unique
       
       if (all(c(diffState1, diffState2) == sort(c(diffState1, diffState2)))){
-        tmp$CE.S[tmp$CE.S == 1] = 'CONCORDANTLY'; tmp$CE.S[tmp$CE.S == -1] = 'DISCORDANTLY'
-        tmp$S[tmp$S == 1] = 'UP'; tmp$S[tmp$S == -1] = 'DOWN'
+        tmp$action[tmp$action == 1] = 'CONCORDANT'; tmp$action[tmp$action == -1] = 'DISCORDANT'
+        tmp$direction[tmp$direction == 1] = 'UP'; tmp$direction[tmp$direction == -1] = 'DOWN'
       } else {
-        tmp$CE.S[tmp$CE.S == -1] = 'CONCORDANTLY'; tmp$CE.S[tmp$CE.S == 1] = 'DISCORDANTLY'
-        tmp$S[tmp$S == -1] = 'UP'; tmp$S[tmp$S == 1] = 'DOWN'
+        tmp$action[tmp$action == -1] = 'CONCORDANT'; tmp$action[tmp$action == 1] = 'DISCORDANT'
+        tmp$direction[tmp$direction == -1] = 'UP'; tmp$direction[tmp$direction == 1] = 'DOWN'
       }
       
-      modules[[diffState1]][[diffState2]] = tmp %>%
-        dplyr::mutate(SetName = paste0(feature.assay, '_regulating_', S, '_regulated_', target.assay, '_', CE.S)) %>%
-        dplyr::rename(Genes = target)
+      modules[[diffState1]][[diffState2]] = tmp 
     }
   }
 }
 
 # Write all gene sets to synapse
-tmp = lapply(modules, rbindlist, idcol = 'ToState') %>% 
-  rbindlist(idcol = 'FromState') %>%
-  dplyr::select(SetName, FromState, ToState, target.assay, CE.S, S, Genes)
+tmp = lapply(modules, rbindlist, idcol = 'tostate', use.names=T) %>% 
+  rbindlist(idcol = 'fromstate', use.names=T) %>%
+  dplyr::mutate(setname = paste(fromstate, tostate, assay, action, direction, sep='_')) %>%
+  dplyr::select(setname, fromstate, tostate, assay, action, direction, genes)
 
 write.table(tmp, file = 'DifferentiationSignatures.tsv', sep = '\t', row.names=F, quote=F)
 obj = File('DifferentiationSignatures.tsv', name = 'Differentiation Signatures (gene list)', parentId = CODE$properties$id)
