@@ -11,8 +11,8 @@ setwd('/shared/Github/pcbc_c4_analysis/code/R')
 library(synapseClient)
 
 # Login to synapse
-apikey = read.table('/shared/synapseAPIKey')
-synapseLogin(apiKey = apikey)
+apikey = read.table('/shared/synapseAPIKey', stringsAsFactors = F)
+synapseLogin(username = 'th_vairam', apiKey = apikey$V1)
 
 # Get differential methylation (ALL)
 diffexp.id = 'syn5706668'
