@@ -5,18 +5,21 @@
 cat("\014")
 
 # Clear R workspace
-setwd('/shared/Github/pcbc_c4_analysis/code/R')
+setwd('/mnt/Github/pcbc_c4_analysis/code/R')
 
 # Load libraries
 library(synapseClient)
+library(CovariateAnalysis)
 
 # Login to synapse
-apikey = read.table('/shared/synapseAPIKey', stringsAsFactors = F)
-synapseLogin(username = 'th_vairam', apiKey = apikey$V1)
+# apikey = read.table('/mnt/synapseAPIKey', stringsAsFactors = F)
+# synapseLogin(username = 'th_vairam', apiKey = apikey$V1)
+synapseLogin()
 
 # Get differential methylation (ALL)
 diffexp.id = 'syn5706668'
 diffexp = downloadFile(diffexp.id)
+ind = which(diffexp$setname %in% setdiff(diffexp$setname, tmp$file.name))
 
 # Make directory and write shell scripts for running these files
 system('mkdir sgeEnrichDiffexp')
@@ -24,19 +27,17 @@ fp_all = file(paste('sgeEnrichDiffexp/allSubmissions.sh'),'w+')
 cat('#!/bin/bash',file=fp_all,sep='\n')
 close(fp_all)
 
-for (id in 1:10) {
-  fp = file (paste('/shared/Github/pcbc_c4_analysis/code/R/sgeEnrichDiffexp/SUB',id,sep='.'), "w+")
+for (id in ind) {
+  fp = file (paste('/mnt/Github/pcbc_c4_analysis/code/R/sgeEnrichDiffexp/SUB',id,'sh',sep='.'), "w+")
   cat('#!/bin/bash', 
       'sleep 30', 
-      paste('Rscript /shared/Github/pcbc_c4_analysis/code/R/enrichment_diffexp_SGE.R',id), 
+      paste('Rscript /mnt/Github/pcbc_c4_analysis/code/R/enrichment_diffexp_SGE.R',diffexp.id,id), 
       file = fp,
       sep = '\n')
   close(fp)
   
   fp_all = file(paste('sgeEnrichDiffexp/allSubmissions.sh'),'a+')    
-  cat(paste('qsub','-cwd','-V',paste('/shared/Github/pcbc_c4_analysis/code/R/sgeEnrichDiffexpDiffexp/SUB',id,sep='.'),
-            '-o',paste('/shared/Github/pcbc_c4_analysis/code/R/sgeEnrichDiffexp/SUB',id,'o',sep='.'),
-            '-e',paste('/shared/Github/pcbc_c4_analysis/code/R/sgeEnrichDiffexp/SUB',id,'e',sep='.')),
+  cat(paste('sh', paste('/mnt/Github/pcbc_c4_analysis/code/R/sgeEnrichDiffexp/SUB',id,'sh',sep='.')),
       file=fp_all,
       sep='\n')
   close(fp_all)

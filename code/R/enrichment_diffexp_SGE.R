@@ -8,7 +8,8 @@ args = commandArgs(TRUE)
 cat("\014")
 
 # Clear R workspace
-setwd('/shared/Github/pcbc_c4_analysis/code/R')
+setwd('/mnt/Github/pcbc_c4_analysis/code/R')
+.libPaths('/mnt/mylibs/')
 ############################################################################################################
 
 ############################################################################################################
@@ -24,8 +25,9 @@ library(dplyr)
 library(stringr)
 
 # Login to synapse
-apikey = read.table('/shared/synapseAPIKey')
-synapseLogin(apiKey = apikey)
+# apikey = read.table('/mnt/synapseAPIKey')
+# synapseLogin(apiKey = apikey)
+synapseLogin()
 ############################################################################################################
 
 ############################################################################################################
