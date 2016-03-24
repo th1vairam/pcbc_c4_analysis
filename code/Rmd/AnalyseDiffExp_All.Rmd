@@ -36,6 +36,8 @@ library(ComplexHeatmap)
 library(matrixStats)
 
 library(fpc)
+library(WGCNA)
+library(flashClust)
 
 library(circlize)
 colfunc <- colorRampPalette(c("white", "red"))
@@ -120,7 +122,9 @@ mrna.counts.scaled = t(apply(mrna.counts.scaled, 1,
                              }))
 mrna.counts.scaled = na.omit(mrna.counts.scaled)
 writeLines(paste('Clustering expression of',dim(mrna.counts.scaled)[1],'mrnas'))
+```
 
+```{r mrna.clust1, fig.height=8, fig.width=25}
 # Finding optimum number of clusters 
 clust.d = dist(mrna.counts.scaled)
 clust = hclust(clust.d)
@@ -135,7 +139,9 @@ names(mrna.cluster) = rownames(mrna.counts.scaled)
 
 # Merge close modules
 mrna.cluster = mergeCloseModules(t(mrna.counts.scaled), mrna.cluster, cutHeight = 0.15, verbose = 3)$colors
+```
 
+```{r mrna.clust2, fig.height=8, fig.width=10}
 # Calculate medians for each cluster
 clust.median = lapply(1:max(mrna.cluster), function(i, mrnaCountsScaled, mrnaCluster){
   med = rowMedians(t(mrnaCountsScaled[names(mrnaCluster)[mrnaCluster == i],]))
@@ -146,7 +152,9 @@ clust.median = lapply(1:max(mrna.cluster), function(i, mrnaCountsScaled, mrnaClu
 rownames(clust.median) = paste('Cluster',1:dim(clust.median)[1])
 clust.median = na.omit(clust.median)
 writeLines(paste(dim(clust.median)[1], 'clusters are infferred in mrna'))
+```
 
+```{r mrna.clust3, fig.height=25, fig.widht=10}
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
 
 Heatmap(clust.median, name = 'Counts', column_title = 'mRNA: Cluster medians', 
@@ -215,7 +223,9 @@ mirna.counts.scaled = t(apply(mirna.counts.scaled, 1,
                              }))
 mirna.counts.scaled = na.omit(mirna.counts.scaled)
 writeLines(paste('Clustering expression of',dim(mirna.counts.scaled)[1],'mirnas'))
+```
 
+```{r mirna.clust1, fig.height=8, fig.width=25}
 # Finding optimum number of clusters 
 clust.d = dist(mirna.counts.scaled)
 clust = hclust(clust.d)
@@ -230,7 +240,9 @@ names(mirna.cluster) = rownames(mirna.counts.scaled)
 
 # Merge close modules
 mirna.cluster = mergeCloseModules(t(mirna.counts.scaled), mirna.cluster, cutHeight = 0.15, verbose = 3)$colors
+```
 
+```{r mirna.clust2, fig.height=8, fig.width=8}
 # Calculate medians for each cluster
 clust.median = lapply(1:max(mirna.cluster), function(i, mirnaCountsScaled, mirnaCluster){
   med = rowMedians(t(mirnaCountsScaled[names(mirnaCluster)[mirnaCluster == i],]))
@@ -252,7 +264,9 @@ Heatmap(clust.median, name = 'Counts', column_title = 'mirna: Cluster medians',
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
         show_row_names = T, row_names_side = 'left', show_column_names = T, show_row_hclust = T,
         heatmap_legend_param = figure_size)
+```
 
+```{r mirna.clust3, fig.height=25, fig.width=10}
 Heatmap(mirna.counts.scaled, name = 'Counts', column_title = 'mirna: Scaled median counts', 
         cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
         split = mirna.cluster,
@@ -312,7 +326,9 @@ methyl.counts.scaled = t(apply(methyl.counts.scaled, 1,
                              }))
 methyl.counts.scaled = na.omit(methyl.counts.scaled)
 writeLines(paste('Clustering expression of',dim(methyl.counts.scaled)[1],'methyl'))
+```
 
+```{r methyl.clust1, fig.height=10, fig.width=25}
 # Finding optimum number of clusters 
 clust.d = dist(methyl.counts.scaled)
 clust = hclust(clust.d)
@@ -327,7 +343,9 @@ names(methyl.cluster) = rownames(methyl.counts.scaled)
 
 # Merge close modules
 methyl.cluster = mergeCloseModules(t(methyl.counts.scaled), methyl.cluster, cutHeight = 0.15, verbose = 3)$colors
+```
 
+```{r methyl.clust2, fig.height=10, fig.width=10}
 # Calculate medians for each cluster
 clust.median = lapply(1:max(methyl.cluster), function(i, methylCountsScaled, methylCluster){
   med = rowMedians(t(methylCountsScaled[names(methylCluster)[methylCluster == i],]))
@@ -349,7 +367,9 @@ Heatmap(clust.median, name = 'Counts', column_title = 'methyl: Cluster medians',
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
         show_row_names = T, row_names_side = 'left', show_column_names = T, show_row_dend = T,
         heatmap_legend_param = figure_size)
+```
 
+```{r methyl.clust3, fig.height=25, fig.width=10}
 Heatmap(methyl.counts.scaled, name = 'Counts', column_title = 'methyl: Scaled median counts', 
         cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
         split = methyl.cluster,
@@ -408,7 +428,9 @@ splicing.counts.scaled = t(apply(splicing.counts.scaled, 1,
                              }))
 splicing.counts.scaled = na.omit(splicing.counts.scaled)
 writeLines(paste('Clustering expression of',dim(splicing.counts.scaled)[1],'splicing junctions'))
+```
 
+```{r splicing.clust1, fig.height=10, fig.width=25}
 # Finding optimum number of clusters 
 clust.d = dist(splicing.counts.scaled)
 clust = hclust(clust.d)
@@ -423,7 +445,9 @@ names(splicing.cluster) = rownames(splicing.counts.scaled)
 
 # Merge close modules
 splicing.cluster = mergeCloseModules(t(splicing.counts.scaled), splicing.cluster, cutHeight = 0.15, verbose = 3)$colors
+```
 
+```{r splicing.clust2, fig.height=10, fig.width=10}
 # Calculate medians for each cluster
 clust.median = lapply(1:max(splicing.cluster), function(i, splicingCountsScaled, splicingCluster){
   med = rowMedians(t(splicingCountsScaled[names(splicingCluster)[splicingCluster == i],]))
@@ -436,7 +460,9 @@ clust.median = na.omit(clust.median)
 writeLines(paste(dim(clust.median)[1], 'clusters are infferred in splicing'))
 
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
+```
 
+```{r splicing.clust3, fig.height=25, fig.width=10}
 Heatmap(clust.median, name = 'Counts', column_title = 'splicing: Cluster medians', 
         cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
         # split = splicing.cluster,
