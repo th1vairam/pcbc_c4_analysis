@@ -77,8 +77,8 @@ CODE <- synStore(CODE)
 ```{r set.thresholds}
 pval.th <- 0.01
 
-mrna.lfc.th <- log2(3)
-mirna.lfc.th <- log2(3)
+mrna.lfc.th <- log2(2)
+mirna.lfc.th <- log2(2)
 methyl.changeBeta.th <- 0.35
 splicing.changePSI.th <- 0.2
 ```
@@ -88,6 +88,14 @@ splicing.changePSI.th <- 0.2
 counts.id = 'syn5637772'
 ALL_USED_IDs = c(ALL_USED_IDs, counts = counts.id)
 counts = downloadFile(counts.id)
+```
+
+#### Use co-expression results to map miRNA and methylation to mRNA
+```{r mirna.mrna}
+coexp.id = 'syn5713477'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
+
+coexp = downloadFile(coexp.id)
 ```
 
 #### Get mRNA differential expression clusters
@@ -138,7 +146,7 @@ mrna.cluster = cutreeDynamic(clust,
 names(mrna.cluster) = rownames(mrna.counts.scaled)
 
 # Merge close modules
-mrna.cluster = mergeCloseModules(t(mrna.counts.scaled), mrna.cluster, cutHeight = 0.15, verbose = 3)$colors
+mrna.cluster = mergeCloseModules(t(mrna.counts.scaled), mrna.cluster, cutHeight = 0.2, verbose = 3)$colors
 ```
 
 ```{r mrna.clust2, fig.height=8, fig.width=10}
@@ -151,10 +159,8 @@ clust.median = lapply(1:max(mrna.cluster), function(i, mrnaCountsScaled, mrnaClu
   do.call(rbind,.)
 rownames(clust.median) = paste('Cluster',1:dim(clust.median)[1])
 clust.median = na.omit(clust.median)
-writeLines(paste(dim(clust.median)[1], 'clusters are infferred in mrna'))
-```
+writeLines(paste(dim(clust.median)[1], 'clusters are inferred in mrna'))
 
-```{r mrna.clust3, fig.height=25, fig.widht=10}
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
 
 Heatmap(clust.median, name = 'Counts', column_title = 'mRNA: Cluster medians', 
@@ -165,7 +171,9 @@ Heatmap(clust.median, name = 'Counts', column_title = 'mRNA: Cluster medians',
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
         show_row_names = T, row_names_side = 'left', show_column_names = T, show_row_dend = T,
         heatmap_legend_param = figure_size)
+```
 
+```{r mrna.clust3, fig.height=25, fig.widht=10}
 Heatmap(mrna.counts.scaled, name = 'Counts', column_title = 'mRNA: Scaled median counts', 
         cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
         split = mrna.cluster,
@@ -189,6 +197,25 @@ for (i in unique(mrna.cluster)){
   draw(h)
 }
 dev.off()
+```
+
+```{r mrna.clust4, fig.height=25, fig.widht=10}
+# Pick related clusters
+# c(94 = 'MESO15', 78 = 'EB', 17 = 'MESO30-EB',
+#   76 = 'LATE', 8 = 'ECTO', 20 = 'EARLY', 83 = 'MESO15')
+Heatmap(mrna.counts.scaled, name = 'Counts', column_title = 'mRNA: Scaled median counts', 
+        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
+        split = mrna.cluster,
+        column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
+        row_title_gp = gpar(fontsize = 22, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
+        show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_dend = F,
+        heatmap_legend_param = figure_size)
+
+# Extract clusters into gct files
+mrna.cluster.gct = data.frame(feature = names(mrna.cluster), cluster = mrna.cluster) %>%
+  group_by(cluster) %>%
+  summarise(feature = paste(unique(feature), collapse = ','))
 ```
 
 #### Get miRNA differential expression clusters
@@ -252,7 +279,7 @@ clust.median = lapply(1:max(mirna.cluster), function(i, mirnaCountsScaled, mirna
   do.call(rbind,.)
 rownames(clust.median) = paste('Cluster',1:dim(clust.median)[1])
 clust.median = na.omit(clust.median)
-writeLines(paste(dim(clust.median)[1], 'clusters are infferred in mirna'))
+writeLines(paste(dim(clust.median)[1], 'clusters are inferred in mirna'))
 
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
 
@@ -290,6 +317,30 @@ for (i in unique(mirna.cluster)){
   draw(h)
 }
 dev.off()
+
+# Extract clusters into gct files
+mirna.cluster.gct = data.frame(feature = names(mirna.cluster), cluster = mirna.cluster) %>%
+  group_by(cluster) %>%
+  summarise(feature = paste(unique(feature), collapse = ','))
+```
+#### Map mirna - mrna
+```{r mirna.mrna}
+mirna.mrna = coexp %>%
+  filter(feature.assay == 'mirna', target.assay %in% c('TF', 'mrna'),
+         abs(feature.lfc) >= mirna.lfc.th,
+         abs(target.lfc) >= mrna.lfc.th,
+         abs(coexpression) >= 0.9)
+
+map.mrna <- function(x){
+  filter(mirna.mrna, feature %in% str_split(x, ',')[[1]]) %>%
+    dplyr::select(target) %>%
+    unique %>%
+    unlist %>%
+    paste(collapse = ',')
+}
+  
+mirna.mrna.cluster.gct = group_by(mirna.cluster.gct, cluster) %>%
+  summarise(feature = map.mrna(feature))
 ```
 
 #### Get DNA methylation differential expression clusters
@@ -335,14 +386,14 @@ clust = hclust(clust.d)
 plot(clust, main = 'methyl')
 methyl.cluster = cutreeDynamic(clust, 
                              distM = as.matrix(clust.d),
-                             minClusterSize = 50,
+                             minClusterSize = 100,
                              verbose = 4, pamRespectsDendro = T,
                              pamStage = T,
                              deepSplit = 4)
 names(methyl.cluster) = rownames(methyl.counts.scaled)
 
 # Merge close modules
-methyl.cluster = mergeCloseModules(t(methyl.counts.scaled), methyl.cluster, cutHeight = 0.15, verbose = 3)$colors
+methyl.cluster = mergeCloseModules(t(methyl.counts.scaled), methyl.cluster, cutHeight = 0.2, verbose = 3)$colors
 ```
 
 ```{r methyl.clust2, fig.height=10, fig.width=10}
@@ -355,7 +406,7 @@ clust.median = lapply(1:max(methyl.cluster), function(i, methylCountsScaled, met
   do.call(rbind,.)
 rownames(clust.median) = paste('Cluster',1:dim(clust.median)[1])
 clust.median = na.omit(clust.median)
-writeLines(paste(dim(clust.median)[1], 'clusters are infferred in methyl'))
+writeLines(paste(dim(clust.median)[1], 'clusters are inferred in methyl'))
 
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
 
@@ -393,6 +444,28 @@ for (i in unique(methyl.cluster)){
   draw(h)
 }
 dev.off()
+
+# Extract clusters into gct files
+methyl.cluster.gct = data.frame(feature = names(methyl.cluster), cluster = methyl.cluster) %>%
+  group_by(cluster) %>%
+  summarise(feature = paste(unique(feature), collapse = ','))
+```
+
+#### Map methyl - mrna
+```{r methyl.mrna}
+methyl.mrna = coexp %>%
+  filter(feature.assay == 'methyl', target.assay %in% c('TF', 'mrna'),
+         abs(feature.cb) >= methyl.changeBeta.th,
+         abs(target.lfc) >= mrna.lfc.th)
+
+map.mrna <- function(x){
+  filter(methyl.mrna, feature %in% str_split(x, ',')[[1]]) %>%
+    dplyr::select(target) %>% unique %>% unlist %>%
+    paste(collapse = ',')
+}
+  
+methyl.mrna.cluster.gct = group_by(methyl.cluster.gct, cluster) %>%
+  summarise(feature = map.mrna(feature))
 ```
 
 ### Get mRNA differentially spliced junction clusters
@@ -457,7 +530,7 @@ clust.median = lapply(1:max(splicing.cluster), function(i, splicingCountsScaled,
   do.call(rbind,.)
 rownames(clust.median) = paste('Cluster',1:dim(clust.median)[1])
 clust.median = na.omit(clust.median)
-writeLines(paste(dim(clust.median)[1], 'clusters are infferred in splicing'))
+writeLines(paste(dim(clust.median)[1], 'clusters are inferred in splicing'))
 
 figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 14))
 ```
@@ -495,6 +568,67 @@ for (i in unique(splicing.cluster)){
   draw(h)
 }
 dev.off()
+
+# Extract clusters into gct files
+splicing.cluster.gct = data.frame(feature = names(splicing.cluster), cluster = splicing.cluster) %>%
+  group_by(cluster) %>%
+  summarise(feature = paste(unique(feature), collapse = ','))
 ```
+
+#### Map splicing - mrna
+```{r splicing.mrna}
+splicing.mrna = coexp %>%
+  filter(feature.assay == 'splicing', target.assay %in% c('TF', 'mrna'),
+         abs(feature.cpsi) >= splicing.changePSI.th,
+         abs(target.lfc) >= mrna.lfc.th)
+
+map.mrna <- function(x){
+  filter(splicing.mrna, feature %in% str_split(x, ',')[[1]]) %>%
+    dplyr::select(target) %>% unique %>% unlist %>%
+    paste(collapse = ',')
+}
+  
+splicing.mrna.cluster.gct = group_by(splicing.cluster.gct, cluster) %>%
+  summarise(feature = map.mrna(feature))
+```
+
+### Store results in synapse
+```{r synstore, cache=FALSE}
+# Store mrna results in synapse
+write.table(mrna.cluster.gct, file = 'mrnaCluster.gct', row.names = F, sep = '\t', quote=F)
+mrna.obj = File('mrnaCluster.gct', name = "Differentially Expressed mRNA (gct format)", parentId = CODE$properties$id)
+mrna.obj = synStore(mrna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'mrna')])
+
+# Store mirna results in synapse
+write.table(mirna.cluster.gct, file = 'mirnaCluster.gct', row.names = F, sep = '\t', quote=F)
+mirna.obj = File('mirnaCluster.gct', name = "Differentially Expressed miRNA (gct format)", parentId = CODE$properties$id)
+mirna.obj = synStore(mirna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'mirna')])
+
+# Store mirna-mrna results in synapse
+write.table(mirna.mrna.cluster.gct, file = 'mirnamrnaCluster.gct', row.names = F, sep = '\t', quote=F)
+mirna.mrna.obj = File('mirnamrnaCluster.gct', name = "Differentially Coexpressed mRNA with miRNA (gct format)", parentId = CODE$properties$id)
+mirna.mrna.obj = synStore(mirna.mrna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'mirna','coexp')])
+
+# Store methyl results in synapse
+write.table(methyl.cluster.gct, file = 'methylCluster.gct', row.names = F, sep = '\t', quote=F)
+methyl.obj = File('methylCluster.gct', name = "Differentially Methylated Probes (gct format)", parentId = CODE$properties$id)
+methyl.obj = synStore(methyl.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'methyl')])
+
+# Store methyl-mrna results in synapse
+write.table(methyl.mrna.cluster.gct, file = 'methylmrnaCluster.gct', row.names = F, sep = '\t', quote=F)
+methyl.mrna.obj = File('methylmrnaCluster.gct', name = "Differentially Coexpressed mRNA with DNA methylation (gct format)", parentId = CODE$properties$id)
+methyl.mrna.obj = synStore(methyl.mrna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'methyl','coexp')])
+
+# Store splicing results in synapse
+write.table(splicing.cluster.gct, file = 'splicingCluster.gct', row.names = F, sep = '\t', quote=F)
+splicing.obj = File('splicingCluster.gct', name = "Differentially Spliced Junctions (gct format)", parentId = CODE$properties$id)
+splicing.obj = synStore(splicing.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'splicing')])
+
+# Store splicing-mrna results in synapse
+write.table(splicing.mrna.cluster.gct, file = 'splicingmrnaCluster.gct', row.names = F, sep = '\t', quote=F)
+splicing.mrna.obj = File('splicingmrnaCluster.gct', name = "Differentially Coexpressed mRNA with splicing junctions (gct format)", parentId = CODE$properties$id)
+splicing.mrna.obj = synStore(splicing.mrna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'splicing','coexp')])
+```
+
 ### Source Code
 [Source R Markdown](`r thisFile`)
