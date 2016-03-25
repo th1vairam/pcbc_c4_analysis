@@ -91,7 +91,7 @@ counts = downloadFile(counts.id)
 ```
 
 #### Use co-expression results to map miRNA and methylation to mRNA
-```{r mirna.mrna}
+```{r coexpp}
 coexp.id = 'syn5713477'
 ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
 
@@ -597,37 +597,37 @@ splicing.mrna.cluster.gct = group_by(splicing.cluster.gct, cluster) %>%
 # Store mrna results in synapse
 write.table(mrna.cluster.gct, file = 'mrnaCluster.gct', row.names = F, sep = '\t', quote=F)
 mrna.obj = File('mrnaCluster.gct', name = "Differentially Expressed mRNA (gct format)", parentId = CODE$properties$id)
-mrna.obj = synStore(mrna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'mrna')])
+mrna.obj = synStore(mrna.obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs[c('counts', 'mrna')]))
 
 # Store mirna results in synapse
 write.table(mirna.cluster.gct, file = 'mirnaCluster.gct', row.names = F, sep = '\t', quote=F)
 mirna.obj = File('mirnaCluster.gct', name = "Differentially Expressed miRNA (gct format)", parentId = CODE$properties$id)
-mirna.obj = synStore(mirna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'mirna')])
+mirna.obj = synStore(mirna.obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs[c('counts', 'mirna')]))
 
 # Store mirna-mrna results in synapse
 write.table(mirna.mrna.cluster.gct, file = 'mirnamrnaCluster.gct', row.names = F, sep = '\t', quote=F)
 mirna.mrna.obj = File('mirnamrnaCluster.gct', name = "Differentially Coexpressed mRNA with miRNA (gct format)", parentId = CODE$properties$id)
-mirna.mrna.obj = synStore(mirna.mrna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'mirna','coexp')])
+mirna.mrna.obj = synStore(mirna.mrna.obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs[c('counts', 'mirna','coexp')]))
 
 # Store methyl results in synapse
 write.table(methyl.cluster.gct, file = 'methylCluster.gct', row.names = F, sep = '\t', quote=F)
 methyl.obj = File('methylCluster.gct', name = "Differentially Methylated Probes (gct format)", parentId = CODE$properties$id)
-methyl.obj = synStore(methyl.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'methyl')])
+methyl.obj = synStore(methyl.obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs[c('counts', 'methyl')]))
 
 # Store methyl-mrna results in synapse
 write.table(methyl.mrna.cluster.gct, file = 'methylmrnaCluster.gct', row.names = F, sep = '\t', quote=F)
 methyl.mrna.obj = File('methylmrnaCluster.gct', name = "Differentially Coexpressed mRNA with DNA methylation (gct format)", parentId = CODE$properties$id)
-methyl.mrna.obj = synStore(methyl.mrna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'methyl','coexp')])
+methyl.mrna.obj = synStore(methyl.mrna.obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs[c('counts', 'methyl','coexp')]))
 
 # Store splicing results in synapse
 write.table(splicing.cluster.gct, file = 'splicingCluster.gct', row.names = F, sep = '\t', quote=F)
 splicing.obj = File('splicingCluster.gct', name = "Differentially Spliced Junctions (gct format)", parentId = CODE$properties$id)
-splicing.obj = synStore(splicing.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'splicing')])
+splicing.obj = synStore(splicing.obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs[c('counts', 'splicing')]))
 
 # Store splicing-mrna results in synapse
 write.table(splicing.mrna.cluster.gct, file = 'splicingmrnaCluster.gct', row.names = F, sep = '\t', quote=F)
 splicing.mrna.obj = File('splicingmrnaCluster.gct', name = "Differentially Coexpressed mRNA with splicing junctions (gct format)", parentId = CODE$properties$id)
-splicing.mrna.obj = synStore(splicing.mrna.obj, activityName = ActivityName, executed = thisFile, used = ALL_USED_IDs[c('counts', 'splicing','coexp')])
+splicing.mrna.obj = synStore(splicing.mrna.obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs[c('counts', 'splicing','coexp')]))
 ```
 
 ### Source Code
