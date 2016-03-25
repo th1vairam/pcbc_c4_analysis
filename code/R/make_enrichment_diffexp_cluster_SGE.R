@@ -29,7 +29,7 @@ for (clust in clusters) {
   fp = file (paste('/mnt/Github/pcbc_c4_analysis/code/R/sgeEnrichDiffexp/SUB',clust,'sh',sep='.'), "w+")
   cat('#!/bin/bash', 
       'sleep 30', 
-      paste('Rscript /mnt/Github/pcbc_c4_analysis/code/R/enrichment_diffexp_clusters_SGE.R','syn5231514',clust,'syn5834610'), 
+      paste('Rscript /mnt/Github/pcbc_c4_analysis/code/R/enrichment_diffexp_clusters_SGE.R syn5231514 syn5834610', clust), 
       file = fp,
       sep = '\n')
   close(fp)

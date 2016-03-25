@@ -67,7 +67,7 @@ GeneSets = GeneSets[gsets]
 #### Get differentialy expressed gene sets ####
 ALL_USED_IDs = c(ALL_USED_IDs, args[1])
 diffexp.genesets = downloadFile(args[1])
-cluster = args[2]
+cluster = args[3]
 
 genesToTest = str_split(diffexp.genesets$feature[diffexp.genesets$cluster == cluster], pattern = ',') %>%
   unlist
@@ -108,7 +108,7 @@ write.table(enrichResults, file = paste('Cluster',cluster,'tsv', sep='.'), sep='
 # Write results to synapse
 ENR_OBJ = File(paste('Cluster',cluster,'tsv', sep='.'),
                name = paste('Cluster',cluster), 
-               parentId = args[3])
+               parentId = args[2])
 
 annotations(ENR_OBJ) = list(algo = 'Fisher')
 
