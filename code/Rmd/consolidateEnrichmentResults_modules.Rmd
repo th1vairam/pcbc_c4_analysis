@@ -32,6 +32,7 @@ library(stringr)
 library(ComplexHeatmap)
 library(RColorBrewer)
 library(fpc)
+library(xlsx)
 
 options(xtable.type="html")
 
@@ -233,9 +234,9 @@ OR = dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
                      "EB.OR", "Late.OR")) %>% as.data.frame
 write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'miRNA-OR-FDR0.01-Top5', row.names=F, append = T)
 gx = dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
-              one_of("SC.OR", "SC and DE.OR", "SC and ECTO.OR", 
-                     "DE and MESO5.OR", "MESO5.OR", "ECTO.OR", 
-                     "EB.OR", "Late.OR")) %>% as.data.frame
+              one_of("SC.Genes", "SC and DE.Genes", "SC and ECTO.Genes", 
+                     "DE and MESO5.Genes", "MESO5.Genes", "ECTO.Genes", 
+                     "EB.Genes", "Late.Genes")) %>% as.data.frame
 write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'miRNA-Genes-FDR0.01-Top5', row.names=F, append = T)
 ```
 
@@ -325,7 +326,7 @@ OR = dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
               one_of("Early.OR", "Not SC and ECTO.OR", "Not ECTO.OR", "EB.OR")) %>% as.data.frame
 write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'methyl-OR-FDR0.01-Top5', row.names=F, append = T)
 gx = dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
-              one_of("Early.OR", "Not SC and ECTO.OR", "Not ECTO.OR", "EB.OR")) %>% as.data.frame
+              one_of("Early.Genes", "Not SC and ECTO.Genes", "Not ECTO.Genes", "EB.Genes")) %>% as.data.frame
 write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'methyl-Genes-FDR0.01-Top5', row.names=F, append = T)
 ```
 
@@ -394,7 +395,7 @@ OR = dplyr::select(splicing.result, CategoryName, GeneSetName,
               contains("OR")) %>% as.data.frame
 write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-OR-FDR0.05-Top5', row.names=F, append = T)
 gx = dplyr::select(splicing.result, CategoryName, GeneSetName,
-                   contains("OR")) %>% as.data.frame
+                   contains("Genes")) %>% as.data.frame
 write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-Genes-FDR0.05-Top5', row.names=F, append = T)
 ```
 
