@@ -1,0 +1,369 @@
+---
+title: "Consolidating the enrichment results from SC vs DE and MESO5"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+knit2synapse::storeAndKnitToFileEntity(file = 'compareDEvsMESO5.Rmd',
+                                       parentId = "syn5521877",
+                                       entityName = 'Comparison between DE and MESO5 differentiation')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+# Clear R console screen output
+cat("\014")
+
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ComplexHeatmap)
+library(RColorBrewer)
+library(fpc)
+library(xlsx)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r mrna, fig.height = 10, fig.width = 10}
+# Get enrichment results from synapse (ALL)
+fileNames = synQuery('select * from file where parentId == "syn5762641"') %>%
+  filter(file.fromstate == 'SC', file.tostate %in% c('DE','MESO5'),
+         file.direction %in% c('UP','DOWN'), file.assay == 'all')
+
+# Get enrichment results from synapse (Only molecular pathways)
+mrna.result = mapply(function(id, name){
+  x = downloadFile(id) %>%
+    filter(CategoryName %in% c("GO_Biological_Process", "Reactome_2015", "WikiPathways_2015")) %>%
+    dplyr::rename(GeneSetName = SetName)
+  ind.remove = c(grep('Mus', x$GeneSetName),
+                 grep('mm9', x$GeneSetName),
+                 grep('mouse', x$GeneSetName),
+                 grep('MOUSE', x$GeneSetName))
+  ind.retain = setdiff(1:dim(x)[1], ind.remove)
+  x = x[ind.retain,] # Removing mouse related genesets
+  
+  x = x %>%
+    dplyr::mutate(FDR = p.adjust(pval, 'fdr'),
+                  adj.pval = p.adjust(pval, 'bonferroni')) %>%
+    dplyr::filter(FDR<=0.01) %>%
+    dplyr::select(CategoryName, GeneSetName, Odds.Ratio, OverlapedGenes) %>%
+    plyr::rename(c('Odds.Ratio' = paste(as.character(name), 'OR', sep = '.'), 
+                   'OverlapedGenes' = paste(as.character(name), 'Genes', sep = '.')))
+}, fileNames$file.id, paste(fileNames$file.tostate, fileNames$file.direction, sep = '.'), SIMPLIFY = F)
+
+ind = which(sapply(mrna.result, dim)[1,] != 0)
+mrna.result = join_all(mrna.result[ind], type = 'full')
+
+# Cluster pathways
+mat1 = dplyr::select(mrna.result, contains('.OR'))
+rownames(mat1) = mrna.result$GeneSetName
+colnames(mat1) = gsub('.OR','', colnames(mat1))
+
+mat1 = t(apply(mat1, 1, function(x){x/max(x, na.rm=T)}))
+mat1[is.na(mat1)] = 0
+
+path.clust = pamk(mat1, krange = 2:20, seed = 123456)
+
+# Heatmap of pathways
+Heatmap(mat1, col = brewer.pal(5, 'RdPu'),
+        split = factor(path.clust$pamobject$clustering),
+        show_row_dend = F, cluster_columns = F, show_row_names = F,
+        name = 'Scaled odds ratio')
+
+mrna.result = full_join(mrna.result, 
+                        data.frame(cluster = path.clust$pamobject$clustering, 
+                                   GeneSetName = rownames(mat1)))
+mrna.result$weight = rowSums(dplyr::select(mrna.result, contains('.OR')), na.rm=T)
+mrna.result$cluster = factor(mrna.result$cluster)
+
+# Select top 5 pathways
+mrna.result = mrna.result %>%
+  group_by(cluster) %>%
+  top_n(5, weight) %>%
+  arrange(cluster, desc(weight))
+
+dplyr::select(mrna.result, CategoryName, GeneSetName, cluster,
+              contains('.OR')) %>%
+  kable(digits = 1, caption = 'mRNA EA', booktabs=TRUE, format = 'markdown')
+
+# Write genes and OR to a excel sheet
+OR = dplyr::select(mrna.result, CategoryName, GeneSetName, cluster,
+                   contains('.OR')) %>% as.data.frame
+write.xlsx(OR, file = 'enrichmentAnalysisDEvsMESO5.xlsx', sheetName = 'All-OR-FDR0.01-Top5', row.names=F, append = F)
+gx = dplyr::select(mrna.result, CategoryName, GeneSetName, cluster,
+                   contains('.Genes')) %>% as.data.frame
+write.xlsx(gx, file = 'enrichmentAnalysisDEvsMESO5.xlsx', sheetName = 'All-Genes-FDR0.01-Top5', row.names=F, append = T)
+```
+
+```{r mirna, fig.height = 10, fig.width = 10}
+# Get enrichment results from synapse (ALL)
+fileNames = synQuery('select * from file where parentId == "syn5762641"') %>%
+  filter(file.fromstate == 'SC', file.tostate %in% c('DE','MESO5'),
+         file.direction %in% c('UP','DOWN'), file.assay == 'mirna')
+
+# Get enrichment results from synapse (Only molecular pathways)
+mirna.result = mapply(function(id, name){
+    x = downloadFile(id) %>%
+      filter(CategoryName %in% c("GO_Biological_Process", "Reactome_2015", "WikiPathways_2015")) %>%
+      dplyr::rename(GeneSetName = SetName)
+    ind.remove = c(grep('Mus', x$GeneSetName),
+                   grep('mm9', x$GeneSetName),
+                   grep('mouse', x$GeneSetName),
+                   grep('MOUSE', x$GeneSetName))
+    ind.retain = setdiff(1:dim(x)[1], ind.remove)
+    x = x[ind.retain,] # Removing mouse related genesets
+    
+    x = x %>%
+      dplyr::mutate(FDR = p.adjust(pval, 'fdr'),
+                    adj.pval = p.adjust(pval, 'bonferroni')) %>%
+      dplyr::filter(FDR<=0.01) %>%
+      dplyr::select(CategoryName, GeneSetName, Odds.Ratio, OverlapedGenes) %>%
+      plyr::rename(c('Odds.Ratio' = paste(as.character(name), 'OR', sep = '.'), 
+                     'OverlapedGenes' = paste(as.character(name), 'Genes', sep = '.')))
+  }, fileNames$file.id, paste(fileNames$file.tostate, fileNames$file.direction, sep = '.'), SIMPLIFY = F)
+
+ind = which(sapply(mirna.result, dim)[1,] != 0)
+mirna.result = join_all(mirna.result[ind], type = 'full')
+
+# Cluster pathways
+mat1 = dplyr::select(mirna.result, contains('.OR'))
+rownames(mat1) = mirna.result$GeneSetName
+colnames(mat1) = gsub('.OR','',colnames(mat1))
+
+mat1 = t(apply(mat1, 1, function(x){x/max(x, na.rm=T)}))
+mat1[is.na(mat1)] = 0
+
+path.clust = pamk(mat1, krange = 2:20, seed = 123456)
+
+# Heatmap of pathways
+Heatmap(mat1, col = brewer.pal(5, 'RdPu'),
+        split = factor(path.clust$pamobject$clustering),
+        show_row_dend = F, cluster_columns = F, show_row_names = F,
+        name = 'Scaled odds ratio')
+
+mirna.result = full_join(mirna.result, 
+                         data.frame(cluster = path.clust$pamobject$clustering, GeneSetName = rownames(mat1))) 
+mirna.result$weight = rowSums(dplyr::select(mirna.result, contains('.OR')), na.rm=T)
+
+# Select top 5 pathways
+mirna.result = mirna.result %>%
+  group_by(cluster) %>%
+  top_n(5, weight) %>%
+  arrange(cluster, desc(weight))
+
+dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
+              contains(".OR")) %>%
+  kable(digits = 1, caption = 'miRNA EA', booktabs=TRUE, format = 'markdown')
+
+# Write genes and OR to a excel sheet
+OR = dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
+                   contains('.OR')) %>% as.data.frame
+write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'miRNA-OR-FDR0.01-Top5', row.names=F, append = T)
+gx = dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
+              one_of("SC.Genes", "SC and DE.Genes", "SC and ECTO.Genes", 
+                     "DE and MESO5.Genes", "MESO5.Genes", "ECTO.Genes", 
+                     "EB.Genes", "Late.Genes")) %>% as.data.frame
+write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'miRNA-Genes-FDR0.01-Top5', row.names=F, append = T)
+```
+
+```{r methyl, fig.height = 10, fig.width = 10}
+# Get differential expression clusters from DNA methylation probes (ALL)
+diffexp.methyl.id = 'syn5229656'
+ALL_USED_IDs = c(ALL_USED_IDs, methyl = diffexp.methyl.id)
+diffexp.methyl = downloadFile(diffexp.methyl.id)
+
+# Get identity mapping for individual clusters
+methyl.ident = c('2' = 'Not ECTO', '5' = 'Not SC', 
+                 '7' = 'Not SC and ECTO', '9' = 'EB', 
+                 '12' = 'All', '13' = 'Early', 
+                 '19' = 'ECTO and EB')
+methyl.ident = rownameToFirstColumn(methyl.ident, "cluster")
+
+diffexp.methyl = dplyr::mutate(diffexp.methyl, cluster = as.character(cluster)) %>%
+  left_join(methyl.ident) %>%
+  dplyr::rename(cluster.name = DF)
+
+# Get enrichment analysis results (methyl)
+fileNames = synQuery(paste0('select * from file where parentId == "syn5838771"')) %>%
+  tidyr::separate(file.name, into = c("V1","cluster")) %>%
+  left_join(diffexp.methyl)
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn5838771')
+
+# Get enrichment results from synapse (Only molecular pathways)
+methyl.result = mapply(function(id, name){
+  x = downloadFile(id) %>%
+    filter(CategoryName %in% c("GO_Biological_Process", "Reactome_2015", "WikiPathways_2015")) %>%
+      dplyr::rename(GeneSetName = SetName)
+    ind.remove = c(grep('Mus', x$GeneSetName),
+                   grep('mm9', x$GeneSetName),
+                   grep('mouse', x$GeneSetName),
+                   grep('MOUSE', x$GeneSetName))
+    ind.retain = setdiff(1:dim(x)[1], ind.remove)
+    x = x[ind.retain,] # Removing mouse related genesets
+    
+    x = x %>%
+      dplyr::mutate(FDR = p.adjust(pval, 'fdr'),
+                    adj.pval = p.adjust(pval, 'bonferroni')) %>%
+      dplyr::filter(FDR<=0.01) %>%
+      dplyr::select(CategoryName, GeneSetName, Odds.Ratio, OverlapedGenes) %>%
+      plyr::rename(c('Odds.Ratio' = paste(as.character(name), 'OR', sep = '.'), 
+                     'OverlapedGenes' = paste(as.character(name), 'Genes', sep = '.')))
+}, fileNames$file.id, fileNames$cluster.name, SIMPLIFY = F)
+
+ind = which(sapply(methyl.result, dim)[1,] != 0)
+methyl.result = join_all(methyl.result[ind], type = 'full')
+
+# Cluster pathways
+mat1 = dplyr::select(methyl.result, contains('.OR'))
+rownames(mat1) = methyl.result$GeneSetName
+colnames(mat1) = gsub('.OR','', colnames(mat1))
+
+mat1 = t(apply(mat1, 1, function(x){x/max(x, na.rm=T)}))
+mat1[is.na(mat1)] = 0
+
+path.clust = pamk(mat1, krange = 2:20, seed = 123456)
+
+# Heatmap of pathways
+Heatmap(mat1[,c("Early", "Not SC and ECTO", "Not ECTO", "EB")], 
+        col = brewer.pal(5, 'RdPu'),
+        split = factor(path.clust$pamobject$clustering,
+                       levels = c(2, 1, 5, 3, 4, 6)),
+        show_row_dend = F, cluster_columns = F, show_row_names = F,
+        name = 'Scaled odds ratio')
+
+methyl.result = full_join(methyl.result, 
+                         data.frame(cluster = path.clust$pamobject$clustering, GeneSetName = rownames(mat1))) 
+methyl.result$weight = rowSums(dplyr::select(methyl.result, contains('.OR')), na.rm=T)
+methyl.result$cluster = factor(methyl.result$cluster, 
+                             levels = c(2, 1, 5, 3, 4, 6))
+
+# Select top 5 pathways
+methyl.result = methyl.result %>%
+  group_by(cluster) %>%
+  top_n(5, weight) %>%
+  arrange(cluster, desc(weight))
+
+dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
+              one_of("Early.OR", "Not SC and ECTO.OR", "Not ECTO.OR", "EB.OR")) %>%
+  kable(digits = 1, caption = 'miRNA EA', booktabs=TRUE, format = 'markdown')
+
+# Write genes and OR to a excel sheet
+OR = dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
+              one_of("Early.OR", "Not SC and ECTO.OR", "Not ECTO.OR", "EB.OR")) %>% as.data.frame
+write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'methyl-OR-FDR0.01-Top5', row.names=F, append = T)
+gx = dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
+              one_of("Early.Genes", "Not SC and ECTO.Genes", "Not ECTO.Genes", "EB.Genes")) %>% as.data.frame
+write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'methyl-Genes-FDR0.01-Top5', row.names=F, append = T)
+```
+
+```{r splicing, fig.height = 10, fig.width = 10}
+# Get clusters of differentially spliced junctions (ALL)
+diffexp.splicing.id = 'syn5226225'
+ALL_USED_IDs = c(ALL_USED_IDs, splicing = diffexp.splicing.id)
+diffexp.splicing = downloadFile(diffexp.splicing.id)
+
+# Get identity mapping for individual clusters
+splicing.ident = c('1' = 'Early', '3' = 'Late', 
+                   '4' = 'All', '5' = 'Not ECTO', 
+                   '6' = 'ECTO', '7' = 'Ecto and not Late', 
+                   '8' = 'not ECTO', '14' = 'All', '18' = 'Late',
+                   '19' = 'Late')
+splicing.ident = rownameToFirstColumn(splicing.ident, "cluster")
+
+diffexp.splicing = dplyr::mutate(diffexp.splicing, cluster = as.character(cluster)) %>%
+  left_join(splicing.ident) %>%
+  dplyr::rename(cluster.name = DF)
+
+# Get enrichment analysis results (splicing)
+fileNames = synQuery(paste0('select * from file where parentId == "syn5839082"')) %>%
+  tidyr::separate(file.name, into = c("V1","cluster")) %>%
+  left_join(diffexp.splicing)
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn5839082')
+
+# Get enrichment results from synapse (Only molecular pathways)
+splicing.result = mapply(function(id, name){
+  x = downloadFile(id) %>%
+    filter(CategoryName %in% c("GO_Biological_Process", "Reactome_2015", "WikiPathways_2015")) %>%
+      dplyr::rename(GeneSetName = SetName)
+    ind.remove = c(grep('Mus', x$GeneSetName),
+                   grep('mm9', x$GeneSetName),
+                   grep('mouse', x$GeneSetName),
+                   grep('MOUSE', x$GeneSetName))
+    ind.retain = setdiff(1:dim(x)[1], ind.remove)
+    x = x[ind.retain,] # Removing mouse related genesets
+    
+    x = x %>%
+      dplyr::mutate(FDR = p.adjust(pval, 'fdr'),
+                    adj.pval = p.adjust(pval, 'bonferroni')) %>%
+      dplyr::filter(FDR<=0.05) %>%
+      dplyr::select(CategoryName, GeneSetName, Odds.Ratio, OverlapedGenes) %>%
+      plyr::rename(c('Odds.Ratio' = paste(as.character(name), 'OR', sep = '.'), 
+                     'OverlapedGenes' = paste(as.character(name), 'Genes', sep = '.')))
+}, fileNames$file.id, fileNames$cluster.name, SIMPLIFY = F)
+
+ind = which(sapply(splicing.result, dim)[1,] != 0)
+splicing.result = join_all(splicing.result[ind], type = 'full')
+
+# Heatmap of pathways
+Heatmap(mat1, 
+        col = brewer.pal(5, 'RdPu'),
+        show_row_dend = F, cluster_columns = F, show_row_names = F,
+        name = 'Scaled odds ratio')
+
+splicing.result$weight = rowSums(dplyr::select(splicing.result, contains('.OR')), na.rm=T)
+
+dplyr::select(splicing.result, CategoryName, GeneSetName,
+              one_of("Early.OR", "Not SC and ECTO.OR", "Not ECTO.OR", "EB.OR")) %>%
+  kable(digits = 1, caption = 'miRNA EA', booktabs=TRUE, format = 'markdown')
+
+# Write genes and OR to a excel sheet
+OR = dplyr::select(splicing.result, CategoryName, GeneSetName, 
+              contains("OR")) %>% as.data.frame
+write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-OR-FDR0.05-Top5', row.names=F, append = T)
+gx = dplyr::select(splicing.result, CategoryName, GeneSetName,
+                   contains("Genes")) %>% as.data.frame
+write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-Genes-FDR0.05-Top5', row.names=F, append = T)
+```
+
+### Store results in synapse
+```{r synStore, cache=FALSE}
+# Get github links for provenance
+thisFileName <- 'consolidateEnrichmentResults_modules.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='enrich')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Synapse specific parameters
+activityName = 'Enrichment Analysis'
+activityDescription = 'Enrichment analysis based on enrichr genesets'
+
+# Store in synapse
+obj = File('enrichmentAnalysis.xlsx', name = 'Consolidated enrichment analysis results - Top 5 Pathways', parentId = "syn5521877")
+obj = synStore(obj, used = as.character(ALL_USED_IDs), activityName = activityName, executed = thisFile)
+```
