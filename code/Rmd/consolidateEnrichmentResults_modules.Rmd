@@ -400,7 +400,7 @@ write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-Genes-FDR
 ```
 
 ### Store results in synapse
-```{r synStore}
+```{r synStore, cache=FALSE}
 # Get github links for provenance
 thisFileName <- 'consolidateEnrichmentResults_modules.Rmd'
 
@@ -420,4 +420,3 @@ activityDescription = 'Enrichment analysis based on enrichr genesets'
 obj = File('enrichmentAnalysis.xlsx', name = 'Consolidated enrichment analysis results - Top 5 Pathways', parentId = "syn5521877")
 obj = synStore(obj, used = as.character(ALL_USED_IDs), activityName = activityName, executed = thisFile)
 ```
-
