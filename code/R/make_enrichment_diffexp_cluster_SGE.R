@@ -15,7 +15,7 @@ library(CovariateAnalysis)
 synapseLogin()
 
 # Get differential methylation (ALL)
-diffexp.id = 'syn5231514'
+diffexp.id = 'syn5834573'
 diffexp.genesets = downloadFile(diffexp.id)
 clusters = diffexp.genesets$cluster
 
@@ -29,7 +29,7 @@ for (clust in clusters) {
   fp = file (paste('/mnt/Github/pcbc_c4_analysis/code/R/sgeEnrichDiffexp/SUB',clust,'sh',sep='.'), "w+")
   cat('#!/bin/bash', 
       'sleep 30', 
-      paste('Rscript /mnt/Github/pcbc_c4_analysis/code/R/enrichment_diffexp_clusters_SGE.R syn5231514 syn5834610', clust), 
+      paste('Rscript /mnt/Github/pcbc_c4_analysis/code/R/enrichment_diffexp_clusters_SGE.R syn5834573 syn5839082', clust), 
       file = fp,
       sep = '\n')
   close(fp)
