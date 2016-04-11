@@ -289,7 +289,7 @@ Heatmap(clust.median, name = 'Counts', column_title = 'mirna: Cluster medians',
         column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
         row_title_gp = gpar(fontsize = 22, fontface = "bold"),
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
-        show_row_names = T, row_names_side = 'left', show_column_names = T, show_row_hclust = T,
+        show_row_names = T, row_names_side = 'left', show_column_names = T, show_row_dend = T,
         heatmap_legend_param = figure_size)
 ```
 
@@ -329,10 +329,21 @@ mirna.mrna = coexp %>%
   filter(feature.assay == 'mirna', target.assay %in% c('TF', 'mrna'),
          abs(feature.lfc) >= mirna.lfc.th,
          abs(target.lfc) >= mrna.lfc.th,
-         abs(coexpression) >= 0.9)
+         coexpression <= -0.8)
 
 map.mrna <- function(x){
-  filter(mirna.mrna, feature %in% str_split(x, ',')[[1]]) %>%
+  filter(counts, feature %in% str_split(x, ',')[[1]]) %>%
+    dplyr::select(-Assay) %>%
+    gather(DiffState, Expr, -feature) %>%
+    dlply(.(feature), .fun = function(y){
+      y$Expr[y$Expr < 0] = 0
+      y$Expr = y$Expr/max(y$Expr, na.rm=T)
+      return(y)
+    }) %>%
+    rbindlist %>% 
+    filter(Expr >= 0.5) %>%
+    dplyr::rename(FromState = DiffState) %>%
+    inner_join(mirna.mrna %>% data.table) %>%
     dplyr::select(target) %>%
     unique %>%
     unlist %>%
@@ -456,16 +467,54 @@ methyl.cluster.gct = data.frame(feature = names(methyl.cluster), cluster = methy
 methyl.mrna = coexp %>%
   filter(feature.assay == 'methyl', target.assay %in% c('TF', 'mrna'),
          abs(feature.cb) >= methyl.changeBeta.th,
-         abs(target.lfc) >= mrna.lfc.th)
+         abs(target.lfc) >= mrna.lfc.th,
+         abs(coexpression) >= 0.8)
 
-map.mrna <- function(x){
-  filter(methyl.mrna, feature %in% str_split(x, ',')[[1]]) %>%
-    dplyr::select(target) %>% unique %>% unlist %>%
+map.concordant.mrna <- function(x){
+  tmp = filter(counts, feature %in% str_split(x, ',')[[1]]) %>%
+    dplyr::select(-Assay) %>%
+    gather(DiffState, Expr, -feature) %>%
+    dlply(.(feature), .fun = function(y){
+      y$Expr[y$Expr < 0] = 0
+      y$Expr = y$Expr/max(y$Expr, na.rm=T)
+      return(y)
+    }) %>%
+    rbindlist %>% 
+    filter(Expr >= 0.5) %>%
+    dplyr::rename(FromState = DiffState) %>%
+    inner_join(methyl.mrna %>% 
+                 filter(coexpression > 0) %>%
+                 data.table) %>%
+    dplyr::select(target) %>%
+    unique %>%
+    unlist %>%
     paste(collapse = ',')
 }
-  
+
+map.disconcordant.mrna <- function(x){
+  tmp = filter(counts, feature %in% str_split(x, ',')[[1]]) %>%
+    dplyr::select(-Assay) %>%
+    gather(DiffState, Expr, -feature) %>%
+    dlply(.(feature), .fun = function(y){
+      y$Expr[y$Expr < 0] = 0
+      y$Expr = y$Expr/max(y$Expr, na.rm=T)
+      return(y)
+    }) %>%
+    rbindlist %>% 
+    filter(Expr >= 0.5) %>%
+    dplyr::rename(FromState = DiffState) %>%
+    inner_join(methyl.mrna %>% 
+                 filter(coexpression < 0) %>%
+                 data.table) %>%
+    dplyr::select(target) %>%
+    unique %>%
+    unlist %>%
+    paste(collapse = ',')
+}  
+
 methyl.mrna.cluster.gct = group_by(methyl.cluster.gct, cluster) %>%
-  summarise(feature = map.mrna(feature))
+  summarise(feature.concordant = map.concordant.mrna(feature),
+            feature.disconcordant = map.disconcordant.mrna(feature))
 ```
 
 ### Get mRNA differentially spliced junction clusters
@@ -577,17 +626,33 @@ splicing.cluster.gct = data.frame(feature = names(splicing.cluster), cluster = s
 
 #### Map splicing - mrna
 ```{r splicing.mrna}
-splicing.mrna = coexp %>%
-  filter(feature.assay == 'splicing', target.assay %in% c('TF', 'mrna'),
-         abs(feature.cpsi) >= splicing.changePSI.th,
-         abs(target.lfc) >= mrna.lfc.th)
+# Get splicing junctions mRNA mapping
+ALL_USED_IDs <- c(ALL_USED_IDs, splicing.mrna = 'syn5048714')
+splicing.mrna <- downloadFile('syn5048714') %>%  
+  dplyr::select(one_of(c('Minor-Isoform','Symbol'))) %>%
+  plyr::rename(c('Minor-Isoform' = 'feature', 'Symbol' = 'target')) %>%
+  unique 
 
 map.mrna <- function(x){
-  filter(splicing.mrna, feature %in% str_split(x, ',')[[1]]) %>%
-    dplyr::select(target) %>% unique %>% unlist %>%
+  filter(counts, feature %in% str_split(x, ',')[[1]]) %>%
+    dplyr::select(-Assay) %>%
+    gather(DiffState, Expr, -feature) %>%
+    dlply(.(feature), .fun = function(y){
+      y$Expr[y$Expr < 0] = 0
+      y$Expr = y$Expr/max(y$Expr, na.rm=T)
+      return(y)
+    }) %>%
+    rbindlist %>% 
+    filter(Expr >= 0.5) %>%
+    dplyr::rename(FromState = DiffState) %>%
+    inner_join(splicing.mrna %>%
+                 data.table) %>%
+    dplyr::select(target) %>%
+    unique %>%
+    unlist %>%
     paste(collapse = ',')
 }
-  
+
 splicing.mrna.cluster.gct = group_by(splicing.cluster.gct, cluster) %>%
   summarise(feature = map.mrna(feature))
 ```
