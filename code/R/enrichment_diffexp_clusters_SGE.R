@@ -101,13 +101,13 @@ enrichResults = lapply(GeneSets,
 
 enrichResults$FDR = p.adjust(enrichResults$pval,'fdr')
 enrichResults$adj.pval = p.adjust(enrichResults$pval,'bonferroni')
-write.table(enrichResults, file = paste('Cluster',cluster,'tsv', sep='.'), sep='\t', row.names=F)
+write.table(enrichResults, file = paste(gsub(' ','.', args[6]),'tsv', sep='.'), sep='\t', row.names=F)
 ############################################################################################################
 
 ############################################################################################################
 #### Write to synapse ####
 # Write results to synapse
-ENR_OBJ = File(paste('Cluster',args[2],'tsv', sep='.'),
+ENR_OBJ = File(paste(gsub(' ','.', args[6]),'tsv', sep='.'),
                name = args[6], 
                parentId = args[3])
 
@@ -118,4 +118,5 @@ ENR_OBJ = synStore(ENR_OBJ,
                    used = as.character(c(ALL_USED_IDs, args[5])),
                    activityName = activityName,
                    activityDescription = activityDescription)
+print(ENR_OBJ)
 ############################################################################################################
