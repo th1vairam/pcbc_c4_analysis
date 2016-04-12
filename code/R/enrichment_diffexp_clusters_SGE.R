@@ -2,7 +2,13 @@
 
 # Function to perform enrichment analysis of differential expression modules
 # Get arguments from command line
-args = commandArgs(TRUE)
+args = commandArgs(TRUE) 
+  # args[1] = gene set to test, 
+  # args[2] = cluster number, 
+  # args[3] = parentId of folder to store, 
+  # args[4] = executed URL, 
+  # args[5] = source file id, 
+  # args[6] = file name
 
 # Clear R console screen output
 cat("\014")
@@ -64,21 +70,16 @@ GeneSets = GeneSets[gsets]
 ############################################################################################################
 
 ############################################################################################################
-#### Get differentialy expressed gene sets ####
-ALL_USED_IDs = c(ALL_USED_IDs, args[1])
-diffexp.genesets = downloadFile(args[1])
-cluster = args[3]
-
-genesToTest = str_split(diffexp.genesets$feature[diffexp.genesets$cluster == cluster], pattern = ',') %>%
-  unlist
-############################################################################################################
-
-############################################################################################################
-#### Background gene list ####
+#### Get background gene sets ####
 counts.id = 'syn5011095'
 ALL_USED_IDs = c(ALL_USED_IDs, counts.id)
 counts = downloadFile(counts.id)
 backGroundGenes = unique(counts$GeneName)
+############################################################################################################
+
+############################################################################################################
+#### Get input gene sets ####
+genesToTest = str_split(args[1], ',')[[1]]
 ############################################################################################################
 
 ############################################################################################################
@@ -106,15 +107,15 @@ write.table(enrichResults, file = paste('Cluster',cluster,'tsv', sep='.'), sep='
 ############################################################################################################
 #### Write to synapse ####
 # Write results to synapse
-ENR_OBJ = File(paste('Cluster',cluster,'tsv', sep='.'),
-               name = paste('Cluster',cluster), 
-               parentId = args[2])
+ENR_OBJ = File(paste('Cluster',args[2],'tsv', sep='.'),
+               name = args[6], 
+               parentId = args[3])
 
 annotations(ENR_OBJ) = list(algo = 'Fisher')
 
 ENR_OBJ = synStore(ENR_OBJ, 
-                   executed = thisFile,
-                   used = ALL_USED_IDs,
+                   executed = list(thisFile, args[4]),
+                   used = as.character(c(ALL_USED_IDs, args[5])),
                    activityName = activityName,
                    activityDescription = activityDescription)
 ############################################################################################################
