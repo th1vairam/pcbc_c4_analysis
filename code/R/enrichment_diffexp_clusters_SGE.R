@@ -2,7 +2,7 @@
 
 # Function to perform enrichment analysis of differential expression modules
 # Get arguments from command line
-args = commandArgs(TRUE) 
+# args = commandArgs(TRUE) 
   # args[1] = gene set to test, 
   # args[2] = cluster number, 
   # args[3] = parentId of folder to store, 
@@ -39,9 +39,9 @@ synapseLogin()
 # Get github links for provenance
 thisFileName <- 'enrichment_diffexp_clusters_SGE.R'
 
-# Github link
-thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
-                    ref="branch", 
+# # Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis",
+                    ref="branch",
                     refName='enrich')
 
 thisFile <- getPermlink(repository = thisRepo,

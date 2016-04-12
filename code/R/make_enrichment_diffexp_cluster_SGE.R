@@ -15,7 +15,7 @@ library(CovariateAnalysis)
 synapseLogin()
 
 # Get github links for provenance
-thisFileName <- 'make_diffexp_clusters_SGE.R'
+thisFileName <- 'make_enrichment_diffexp_cluster_SGE.R'
 
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
