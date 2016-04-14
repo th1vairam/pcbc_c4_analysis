@@ -45,6 +45,14 @@ knitr::opts_chunk$set(
   cache = TRUE)
 ```
 
+```{r coexp}
+# Use co-expression results to map miRNA and methylation to mRNA
+coexp.id = 'syn5713477'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
+
+coexp = downloadFile(coexp.id)
+```
+
 ```{r mrna, fig.height = 10, fig.width = 10}
 # Consolidate all enrichment results based on category
 # Get differential expression mRNA (ALL)
@@ -202,18 +210,18 @@ mat1[is.na(mat1)] = 0
 path.clust = pamk(mat1, krange = 2:20, seed = 123456)
 
 # Heatmap of pathways
-Heatmap(mat1[,c("SC", "SC and DE", "SC and ECTO", "DE and MESO5", "MESO5", "ECTO", "EB", "Late")], 
+Heatmap(mat1[,c("Early", "SC", "SC and DE", "DE and MESO5", "MESO5", "ECTO", "SC and ECTO", "MESO15", "EB")], 
         col = brewer.pal(5, 'RdPu'),
-        split = factor(path.clust$pamobject$clustering,
-                       levels = c(1, 2, 8, 10, 6, 13, 5, 14, 3, 11, 7, 9, 12, 17, 4, 15, 16)),
+        split = factor(path.clust$pamobject$clustering, 
+                       levels = c(17, 15, 14, 12, 6, 16, 1, 13, 11, 2, 5, 4, 3, 8, 9, 10, 18, 19, 7, 20)),
         show_row_dend = F, cluster_columns = F, show_row_names = F,
         name = 'Scaled odds ratio')
 
 mirna.result = full_join(mirna.result, 
                          data.frame(cluster = path.clust$pamobject$clustering, GeneSetName = rownames(mat1))) 
 mirna.result$weight = rowSums(dplyr::select(mirna.result, contains('.OR')), na.rm=T)
-mirna.result$cluster = factor(mirna.result$cluster, 
-                             levels = c(1, 2, 8, 10, 6, 13, 5, 14, 3, 11, 7, 9, 12, 17, 4, 15, 16))
+mirna.result$cluster = factor(path.clust$pamobject$clustering, 
+                       levels = c(17, 15, 14, 12, 6, 16, 1, 13, 11, 2, 5, 4, 3, 8, 9, 10, 18, 19, 7, 20))
 
 # Select top 5 pathways
 mirna.result = mirna.result %>%
@@ -222,22 +230,43 @@ mirna.result = mirna.result %>%
   arrange(cluster, desc(weight))
 
 dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
-              one_of("SC.OR", "SC and DE.OR", "SC and ECTO.OR", 
-                     "DE and MESO5.OR", "MESO5.OR", "ECTO.OR", 
-                     "EB.OR", "Late.OR")) %>%
+              one_of("Early.OR", "SC.OR", "SC and DE.OR", "DE and MESO5.OR", 
+                     "MESO5.OR", "ECTO.OR", "SC and ECTO.OR", "MESO15.OR", 
+                     "EB.OR")) %>%
   kable(digits = 1, caption = 'miRNA EA', booktabs=TRUE, format = 'markdown')
 
 # Write genes and OR to a excel sheet
 OR = dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
-              one_of("SC.OR", "SC and DE.OR", "SC and ECTO.OR", 
-                     "DE and MESO5.OR", "MESO5.OR", "ECTO.OR", 
-                     "EB.OR", "Late.OR")) %>% as.data.frame
+                   one_of("Early.OR", "SC.OR", "SC and DE.OR", "DE and MESO5.OR", 
+                          "MESO5.OR", "ECTO.OR", "SC and ECTO.OR", "MESO15.OR", 
+                          "EB.OR")) %>% as.data.frame
 write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'miRNA-OR-FDR0.01-Top5', row.names=F, append = T)
 gx = dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
-              one_of("SC.Genes", "SC and DE.Genes", "SC and ECTO.Genes", 
-                     "DE and MESO5.Genes", "MESO5.Genes", "ECTO.Genes", 
-                     "EB.Genes", "Late.Genes")) %>% as.data.frame
+                   one_of("Early.Genes", "SC.Genes", "SC and DE.Genes", 
+                          "DE and MESO5.Genes", "MESO5.Genes", "ECTO.Genes", 
+                          "SC and ECTO.Genes", "MESO15.Genes", "EB.Genes")) %>%
+  as.data.frame
 write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'miRNA-Genes-FDR0.01-Top5', row.names=F, append = T)
+
+# Find corresponding mirnas and respective gene interactions 
+mirna.mrna = coexp %>%
+  filter(feature.assay == 'mirna', target.assay %in% c('TF', 'mrna'),
+         abs(feature.lfc) >= log2(2),
+         abs(target.lfc) >= log2(2),
+         coexpression <= -0.8)
+
+map.mrna <- function(x){
+  sapply(x, function(y){
+    filter(mirna.mrna, target %in% str_split(y, '\\|')[[1]]) %>%
+      dplyr::select(feature) %>%
+      unique %>% unlist %>%
+      paste(collapse = '|')
+  })
+}
+
+mirna = gx %>%
+  dplyr::mutate_each(funs(map.mrna), -CategoryName, -GeneSetName, -cluster)
+write.xlsx(mirna, file = 'enrichmentAnalysis.xlsx', sheetName = 'miRNA-miRNA-FDR0.01-Top5', row.names=F, append = T)
 ```
 
 ```{r methyl, fig.height = 10, fig.width = 10}
@@ -259,7 +288,8 @@ diffexp.methyl = dplyr::mutate(diffexp.methyl, cluster = as.character(cluster)) 
 
 # Get enrichment analysis results (methyl)
 fileNames = synQuery(paste0('select * from file where parentId == "syn5838771"')) %>%
-  tidyr::separate(file.name, into = c("V1","cluster")) %>%
+  tidyr::separate(file.name, into = c("V1","cluster","direction")) %>%
+  filter(!is.na(direction)) %>%
   left_join(diffexp.methyl)
 ALL_USED_IDs = c(ALL_USED_IDs, 'syn5838771')
 
@@ -282,7 +312,7 @@ methyl.result = mapply(function(id, name){
       dplyr::select(CategoryName, GeneSetName, Odds.Ratio, OverlapedGenes) %>%
       plyr::rename(c('Odds.Ratio' = paste(as.character(name), 'OR', sep = '.'), 
                      'OverlapedGenes' = paste(as.character(name), 'Genes', sep = '.')))
-}, fileNames$file.id, fileNames$cluster.name, SIMPLIFY = F)
+}, fileNames$file.id, paste(fileNames$cluster.name, fileNames$direction), SIMPLIFY = F)
 
 ind = which(sapply(methyl.result, dim)[1,] != 0)
 methyl.result = join_all(methyl.result[ind], type = 'full')
@@ -298,18 +328,16 @@ mat1[is.na(mat1)] = 0
 path.clust = pamk(mat1, krange = 2:20, seed = 123456)
 
 # Heatmap of pathways
-Heatmap(mat1[,c("Early", "Not SC and ECTO", "Not ECTO", "EB")], 
+Heatmap(mat1[,c("Not SC and ECTO Concordant", "EB Concordant", "EB Discordant")],
         col = brewer.pal(5, 'RdPu'),
-        split = factor(path.clust$pamobject$clustering,
-                       levels = c(2, 1, 5, 3, 4, 6)),
+        split = path.clust$pamobject$clustering,
         show_row_dend = F, cluster_columns = F, show_row_names = F,
         name = 'Scaled odds ratio')
 
 methyl.result = full_join(methyl.result, 
                          data.frame(cluster = path.clust$pamobject$clustering, GeneSetName = rownames(mat1))) 
 methyl.result$weight = rowSums(dplyr::select(methyl.result, contains('.OR')), na.rm=T)
-methyl.result$cluster = factor(methyl.result$cluster, 
-                             levels = c(2, 1, 5, 3, 4, 6))
+methyl.result$cluster = factor(methyl.result$cluster)
 
 # Select top 5 pathways
 methyl.result = methyl.result %>%
@@ -318,16 +346,47 @@ methyl.result = methyl.result %>%
   arrange(cluster, desc(weight))
 
 dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
-              one_of("Early.OR", "Not SC and ECTO.OR", "Not ECTO.OR", "EB.OR")) %>%
+              one_of("Not SC and ECTO Concordant.OR", "EB Concordant.OR", "EB Discordant.OR")) %>%
   kable(digits = 1, caption = 'miRNA EA', booktabs=TRUE, format = 'markdown')
 
 # Write genes and OR to a excel sheet
 OR = dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
-              one_of("Early.OR", "Not SC and ECTO.OR", "Not ECTO.OR", "EB.OR")) %>% as.data.frame
+              one_of("Not SC and ECTO Concordant.OR", "EB Concordant.OR", "EB Discordant.OR")) %>% as.data.frame
 write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'methyl-OR-FDR0.01-Top5', row.names=F, append = T)
 gx = dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
-              one_of("Early.Genes", "Not SC and ECTO.Genes", "Not ECTO.Genes", "EB.Genes")) %>% as.data.frame
+              one_of("Not SC and ECTO Concordant.Genes", "EB Concordant.Genes", "EB Discordant.Genes")) %>% as.data.frame
 write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'methyl-Genes-FDR0.01-Top5', row.names=F, append = T)
+
+# Find corresponding mirnas and respective gene interactions 
+methyl.mrna = coexp %>%
+  filter(feature.assay == 'methyl', target.assay %in% c('TF', 'mrna'),
+         abs(feature.cb) >= 0.35,
+         abs(target.lfc) >= log2(2),
+         abs(coexpression) >= 0.8)
+
+map.mrna.concordant <- function(x){
+  sapply(x, function(y){
+    filter(methyl.mrna, target %in% str_split(y, '\\|')[[1]], coexpression > 0) %>%
+      dplyr::select(feature) %>%
+      unique %>% unlist %>%
+      paste(collapse = '|')
+  })
+}
+
+map.mrna.discordant <- function(x){
+  sapply(x, function(y){
+    filter(methyl.mrna, target %in% str_split(y, '\\|')[[1]], coexpression < 0) %>%
+      dplyr::select(feature) %>%
+      unique %>% unlist %>%
+      paste(collapse = '|')
+  })
+}
+
+methyl = gx %>%
+  dplyr::mutate_each(funs(map.mrna.concordant), contains('Concordant.Genes')) %>%
+  dplyr::mutate_each(funs(map.mrna.discordant), contains('Discordant.Genes'))
+
+write.xlsx(methyl, file = 'enrichmentAnalysis.xlsx', sheetName = 'methyl-methyl-FDR0.01-Top5', row.names=F, append = T)
 ```
 
 ```{r splicing, fig.height = 10, fig.width = 10}
@@ -337,11 +396,11 @@ ALL_USED_IDs = c(ALL_USED_IDs, splicing = diffexp.splicing.id)
 diffexp.splicing = downloadFile(diffexp.splicing.id)
 
 # Get identity mapping for individual clusters
-splicing.ident = c('1' = 'Early', '3' = 'Late', 
-                   '4' = 'All', '5' = 'Not ECTO', 
+splicing.ident = c('1' = 'Early', '3' = 'Late1', 
+                   '4' = 'All', '5' = 'Not ECTO1', 
                    '6' = 'ECTO', '7' = 'Ecto and not Late', 
-                   '8' = 'not ECTO', '14' = 'All', '18' = 'Late',
-                   '19' = 'Late')
+                   '8' = 'Not ECTO2', '14' = 'All', '18' = 'Late2',
+                   '19' = 'Late3')
 splicing.ident = rownameToFirstColumn(splicing.ident, "cluster")
 
 diffexp.splicing = dplyr::mutate(diffexp.splicing, cluster = as.character(cluster)) %>%
@@ -378,25 +437,68 @@ splicing.result = mapply(function(id, name){
 ind = which(sapply(splicing.result, dim)[1,] != 0)
 splicing.result = join_all(splicing.result[ind], type = 'full')
 
+# Cluster pathways
+mat1 = dplyr::select(splicing.result, contains('.OR'))
+rownames(mat1) = splicing.result$GeneSetName
+colnames(mat1) = gsub('.OR','', colnames(mat1))
+
+mat1 = t(apply(mat1, 1, function(x){x/max(x, na.rm=T)}))
+mat1[is.na(mat1)] = 0
+
+path.clust = pamk(mat1, krange = 2:20, seed = 123456)
+
 # Heatmap of pathways
-Heatmap(mat1, 
+Heatmap(mat1[,c('Early','ECTO','Late1','Late3')],
         col = brewer.pal(5, 'RdPu'),
+        split = factor(path.clust$pamobject$clustering,
+                       levels = c(2,1,5,4,3)),
         show_row_dend = F, cluster_columns = F, show_row_names = F,
         name = 'Scaled odds ratio')
 
+splicing.result = full_join(splicing.result,
+                            data.frame(cluster = path.clust$pamobject$clustering, GeneSetName = rownames(mat1))) 
 splicing.result$weight = rowSums(dplyr::select(splicing.result, contains('.OR')), na.rm=T)
+splicing.result$cluster = factor(path.clust$pamobject$clustering, 
+                                 levels = c(2, 1, 5, 4, 3))
 
-dplyr::select(splicing.result, CategoryName, GeneSetName,
-              one_of("Early.OR", "Not SC and ECTO.OR", "Not ECTO.OR", "EB.OR")) %>%
-  kable(digits = 1, caption = 'miRNA EA', booktabs=TRUE, format = 'markdown')
+# Select top 5 pathways
+splicing.result = splicing.result %>%
+  group_by(cluster) %>%
+  top_n(5, weight) %>%
+  arrange(cluster, desc(weight))
+
+dplyr::select(splicing.result, CategoryName, GeneSetName, cluster,
+              one_of('Early.OR','ECTO.OR','Late1.OR','Late3.OR')) %>%
+  kable(digits = 1, caption = 'splicing EA', booktabs=TRUE, format = 'markdown')
 
 # Write genes and OR to a excel sheet
-OR = dplyr::select(splicing.result, CategoryName, GeneSetName, 
-              contains("OR")) %>% as.data.frame
-write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-OR-FDR0.05-Top5', row.names=F, append = T)
-gx = dplyr::select(splicing.result, CategoryName, GeneSetName,
-                   contains("Genes")) %>% as.data.frame
-write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-Genes-FDR0.05-Top5', row.names=F, append = T)
+OR = dplyr::select(splicing.result, CategoryName, GeneSetName, cluster,
+                   one_of('Early.OR','ECTO.OR','Late1.OR','Late3.OR')) %>% as.data.frame
+write.xlsx(OR, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-OR-FDR0.01-Top5', row.names=F, append = T)
+gx = dplyr::select(splicing.result, CategoryName, GeneSetName, cluster,
+                   one_of('Early.Genes','ECTO.Genes','Late1.Genes','Late3.Genes')) %>%
+  as.data.frame
+write.xlsx(gx, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-Genes-FDR0.01-Top5', row.names=F, append = T)
+
+# Get splicing junctions mRNA mapping
+ALL_USED_IDs <- c(ALL_USED_IDs, splicing.mrna = 'syn5048714')
+splicing.mrna <- downloadFile('syn5048714') %>%  
+  dplyr::select(one_of(c('Minor-Isoform','Symbol'))) %>%
+  plyr::rename(c('Minor-Isoform' = 'feature', 'Symbol' = 'target')) %>%
+  unique 
+
+map.mrna <- function(x){
+  sapply(x, function(y){
+    filter(splicing.mrna, target %in% str_split(y, '\\|')[[1]]) %>%
+      dplyr::select(feature) %>%
+      unique %>% unlist %>%
+      paste(collapse = '|')
+  })
+}
+
+splicing = gx %>%
+  dplyr::mutate_each(funs(map.mrna), -CategoryName, -GeneSetName, -cluster)
+write.xlsx(splicing, file = 'enrichmentAnalysis.xlsx', sheetName = 'splicing-Junctions-FDR0.01-Top5', row.names=F, append = T)
 ```
 
 ### Store results in synapse
