@@ -145,12 +145,12 @@ OR = dplyr::select(mrna.result, CategoryName, GeneSetName, cluster,
               one_of("SC and Early.OR", "SC and MESO15.OR", "DE and MESO5.OR", 
                        "Early including ECTO.OR", "ECTO.OR", "MESO15.OR", "Late.OR", 
                        "MESO30 and EB.OR", "EB.OR")) %>% as.data.frame
-write.xlsx(OR, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'mRNA-OR-FDR0.01-Top5', row.names=F, append = F)
+write.xlsx(OR, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'mRNA-OR-FDR0.01-Top100', row.names=F, append = F)
 gx = dplyr::select(mrna.result, CategoryName, GeneSetName, cluster,
               one_of("SC and Early.Genes", "SC and MESO15.Genes", "DE and MESO5.Genes", 
                        "Early including ECTO.Genes", "ECTO.Genes", "MESO15.Genes", "Late.Genes", 
                        "MESO30 and EB.Genes", "EB.Genes")) %>% as.data.frame
-write.xlsx(gx, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'mRNA-Genes-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(gx, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'mRNA-Genes-FDR0.01-Top100', row.names=F, append = T)
 ```
 
 ```{r mirna, fig.height = 10, fig.width = 10}
@@ -240,13 +240,13 @@ OR = dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
                    one_of("Early.OR", "SC.OR", "SC and DE.OR", "DE and MESO5.OR", 
                           "MESO5.OR", "ECTO.OR", "SC and ECTO.OR", "MESO15.OR", 
                           "EB.OR")) %>% as.data.frame
-write.xlsx(OR, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'miRNA-OR-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(OR, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'miRNA-OR-FDR0.01-Top100', row.names=F, append = T)
 gx = dplyr::select(mirna.result, CategoryName, GeneSetName, cluster,
                    one_of("Early.Genes", "SC.Genes", "SC and DE.Genes", 
                           "DE and MESO5.Genes", "MESO5.Genes", "ECTO.Genes", 
                           "SC and ECTO.Genes", "MESO15.Genes", "EB.Genes")) %>%
   as.data.frame
-write.xlsx(gx, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'miRNA-Genes-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(gx, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'miRNA-Genes-FDR0.01-Top100', row.names=F, append = T)
 
 # Find corresponding mirnas and respective gene interactions 
 mirna.mrna = coexp %>%
@@ -266,7 +266,7 @@ map.mrna <- function(x){
 
 mirna = gx %>%
   dplyr::mutate_each(funs(map.mrna), -CategoryName, -GeneSetName, -cluster)
-write.xlsx(mirna, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'miRNA-miRNA-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(mirna, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'miRNA-miRNA-FDR0.01-Top100', row.names=F, append = T)
 ```
 
 ```{r methyl, fig.height = 10, fig.width = 10}
@@ -352,10 +352,10 @@ dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
 # Write genes and OR to a excel sheet
 OR = dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
               one_of("Not SC and ECTO Concordant.OR", "EB Concordant.OR", "EB Discordant.OR")) %>% as.data.frame
-write.xlsx(OR, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'methyl-OR-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(OR, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'methyl-OR-FDR0.01-Top100', row.names=F, append = T)
 gx = dplyr::select(methyl.result, CategoryName, GeneSetName, cluster,
               one_of("Not SC and ECTO Concordant.Genes", "EB Concordant.Genes", "EB Discordant.Genes")) %>% as.data.frame
-write.xlsx(gx, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'methyl-Genes-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(gx, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'methyl-Genes-FDR0.01-Top100', row.names=F, append = T)
 
 # Find corresponding mirnas and respective gene interactions 
 methyl.mrna = coexp %>%
@@ -386,7 +386,7 @@ methyl = gx %>%
   dplyr::mutate_each(funs(map.mrna.concordant), contains('Concordant.Genes')) %>%
   dplyr::mutate_each(funs(map.mrna.discordant), contains('Discordant.Genes'))
 
-write.xlsx(methyl, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'methyl-methyl-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(methyl, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'methyl-methyl-FDR0.01-Top100', row.names=F, append = T)
 ```
 
 ```{r splicing, fig.height = 10, fig.width = 10}
@@ -474,11 +474,11 @@ dplyr::select(splicing.result, CategoryName, GeneSetName, cluster,
 # Write genes and OR to a excel sheet
 OR = dplyr::select(splicing.result, CategoryName, GeneSetName, cluster,
                    one_of('Early.OR','ECTO.OR','Late1.OR','Late3.OR')) %>% as.data.frame
-write.xlsx(OR, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'splicing-OR-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(OR, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'splicing-OR-FDR0.01-Top100', row.names=F, append = T)
 gx = dplyr::select(splicing.result, CategoryName, GeneSetName, cluster,
                    one_of('Early.Genes','ECTO.Genes','Late1.Genes','Late3.Genes')) %>%
   as.data.frame
-write.xlsx(gx, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'splicing-Genes-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(gx, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'splicing-Genes-FDR0.01-Top100', row.names=F, append = T)
 
 # Get splicing junctions mRNA mapping
 ALL_USED_IDs <- c(ALL_USED_IDs, splicing.mrna = 'syn5048714')
@@ -498,7 +498,7 @@ map.mrna <- function(x){
 
 splicing = gx %>%
   dplyr::mutate_each(funs(map.mrna), -CategoryName, -GeneSetName, -cluster)
-write.xlsx(splicing, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'splicing-Junctions-FDR0.01-Top5', row.names=F, append = T)
+write.xlsx(splicing, file = 'enrichmentAnalysis_clusters_top100.xlsx', sheetName = 'splicing-Junctions-FDR0.01-Top100', row.names=F, append = T)
 ```
 
 ### Store results in synapse
