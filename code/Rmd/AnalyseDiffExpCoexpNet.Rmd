@@ -1,0 +1,252 @@
+---
+title: "Integrated omic networks of differentiation"
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: html_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'AnalyseDiffExpCoexpNet.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Integrated omics networks of differentiation')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(matrixStats)
+library(biomaRt)
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r synapseStore.params, cache=FALSE}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+# Create folder to store results in synapse
+ActivityName <- 'Analyse differential expression in conjuction with coexpression between assays'
+
+ThisFileName <- 'AnalyseDiffExpCoexpNet.Rmd'
+
+# Github link
+ThisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='discordant_anal')
+
+ThisFile <- getPermlink(repository = ThisRepo,
+                        repositoryPath=paste0('code/Rmd/', ThisFileName))    
+
+# Populate wiki with results
+CODE <- Folder(name = 'Integrated omic networks of differentiation', parentId = parentId)
+CODE <- synStore(CODE)
+```
+
+#### Get TFs list from synapse
+```{r getTFs}
+ALL_USED_IDs = c(ALL_USED_IDs, TFdb = 'syn5672453', map = 'syn5986999')
+
+# Get TF checkpoints db from synapse
+TFs = read.table(synGet('syn5672453')@filePath, header=T, sep= '\t', fill = TRUE) %>%
+  dplyr::filter(entrez_human != 0) %>%
+  dplyr::select(entrez_human) %>%
+  setnames('entrez_human','entrezgene') %>%
+  dplyr::mutate(Assay = 'TF')
+
+# Get HGNC mapping from synapse
+human_entrz2symbol = read.table(synGet('syn5986999')@filePath, fill=NA, quote='', header=T, sep = '\t') %>%
+  dplyr::select(Approved.Symbol, Entrez.Gene.ID) %>%
+  dplyr::rename(hgnc_symbol = Approved.Symbol, entrezgene = Entrez.Gene.ID)
+
+# Convert entrex gene ids to gene symbols
+TFs = left_join(TFs, human_entrz2symbol) %>%
+  dplyr::select(hgnc_symbol, Assay) %>%
+  setnames('hgnc_symbol','feature') %>%
+  filter(!is.na(feature)) %>%
+  unique
+```
+
+#### Get median expression from synapse
+```{r getMedianExpr}
+counts.id = 'syn5637772'
+ALL_USED_IDs = c(ALL_USED_IDs, counts = counts.id)
+counts = downloadFile(counts.id)
+counts$Assay[counts$feature %in% TFs$feature] = 'TF'
+gc()
+```
+
+#### Get differential expression from synapse
+```{r download.diff.exp}
+### Download differential expression results from synapse
+diffexp.ids = c(mrna = 'syn5013690', mirna = 'syn5014584', 
+                methyl = 'syn4527629', splicing = 'syn5049321')
+ALL_USED_IDs = c(ALL_USED_IDs, diffexp.ids)
+
+orderedDiffState = c("DE", "EB", "ECTO", "MESO15", "MESO30", "MESO5", "SC")
+Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+diffexp = lapply(diffexp.ids, function(id){
+  x = downloadFile(id) %>%
+    dplyr::select(-one_of('feature'))
+  colnames(x)[1] = 'feature'
+  x = x %>%
+    dplyr::filter(adj.P.value <= 0.05) %>%
+    tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+    dplyr::select(feature, Comparison, adj.P.value, logFC, matches('changeBETA'), matches('changePSI'))
+}) %>% 
+  rbindlist(idcol = 'Assay', use.names = T, fill = T) 
+diffexp$Assay[diffexp$feature %in% TFs$feature] = 'TF'
+
+# Filter differential expression
+diffexp = diffexp %>%
+  filter((Assay == "mrna" & abs(logFC) >= log2(1.5)) |
+           (Assay == "TF" & abs(logFC) >= log2(1.5)) |
+           (Assay == "mirna" & abs(logFC) >= log2(1.5)) |
+           (Assay == "methyl" & abs(changeBETA) >= 0.35) |
+           (Assay == "splicing" & abs(changePSI) >= 0.2),
+         Comparison %in% Comparisons)
+```
+
+#### Get coexpression from synapse
+```{r getCoexp}
+coexp.id = 'syn5662375'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
+coexpression = downloadFile(coexp.id)
+
+ind = which(coexpression$feature %in% TFs$feature)
+coexpression$feature.assay[ind] = 'TF'
+
+ind = which(coexpression$target %in% TFs$feature)
+coexpression$target.assay[ind] = 'TF'
+
+coexpression$Assay = paste(coexpression$feature.assay, coexpression$target.assay, sep = '_')
+
+# Filter co-expression
+coexpression = coexpression %>%
+  filter(feature %in% diffexp$feature, target %in% diffexp$feature) %>%
+  gather(Comparison, coexpression, -feature, -target, -feature.assay, -target.assay, -dataSource, -Assay) %>%
+  filter((Assay %in% c("TF_mrna", "TF_TF", "mrna_mrna", "mrna_TF", "methyl_mirna", "methyl_TF",
+                       "methyl_mrna", "mrna_splicing", "TF_splicing", "TF_mirna", "mrna_mirna") & abs(coexpression) >= 0.8) |
+           (Assay %in% c("mirna_TF", "mirna_mrna") & coexpression <= -0.8) |
+           (Assay %in% c("splicing_TF", "splicing_mrna") & abs(coexpression) >= 0))
+```
+
+# Get enrichment results from synapse
+```{r enrich}
+enrich.id = 'syn5979265'
+ALL_USED_IDs = c(ALL_USED_IDs, enrich = enrich.id)
+enrich.obj = synGet(enrich.id)
+
+# Get all genes that are mapped to a enriched pathway (top 100)
+getGenes <- function(x){
+  x = x %>%
+    dplyr::select(-CategoryName, -GeneSetName, -cluster) %>%
+    unlist %>% 
+    lapply(function(x){str_split(x, '\\|')[[1]]}) %>% 
+    unlist %>% unique 
+}
+
+tmp.mrna = read.xlsx(enrich.obj@filePath, sheetName = "mRNA-Genes-FDR0.01-Top100") %>%
+  getGenes
+
+tmp.mirna = read.xlsx(enrich.obj@filePath, sheetName = "miRNA-Genes-FDR0.01-Top100") %>%
+  getGenes
+
+tmp.methyl = read.xlsx(enrich.obj@filePath, sheetName = "methyl-Genes-FDR0.01-Top100") %>%
+  getGenes
+
+tmp.splicing = read.xlsx(enrich.obj@filePath, sheetName = "splicing-Genes-FDR0.01-Top100") %>%
+  getGenes
+
+genes = unique(c(tmp.mrna, tmp.mirna, tmp.methyl, tmp.splicing))
+```
+
+#### Analyse differential expression control using genes
+```{r relativeControl, results='asis', fig.height = 15, fig.width = 15}
+relative.control = dplyr::select(coexpression, -Assay) %>%
+  right_join(diffexp %>% 
+               dplyr::rename(feature.assay = Assay, feature.fdr = adj.P.value,
+                             feature.lfc = logFC, feature.chb = changeBETA, feature.cpsi = changePSI)) %>%
+  left_join(diffexp %>%
+              dplyr::rename(target = feature, target.assay = Assay, target.fdr = adj.P.value,
+                            target.lfc = logFC, target.chb = changeBETA, target.cpsi = changePSI))
+```
+
+#### Get SC-MESO differentiation specific network
+```{r mesodermalDiff, results='asis', fig.height = 15, fig.width = 15}
+# Get edgelist
+mesoderm.diff = relative.control %>%
+  filter(Comparison %in% c("MESO5_vs_SC", "MESO15_vs_MESO5","MESO15_vs_MESO30", "MESO15_vs_SC", "MESO30_vs_MESO5", "MESO30_vs_SC"),
+         !is.na(target.assay),         
+         # (target.assay %in% c("mrna", "TF") & target %in% genes) | (target.assay %in% c("mirna", "splicing")),
+         abs(coexpression) != 1,
+         feature.assay != 'splicing',
+         abs(coexpression) >= 0.8) %>%
+  dplyr::mutate(assay = paste(feature.assay, target.assay, sep = '_')) %>%
+  spread(Comparison, coexpression)
+
+g = graph_from_edgelist(dplyr::select(mesoderm.diff, feature, target) %>% as.matrix)
+
+# Write interactions to file
+write.table(mesoderm.diff, file = 'SC_MESO_EDGE.tsv', sep = '\t', row.names=F, quote=F)
+obj.edge = File('SC_MESO_EDGE.tsv', name = 'SC MESO Differentiation Edges', parentId = CODE$properties$id)
+obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+
+# Write entities to file
+mesoderm.diff.counts = filter(counts, feature %in% unique(c(mesoderm.diff$feature, mesoderm.diff$target)))
+write.table(mesoderm.diff.counts, file = 'SC_MESO_VERT.tsv', sep = '\t', row.names=F, quote=F)
+obj.counts = File('SC_MESO_VERT.tsv', name = 'SC MESO Differentiation Vertices', parentId = CODE$properties$id)
+obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+```
+
+#### Get SC differentiation to germ layers
+```{r mesodermalDiff, results='asis', fig.height = 15, fig.width = 15}
+# Get edgelist
+stemcell.diff = relative.control %>%
+  filter(Comparison %in% c("DE_vs_SC", "ECTO_vs_SC", "MESO5_vs_SC"),
+         !is.na(target.assay),         
+         # (target.assay %in% c("mrna", "TF") & target %in% genes) | (target.assay %in% c("mirna", "splicing")),
+         abs(coexpression) != 1,
+         feature.assay != 'splicing',
+         abs(coexpression) >= 0.8) %>%
+  dplyr::mutate(assay = paste(feature.assay, target.assay, sep = '_')) %>%
+  spread(Comparison, coexpression)
+
+# Write interactions to file
+write.table(stemcell.diff, file = 'SC_GERMLAYER_EDGE.tsv', sep = '\t', row.names=F, quote=F)
+obj.edge = File('SC_GERMLAYER_EDGE.tsv', name = 'SC GERMLAYER Differentiation Edges', parentId = CODE$properties$id)
+obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+
+# Write entities to file
+stemcell.diff.counts = filter(counts, feature %in% unique(c(stemcell.diff$feature, stemcell.diff$target)))
+write.table(stemcell.diff.counts, file = 'SC_GERMLAYER_VERT.tsv', sep = '\t', row.names=F, quote=F)
+obj.counts = File('SC_GERMLAYER_VERT.tsv', name = 'SC GERMLAYER Differentiation Vertices', parentId = CODE$properties$id)
+obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+```
+
+### Source Code
+[Source R Markdown](`r ThisFile`)
