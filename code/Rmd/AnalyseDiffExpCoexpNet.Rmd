@@ -13,7 +13,7 @@ synapseLogin()
 
 knit2synapse::knitToFolderEntity(file = 'AnalyseDiffExpCoexpNet.Rmd',
                                  parentId = "syn5194922",
-                                 entityName = 'Integrated omics networks of differentiation')
+                                 entityName = 'Integrated omic networks of differentiation')
 ```
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
@@ -32,6 +32,9 @@ library(stringr)
 
 library(matrixStats)
 library(biomaRt)
+library(xlsx)
+
+library(igraph)
 
 options(xtable.type="html")
 
@@ -123,12 +126,26 @@ diffexp$Assay[diffexp$feature %in% TFs$feature] = 'TF'
 
 # Filter differential expression
 diffexp = diffexp %>%
-  filter((Assay == "mrna" & abs(logFC) >= log2(1.5)) |
-           (Assay == "TF" & abs(logFC) >= log2(1.5)) |
-           (Assay == "mirna" & abs(logFC) >= log2(1.5)) |
+  filter((Assay == "mrna" & abs(logFC) >= log2(2)) |
+           (Assay == "TF" & abs(logFC) >= log2(2)) |
+           (Assay == "mirna" & abs(logFC) >= log2(2)) |
            (Assay == "methyl" & abs(changeBETA) >= 0.35) |
            (Assay == "splicing" & abs(changePSI) >= 0.2),
          Comparison %in% Comparisons)
+
+# Write all active differential expression to synapse
+write.table(diffexp, file = paste('allSignificantDiffExp','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+allDE.obj = File(paste('allSignificantDiffExp','tsv',sep = '.'), 
+                 name = 'All Significant Differential Expression', 
+                 parentId = CODE$properties$id)
+allDE.obj = synStore(allDE.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+
+writeLines('Unique entities differntially expressed')
+diffexp %>% 
+  group_by(Assay, Comparison) %>% 
+  summarise(count = length(unique(feature))) %>% 
+  spread(Assay, count) %>%
+  kable
 ```
 
 #### Get coexpression from synapse
@@ -150,12 +167,12 @@ coexpression = coexpression %>%
   filter(feature %in% diffexp$feature, target %in% diffexp$feature) %>%
   gather(Comparison, coexpression, -feature, -target, -feature.assay, -target.assay, -dataSource, -Assay) %>%
   filter((Assay %in% c("TF_mrna", "TF_TF", "mrna_mrna", "mrna_TF", "methyl_mirna", "methyl_TF",
-                       "methyl_mrna", "mrna_splicing", "TF_splicing", "TF_mirna", "mrna_mirna") & abs(coexpression) >= 0.8) |
-           (Assay %in% c("mirna_TF", "mirna_mrna") & coexpression <= -0.8) |
-           (Assay %in% c("splicing_TF", "splicing_mrna") & abs(coexpression) >= 0))
+                       "methyl_mrna", "TF_mirna", "mrna_mirna") & abs(coexpression) >= 0.8) |
+           (Assay %in% c("mirna_TF", "mirna_mrna") & coexpression <= -0.8)) 
+gc()
 ```
 
-# Get enrichment results from synapse
+#### Get enrichment results from synapse
 ```{r enrich}
 enrich.id = 'syn5979265'
 ALL_USED_IDs = c(ALL_USED_IDs, enrich = enrich.id)
@@ -163,53 +180,195 @@ enrich.obj = synGet(enrich.id)
 
 # Get all genes that are mapped to a enriched pathway (top 100)
 getGenes <- function(x){
-  x = x %>%
-    dplyr::select(-CategoryName, -GeneSetName, -cluster) %>%
-    unlist %>% 
-    lapply(function(x){str_split(x, '\\|')[[1]]}) %>% 
-    unlist %>% unique 
+  x1 = x %>%
+    apply(1, function(y){
+      str_split(y[-(1:3)], '\\|') %>% unlist %>% unique %>% na.omit %>% as.character
+    })
+  names(x1) = paste0(x$GeneSetName, '(', x$CategoryName, ')')
+  x1 = x1 %>% 
+    lapply(rownameToFirstColumn, 'x') %>% 
+    rbindlist(idcol = 'feature') %>% 
+    dplyr::rename(target = DF) %>%
+    dplyr::select(-x)
 }
 
 tmp.mrna = read.xlsx(enrich.obj@filePath, sheetName = "mRNA-Genes-FDR0.01-Top100") %>%
-  getGenes
+  getGenes %>%
+  dplyr::mutate(feature.assay = 'pathways',
+                target.assay = 'mrna')
 
-tmp.mirna = read.xlsx(enrich.obj@filePath, sheetName = "miRNA-Genes-FDR0.01-Top100") %>%
-  getGenes
+tmp.mirna = read.xlsx(enrich.obj@filePath, sheetName = "miRNA-miRNA-FDR0.01-Top100") %>%
+  getGenes %>%
+  dplyr::mutate(feature.assay = 'pathways',
+                target.assay = 'mirna')
 
-tmp.methyl = read.xlsx(enrich.obj@filePath, sheetName = "methyl-Genes-FDR0.01-Top100") %>%
-  getGenes
+tmp.methyl = read.xlsx(enrich.obj@filePath, sheetName = "methyl-methyl-FDR0.01-Top100") %>%
+  getGenes %>%
+  dplyr::mutate(feature.assay = 'pathways',
+                target.assay = 'methyl')
 
-tmp.splicing = read.xlsx(enrich.obj@filePath, sheetName = "splicing-Genes-FDR0.01-Top100") %>%
-  getGenes
+# tmp.splicing = read.xlsx(enrich.obj@filePath, sheetName = "splicing-splicing-FDR0.01-Top100") %>%
+#   getGenes %>%
+#   dplyr::select(-x)
 
-genes = unique(c(tmp.mrna, tmp.mirna, tmp.methyl, tmp.splicing))
+pathways = rbindlist(list(tmp.mrna, tmp.mirna, tmp.methyl), use.names=T, fill = T)
+gc()
 ```
 
-#### Analyse differential expression control using genes
-```{r relativeControl, results='asis', fig.height = 15, fig.width = 15}
-relative.control = dplyr::select(coexpression, -Assay) %>%
-  right_join(diffexp %>% 
+#### Get cluster mapping from differential expression results
+```{r diffExpClusters}
+diffexp.cluster.mrna.id = 'syn5231514'
+ALL_USED_IDs = c(ALL_USED_IDs, mrna = diffexp.cluster.mrna.id)
+diffexp.cluster.mrna = downloadFile(diffexp.cluster.mrna.id)
+
+# Get identity mapping for individual clusters
+mrna.ident = c("1" = "Not ECTO and MESO15", "4" = "DE and MESO5", "7" = "Late including ECTO", 
+               "8" = "ECTO", "17" = "MESO30 and EB", "19" = "Everything", "20" = "Early including ECTO", 
+               "21" = "SC and Early", "24" = "Not SC", "30" = "Not DE and MESO5", "31" = "SC and MESO15",
+               "37" = "SC, ECTO and MESO15", "47" = 'DE and all MESO', "57" = "MESO5", "70" = "Not SC and ECTO",
+               "76" = "Late", "78" = "EB", "79" = "Late wo MESO15", "81" = "SC and Late","83" = "Not MESO15","94" = "MESO15",
+               "119" = "Not ECTO","130" = "Early with MESO15","133" = "SC, ECTO, MESO30 and EB", "136" = "SC, DE and MESO5")
+mrna.ident = rownameToFirstColumn(mrna.ident, "cluster")
+
+diffexp.cluster.mrna = dplyr::mutate(diffexp.cluster.mrna, cluster = as.character(cluster)) %>%
+  left_join(mrna.ident) %>%
+  dplyr::rename(cluster.name = DF)
+
+mrna.cluster = lapply(diffexp.cluster.mrna$feature, function(x){
+  str_split(x, ',')[[1]] %>% unique
+})
+names(mrna.cluster) = diffexp.cluster.mrna$cluster.name
+mrna.cluster = mrna.cluster %>% 
+  lapply(rownameToFirstColumn, 'x') %>% 
+  rbindlist(idcol = 'cluster') %>% 
+  dplyr::rename(feature = DF ) %>%
+  dplyr::select(-x)
+  
+######################################################
+# Get differential expression clusters from miRNA (ALL)
+diffexp.cluster.mirna.id = 'syn5203316'
+ALL_USED_IDs = c(ALL_USED_IDs, mirna.cluster = diffexp.cluster.mirna.id)
+diffexp.cluster.mirna = downloadFile(diffexp.cluster.mirna.id)
+
+# Get identity mapping for individual clusters
+mirna.ident = c("1" = "SC", "2" = "EB", "3" = "Late", "4" = "ECTO", 
+               "6" = "All", "7" = "MESO5", "8" = "MESO15", "10" = "SC and ECTO", 
+               "11" = "DE and MESO5", "12" = "Early", "15" = "SC and DE")
+mirna.ident = rownameToFirstColumn(mirna.ident, "cluster")
+
+diffexp.cluster.mirna = dplyr::mutate(diffexp.cluster.mirna, cluster = as.character(cluster)) %>%
+  left_join(mirna.ident) %>%
+  dplyr::rename(cluster.name = DF)
+
+mirna.cluster = lapply(diffexp.cluster.mirna$feature, function(x){
+  str_split(x, ',')[[1]] %>% unique
+})
+names(mirna.cluster) = diffexp.cluster.mirna$cluster.name
+mirna.cluster = mirna.cluster %>% 
+  lapply(rownameToFirstColumn, 'x') %>% 
+  rbindlist(idcol = 'cluster') %>% 
+  dplyr::rename(feature = DF ) %>%
+  dplyr::select(-x)
+
+######################################################
+# Get differential expression clusters from DNA methylation probes (ALL)
+diffexp.cluster.methyl.id = 'syn5229656'
+ALL_USED_IDs = c(ALL_USED_IDs, methyl.cluster = diffexp.cluster.methyl.id)
+diffexp.cluster.methyl = downloadFile(diffexp.cluster.methyl.id)
+
+# Get identity mapping for individual clusters
+methyl.ident = c('2' = 'Not ECTO', '5' = 'Not SC', 
+                 '7' = 'Not SC and ECTO', '9' = 'EB', 
+                 '12' = 'All', '13' = 'Early', 
+                 '19' = 'ECTO and EB')
+methyl.ident = rownameToFirstColumn(methyl.ident, "cluster")
+
+diffexp.cluster.methyl = dplyr::mutate(diffexp.cluster.methyl, cluster = as.character(cluster)) %>%
+  left_join(methyl.ident) %>%
+  dplyr::rename(cluster.name = DF)
+
+methyl.cluster = lapply(diffexp.cluster.methyl$feature, function(x){
+  str_split(x, ',')[[1]] %>% unique
+})
+names(methyl.cluster) = diffexp.cluster.methyl$cluster.name
+methyl.cluster = methyl.cluster %>% 
+  lapply(rownameToFirstColumn, 'x') %>% 
+  rbindlist(idcol = 'cluster') %>% 
+  dplyr::rename(feature = DF ) %>%
+  dplyr::select(-x)
+
+counts = left_join(counts, 
+          rbindlist(list(mrna.cluster, 
+                         mirna.cluster, 
+                         methyl.cluster), use.names = T))
+gc()
+```
+
+#### Get active interactions
+```{r actInt}
+all.interactions = coexpression %>%
+  dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
+  inner_join(diffexp %>% 
                dplyr::rename(feature.assay = Assay, feature.fdr = adj.P.value,
                              feature.lfc = logFC, feature.chb = changeBETA, feature.cpsi = changePSI)) %>%
-  left_join(diffexp %>%
+  inner_join(diffexp %>%
               dplyr::rename(target = feature, target.assay = Assay, target.fdr = adj.P.value,
                             target.lfc = logFC, target.chb = changeBETA, target.cpsi = changePSI))
+
+# Write all active interactions to synapse
+write.table(all.interactions, file = paste('allInteractions','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+allInt.obj = File(paste('allInteractions','tsv',sep = '.'), 
+                  name = 'All Active Interactions', 
+                  parentId = CODE$properties$id)
+allInt.obj = synStore(allInt.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 ```
 
-#### Get SC-MESO differentiation specific network
-```{r mesodermalDiff, results='asis', fig.height = 15, fig.width = 15}
+#### Store interaction results in synapse
+```{r storeIntResult, results='asis', fig.height = 15, fig.width = 15}
+# Creat a folder
+fullNet.fold = Folder(name = 'Full Networks (without annotations)', parentId = CODE$properties$id)
+fullNet.fold = synStore(fullNet.fold)
+
+all.objs = all.interactions %>%
+  dlply(.(Comparison), function(edge.prop, counts){
+     vertex.prop = filter(counts,
+                          feature %in% unique(c(edge.prop$feature, edge.prop$target))) %>%
+       data.frame
+     rownames(vertex.prop) = vertex.prop$feature
+    
+    # Write filtered interactions to synapse
+    write.table(edge.prop, file = paste(unique(edge.prop$Comparison),'edges','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+    edge.obj = File(paste(unique(edge.prop$Comparison),'edges','tsv',sep = '.'), 
+                    name = paste(unique(edge.prop$Comparison),'Edges'), 
+                    parentId = fullNet.fold$properties$id)
+    edge.obj = synStore(edge.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+    
+    # Write filtered nodes to synapse
+    write.table(vertex.prop, file = paste(unique(edge.prop$Comparison),'vertices','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+    vertices.obj = File(paste(unique(edge.prop$Comparison),'vertices','tsv',sep = '.'), 
+                    name = paste(unique(edge.prop$Comparison),'Vertices'), 
+                    parentId = fullNet.fold$properties$id)
+    vertices.obj = synStore(vertices.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+    
+    return(c(edge.obj, vertices.obj))
+  }, counts, .progress = 'text')
+```
+
+#### Get interactions specific to a comparison
+```{r indvInt, results='asis', fig.height = 15, fig.width = 15}
 # Get edgelist
 mesoderm.diff = relative.control %>%
-  filter(Comparison %in% c("MESO5_vs_SC", "MESO15_vs_MESO5","MESO15_vs_MESO30", "MESO15_vs_SC", "MESO30_vs_MESO5", "MESO30_vs_SC"),
-         !is.na(target.assay),         
-         # (target.assay %in% c("mrna", "TF") & target %in% genes) | (target.assay %in% c("mirna", "splicing")),
-         abs(coexpression) != 1,
-         feature.assay != 'splicing',
-         abs(coexpression) >= 0.8) %>%
-  dplyr::mutate(assay = paste(feature.assay, target.assay, sep = '_')) %>%
+  filter(Comparison %in% c("MESO5_vs_SC", "MESO15_vs_MESO5","MESO15_vs_MESO30", "MESO15_vs_SC", "MESO30_vs_MESO5", "MESO30_vs_SC")) %>%
+  dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
   spread(Comparison, coexpression)
 
-g = graph_from_edgelist(dplyr::select(mesoderm.diff, feature, target) %>% as.matrix)
+# Get nodelist
+mesoderm.diff.counts = filter(counts, feature %in% unique(c(mesoderm.diff$feature, mesoderm.diff$target)))
+
+# mesoderm.diff = rbindlist(list(mesoderm.diff,
+#                                pathways %>%
+#                                  filter(target %in% mesoderm.diff.counts$feature)),
+#                           fill = T, use.names=T)
 
 # Write interactions to file
 write.table(mesoderm.diff, file = 'SC_MESO_EDGE.tsv', sep = '\t', row.names=F, quote=F)
@@ -217,34 +376,91 @@ obj.edge = File('SC_MESO_EDGE.tsv', name = 'SC MESO Differentiation Edges', pare
 obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 
 # Write entities to file
+write.table(mesoderm.diff.counts, file = 'SC_MESO_VERT.tsv', sep = '\t', row.names=F, quote=F)
+obj.counts = File('SC_MESO_VERT.tsv', name = 'SC MESO Differentiation Vertices', parentId = CODE$properties$id)
+obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+```
+
+
+
+#### Get SC-MESO differentiation specific network
+```{r mesodermalDiff, results='asis', fig.height = 15, fig.width = 15}
+# Get edgelist
+mesoderm.diff = relative.control %>%
+  filter(Comparison %in% c("MESO5_vs_SC", "MESO15_vs_MESO5","MESO15_vs_MESO30", "MESO15_vs_SC", "MESO30_vs_MESO5", "MESO30_vs_SC")) %>%
+  dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
+  spread(Comparison, coexpression)
+
+# Get nodelist
 mesoderm.diff.counts = filter(counts, feature %in% unique(c(mesoderm.diff$feature, mesoderm.diff$target)))
+
+# mesoderm.diff = rbindlist(list(mesoderm.diff,
+#                                pathways %>%
+#                                  filter(target %in% mesoderm.diff.counts$feature)),
+#                           fill = T, use.names=T)
+
+# Write interactions to file
+write.table(mesoderm.diff, file = 'SC_MESO_EDGE.tsv', sep = '\t', row.names=F, quote=F)
+obj.edge = File('SC_MESO_EDGE.tsv', name = 'SC MESO Differentiation Edges', parentId = CODE$properties$id)
+obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+
+# Write entities to file
 write.table(mesoderm.diff.counts, file = 'SC_MESO_VERT.tsv', sep = '\t', row.names=F, quote=F)
 obj.counts = File('SC_MESO_VERT.tsv', name = 'SC MESO Differentiation Vertices', parentId = CODE$properties$id)
 obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 ```
 
 #### Get SC differentiation to germ layers
-```{r mesodermalDiff, results='asis', fig.height = 15, fig.width = 15}
+```{r stemCellDiff, results='asis', fig.height = 15, fig.width = 15}
 # Get edgelist
 stemcell.diff = relative.control %>%
-  filter(Comparison %in% c("DE_vs_SC", "ECTO_vs_SC", "MESO5_vs_SC"),
-         !is.na(target.assay),         
-         # (target.assay %in% c("mrna", "TF") & target %in% genes) | (target.assay %in% c("mirna", "splicing")),
-         abs(coexpression) != 1,
-         feature.assay != 'splicing',
-         abs(coexpression) >= 0.8) %>%
-  dplyr::mutate(assay = paste(feature.assay, target.assay, sep = '_')) %>%
+  filter(Comparison %in% c("DE_vs_SC", "ECTO_vs_SC", "MESO5_vs_SC", "MESO15_vs_SC", "MESO30_vs_SC")) %>%
+  dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
   spread(Comparison, coexpression)
 
-# Write interactions to file
+# Get nodelist
+stemcell.diff.counts = filter(counts, feature %in% unique(c(stemcell.diff$feature, stemcell.diff$target)))
+
+# stemcell.diff = rbindlist(list(stemcell.diff,
+#                                pathways %>%
+#                                  filter(target %in% stemcell.diff.counts$feature)),
+#                           fill = T, use.names=T)
+
+# Write interactions to file)
 write.table(stemcell.diff, file = 'SC_GERMLAYER_EDGE.tsv', sep = '\t', row.names=F, quote=F)
 obj.edge = File('SC_GERMLAYER_EDGE.tsv', name = 'SC GERMLAYER Differentiation Edges', parentId = CODE$properties$id)
 obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 
 # Write entities to file
-stemcell.diff.counts = filter(counts, feature %in% unique(c(stemcell.diff$feature, stemcell.diff$target)))
 write.table(stemcell.diff.counts, file = 'SC_GERMLAYER_VERT.tsv', sep = '\t', row.names=F, quote=F)
 obj.counts = File('SC_GERMLAYER_VERT.tsv', name = 'SC GERMLAYER Differentiation Vertices', parentId = CODE$properties$id)
+obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+```
+
+#### Get MESO5 DE comparison
+```{r meso5de, results='asis', fig.height = 15, fig.width = 15}
+# Get edgelist
+meso5de.diff = relative.control %>%
+  filter(Comparison %in% c("DE_vs_MESO5")) %>%
+  dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
+  spread(Comparison, coexpression)
+
+# Get nodelist
+meso5de.diff.counts = filter(counts, feature %in% unique(c(meso5de.diff$feature, meso5de.diff$target)))
+
+# meso5de.diff = rbindlist(list(meso5de.diff,
+#                                pathways %>%
+#                                  filter(target %in% meso5de.diff$feature)),
+#                           fill = T, use.names=T)
+
+# Write interactions to file)
+write.table(meso5de.diff, file = 'MESO5_DE_GERMLAYER_EDGE.tsv', sep = '\t', row.names=F, quote=F)
+obj.edge = File('MESO5_DE_GERMLAYER_EDGE.tsv', name = 'MESO5 DE GERMLAYER Differentiation Edges', parentId = CODE$properties$id)
+obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+
+# Write entities to file
+write.table(meso5de.diff.counts, file = 'MESO5_DE_GERMLAYER_VERT.tsv', sep = '\t', row.names=F, quote=F)
+obj.counts = File('MESO5_DE_GERMLAYER_VERT.tsv', name = 'MESO5 DE GERMLAYER Differentiation Vertices', parentId = CODE$properties$id)
 obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 ```
 

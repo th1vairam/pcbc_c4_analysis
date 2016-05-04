@@ -89,4 +89,4 @@ ThisFile2 <- getPermlink(repository = ThisRepo,
 # Write rank list to synapse
 write.table(rankList, file = 'allNodeRankings.tsv', sep = '\t', row.names=F, quote=F)
 obj = File('allNodeRankings.tsv', name = 'All Node Rankings', parentId = 'syn5996097')
-obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = c(ThisFile1,ThisFile2), activityName = ActivityName)
+obj = synStore(obj, used = as.character(ALL_USED_IDs), executed = list(ThisFile1,ThisFile2), activityName = ActivityName)
