@@ -331,7 +331,9 @@ fullNet.fold = synStore(fullNet.fold)
 
 all.objs = all.interactions %>%
   dlply(.(Comparison), function(edge.prop, counts){
-     vertex.prop = filter(counts,
+    loadLibs()
+    synapseLogin()
+    vertex.prop = filter(counts,
                           feature %in% unique(c(edge.prop$feature, edge.prop$target))) %>%
        data.frame
      rownames(vertex.prop) = vertex.prop$feature
@@ -351,117 +353,78 @@ all.objs = all.interactions %>%
     vertices.obj = synStore(vertices.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
     
     return(c(edge.obj, vertices.obj))
+  }, 
+  counts, .progress = 'text')
+```
+
+Call ranking script seperately (see calculateVertexRanks.R, because of parallel implementation)
+
+#### Retrive rank list from synapse
+```{r rankList}
+rank.id = 'syn6039760'
+ALL_USED_IDs = c(ALL_USED_IDs, rank = rank.id)
+rankList = downloadFile(rank.id)
+
+# Creat a folder
+smallNet.fold = Folder(name = 'Filtered Networks - Top 100 Nodes (with annotations)', parentId = CODE$properties$id)
+smallNet.fold = synStore(smallNet.fold)
+
+all.objs = all.interactions %>%
+  dlply(.(Comparison), function(edge.prop, counts){
+    rk = filter(rankList,
+                Comparison %in% unique(edge.prop$Comparison)) %>%
+      top_n(50, rank)
+    
+    # Create a graph from edge list
+    g = igraph::graph_from_edgelist(
+      dplyr::select(edge.prop, feature, target) %>% as.matrix,
+      directed = T)
+    igraph::E(g)$weight = abs(edge.prop$coexpression)
+    
+    # Get all vertices that connect the important vertices
+    vertices = intersect(V(g)$name, rk$feature)
+    vertices = c(vertices,
+                 sapply(vertices, function(x){
+                   SP = shortest_paths(g, x, vertices)$vpath %>% unlist
+                   names(SP)
+                   }) %>% unlist %>% unique)
+    
+    edge.prop = edge.prop %>%
+      filter(feature %in% vertices & target %in% vertices)
+    
+    # Get pathwyas that maps atleast to 3 entities
+    p = pathways %>%
+      filter(target %in% vertices) 
+    pn = p %>%
+      group_by(feature) %>%
+      summarise(count = n()) %>%
+      filter(count >= max(round(0.3*length(vertices)), 3))
+    p = filter(p, feature %in% pn$feature)
+    
+    edge.prop  = rbindlist(list(edge.prop, p), use.names=T, fill = T)
+
+    vertex.prop = filter(counts,
+                          feature %in% vertices) %>%
+      left_join(rankList %>%
+                  filter(Comparison %in% unique(edge.prop$Comparison)) %>%
+                  dplyr::select(feature, rank))
+    
+    # Write filtered interactions to synapse
+    write.table(edge.prop, file = paste(unique(edge.prop$Comparison),'edges','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+    edge.obj = File(paste(unique(edge.prop$Comparison),'edges','tsv',sep = '.'), 
+                    name = paste(unique(edge.prop$Comparison),'Edges'), 
+                    parentId = smallNet.fold$properties$id)
+    edge.obj = synStore(edge.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+    
+    # Write filtered nodes to synapse
+    write.table(vertex.prop, file = paste(unique(edge.prop$Comparison),'vertices','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+    vertices.obj = File(paste(unique(edge.prop$Comparison),'vertices','tsv',sep = '.'), 
+                    name = paste(unique(edge.prop$Comparison),'Vertices'), 
+                    parentId = smallNet.fold$properties$id)
+    vertices.obj = synStore(vertices.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+    
+    return(c(edge.obj, vertices.obj))
   }, counts, .progress = 'text')
-```
-
-#### Get interactions specific to a comparison
-```{r indvInt, results='asis', fig.height = 15, fig.width = 15}
-# Get edgelist
-mesoderm.diff = relative.control %>%
-  filter(Comparison %in% c("MESO5_vs_SC", "MESO15_vs_MESO5","MESO15_vs_MESO30", "MESO15_vs_SC", "MESO30_vs_MESO5", "MESO30_vs_SC")) %>%
-  dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
-  spread(Comparison, coexpression)
-
-# Get nodelist
-mesoderm.diff.counts = filter(counts, feature %in% unique(c(mesoderm.diff$feature, mesoderm.diff$target)))
-
-# mesoderm.diff = rbindlist(list(mesoderm.diff,
-#                                pathways %>%
-#                                  filter(target %in% mesoderm.diff.counts$feature)),
-#                           fill = T, use.names=T)
-
-# Write interactions to file
-write.table(mesoderm.diff, file = 'SC_MESO_EDGE.tsv', sep = '\t', row.names=F, quote=F)
-obj.edge = File('SC_MESO_EDGE.tsv', name = 'SC MESO Differentiation Edges', parentId = CODE$properties$id)
-obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
-
-# Write entities to file
-write.table(mesoderm.diff.counts, file = 'SC_MESO_VERT.tsv', sep = '\t', row.names=F, quote=F)
-obj.counts = File('SC_MESO_VERT.tsv', name = 'SC MESO Differentiation Vertices', parentId = CODE$properties$id)
-obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
-```
-
-
-
-#### Get SC-MESO differentiation specific network
-```{r mesodermalDiff, results='asis', fig.height = 15, fig.width = 15}
-# Get edgelist
-mesoderm.diff = relative.control %>%
-  filter(Comparison %in% c("MESO5_vs_SC", "MESO15_vs_MESO5","MESO15_vs_MESO30", "MESO15_vs_SC", "MESO30_vs_MESO5", "MESO30_vs_SC")) %>%
-  dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
-  spread(Comparison, coexpression)
-
-# Get nodelist
-mesoderm.diff.counts = filter(counts, feature %in% unique(c(mesoderm.diff$feature, mesoderm.diff$target)))
-
-# mesoderm.diff = rbindlist(list(mesoderm.diff,
-#                                pathways %>%
-#                                  filter(target %in% mesoderm.diff.counts$feature)),
-#                           fill = T, use.names=T)
-
-# Write interactions to file
-write.table(mesoderm.diff, file = 'SC_MESO_EDGE.tsv', sep = '\t', row.names=F, quote=F)
-obj.edge = File('SC_MESO_EDGE.tsv', name = 'SC MESO Differentiation Edges', parentId = CODE$properties$id)
-obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
-
-# Write entities to file
-write.table(mesoderm.diff.counts, file = 'SC_MESO_VERT.tsv', sep = '\t', row.names=F, quote=F)
-obj.counts = File('SC_MESO_VERT.tsv', name = 'SC MESO Differentiation Vertices', parentId = CODE$properties$id)
-obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
-```
-
-#### Get SC differentiation to germ layers
-```{r stemCellDiff, results='asis', fig.height = 15, fig.width = 15}
-# Get edgelist
-stemcell.diff = relative.control %>%
-  filter(Comparison %in% c("DE_vs_SC", "ECTO_vs_SC", "MESO5_vs_SC", "MESO15_vs_SC", "MESO30_vs_SC")) %>%
-  dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
-  spread(Comparison, coexpression)
-
-# Get nodelist
-stemcell.diff.counts = filter(counts, feature %in% unique(c(stemcell.diff$feature, stemcell.diff$target)))
-
-# stemcell.diff = rbindlist(list(stemcell.diff,
-#                                pathways %>%
-#                                  filter(target %in% stemcell.diff.counts$feature)),
-#                           fill = T, use.names=T)
-
-# Write interactions to file)
-write.table(stemcell.diff, file = 'SC_GERMLAYER_EDGE.tsv', sep = '\t', row.names=F, quote=F)
-obj.edge = File('SC_GERMLAYER_EDGE.tsv', name = 'SC GERMLAYER Differentiation Edges', parentId = CODE$properties$id)
-obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
-
-# Write entities to file
-write.table(stemcell.diff.counts, file = 'SC_GERMLAYER_VERT.tsv', sep = '\t', row.names=F, quote=F)
-obj.counts = File('SC_GERMLAYER_VERT.tsv', name = 'SC GERMLAYER Differentiation Vertices', parentId = CODE$properties$id)
-obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
-```
-
-#### Get MESO5 DE comparison
-```{r meso5de, results='asis', fig.height = 15, fig.width = 15}
-# Get edgelist
-meso5de.diff = relative.control %>%
-  filter(Comparison %in% c("DE_vs_MESO5")) %>%
-  dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
-  spread(Comparison, coexpression)
-
-# Get nodelist
-meso5de.diff.counts = filter(counts, feature %in% unique(c(meso5de.diff$feature, meso5de.diff$target)))
-
-# meso5de.diff = rbindlist(list(meso5de.diff,
-#                                pathways %>%
-#                                  filter(target %in% meso5de.diff$feature)),
-#                           fill = T, use.names=T)
-
-# Write interactions to file)
-write.table(meso5de.diff, file = 'MESO5_DE_GERMLAYER_EDGE.tsv', sep = '\t', row.names=F, quote=F)
-obj.edge = File('MESO5_DE_GERMLAYER_EDGE.tsv', name = 'MESO5 DE GERMLAYER Differentiation Edges', parentId = CODE$properties$id)
-obj.edge =  synStore(obj.edge, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
-
-# Write entities to file
-write.table(meso5de.diff.counts, file = 'MESO5_DE_GERMLAYER_VERT.tsv', sep = '\t', row.names=F, quote=F)
-obj.counts = File('MESO5_DE_GERMLAYER_VERT.tsv', name = 'MESO5 DE GERMLAYER Differentiation Vertices', parentId = CODE$properties$id)
-obj.counts =  synStore(obj.counts, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 ```
 
 ### Source Code
