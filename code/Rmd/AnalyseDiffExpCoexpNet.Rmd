@@ -354,25 +354,27 @@ all.objs = all.interactions %>%
     
     return(c(edge.obj, vertices.obj))
   }, 
-  counts, .progress = 'text')
+  counts, .parallel = F, .progress = 'text')
 ```
 
 Call ranking script seperately (see calculateVertexRanks.R, because of parallel implementation)
 
-#### Retrive rank list from synapse
+#### Retrive rank list and create subnetwork with top 50 nodes
 ```{r rankList}
 rank.id = 'syn6039760'
 ALL_USED_IDs = c(ALL_USED_IDs, rank = rank.id)
 rankList = downloadFile(rank.id)
 
 # Creat a folder
-smallNet.fold = Folder(name = 'Filtered Networks - Top 100 Nodes (with annotations)', parentId = CODE$properties$id)
+smallNet.fold = Folder(name = 'Filtered Networks - Top 50 Nodes (with annotations)', parentId = CODE$properties$id)
 smallNet.fold = synStore(smallNet.fold)
 
 all.objs = all.interactions %>%
-  dlply(.(Comparison), function(edge.prop, counts){
+  dlply(.(Comparison), 
+        function(edge.prop, counts){
+    diffComp = unique(edge.prop$Comparison)
     rk = filter(rankList,
-                Comparison %in% unique(edge.prop$Comparison)) %>%
+                Comparison %in% diffComp) %>%
       top_n(50, rank)
     
     # Create a graph from edge list
@@ -406,25 +408,26 @@ all.objs = all.interactions %>%
     vertex.prop = filter(counts,
                           feature %in% vertices) %>%
       left_join(rankList %>%
-                  filter(Comparison %in% unique(edge.prop$Comparison)) %>%
+                  filter(Comparison %in% diffComp) %>%
                   dplyr::select(feature, rank))
     
     # Write filtered interactions to synapse
-    write.table(edge.prop, file = paste(unique(edge.prop$Comparison),'edges','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
-    edge.obj = File(paste(unique(edge.prop$Comparison),'edges','tsv',sep = '.'), 
-                    name = paste(unique(edge.prop$Comparison),'Edges'), 
+    write.table(edge.prop, file = paste(diffComp,'edges','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+    edge.obj = File(paste(diffComp,'edges','tsv',sep = '.'), 
+                    name = paste(diffComp,'Edges'), 
                     parentId = smallNet.fold$properties$id)
     edge.obj = synStore(edge.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
     
     # Write filtered nodes to synapse
-    write.table(vertex.prop, file = paste(unique(edge.prop$Comparison),'vertices','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
-    vertices.obj = File(paste(unique(edge.prop$Comparison),'vertices','tsv',sep = '.'), 
-                    name = paste(unique(edge.prop$Comparison),'Vertices'), 
-                    parentId = smallNet.fold$properties$id)
+    write.table(vertex.prop, file = paste(diffComp,'vertices','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+    vertices.obj = File(paste(diffComp,'vertices','tsv',sep = '.'), 
+                        name = paste(diffComp,'Vertices'), 
+                        parentId = smallNet.fold$properties$id)
     vertices.obj = synStore(vertices.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
     
     return(c(edge.obj, vertices.obj))
-  }, counts, .progress = 'text')
+  }, 
+  counts, .parallel = F, .progress = 'text')
 ```
 
 ### Source Code
