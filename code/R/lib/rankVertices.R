@@ -19,5 +19,5 @@ rankVertices <- function(g, order){
   }, V(g)$name[S!=0], neighbor.graph[S!=0])
   Nx = c(Nx, S[S == 0])
   
-  return(sort(rank(Gx*Nx[names(Gx)])))
+  return(sort(rank(Gx+Nx[names(Gx)])))
 }

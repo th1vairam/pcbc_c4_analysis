@@ -35,6 +35,7 @@ library(biomaRt)
 library(xlsx)
 
 library(igraph)
+library(ggplot2)
 
 options(xtable.type="html")
 
@@ -71,26 +72,8 @@ CODE <- synStore(CODE)
 
 #### Get TFs list from synapse
 ```{r getTFs}
-ALL_USED_IDs = c(ALL_USED_IDs, TFdb = 'syn5672453', map = 'syn5986999')
-
-# Get TF checkpoints db from synapse
-TFs = read.table(synGet('syn5672453')@filePath, header=T, sep= '\t', fill = TRUE) %>%
-  dplyr::filter(entrez_human != 0) %>%
-  dplyr::select(entrez_human) %>%
-  setnames('entrez_human','entrezgene') %>%
-  dplyr::mutate(Assay = 'TF')
-
-# Get HGNC mapping from synapse
-human_entrz2symbol = read.table(synGet('syn5986999')@filePath, fill=NA, quote='', header=T, sep = '\t') %>%
-  dplyr::select(Approved.Symbol, Entrez.Gene.ID) %>%
-  dplyr::rename(hgnc_symbol = Approved.Symbol, entrezgene = Entrez.Gene.ID)
-
-# Convert entrex gene ids to gene symbols
-TFs = left_join(TFs, human_entrz2symbol) %>%
-  dplyr::select(hgnc_symbol, Assay) %>%
-  setnames('hgnc_symbol','feature') %>%
-  filter(!is.na(feature)) %>%
-  unique
+ALL_USED_IDs = c(ALL_USED_IDs, TFs = 'syn6040938')
+TFs = downloadFile('syn6040938')
 ```
 
 #### Get median expression from synapse
@@ -152,8 +135,33 @@ diffexp %>%
 ```{r getCoexp}
 coexp.id = 'syn5662375'
 ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
-coexpression = downloadFile(coexp.id)
+coexpression = downloadFile(coexp.id) %>%
+  filter(feature %in% diffexp$feature, target %in% diffexp$feature,
+         feature.assay != 'splicing', target.assay != 'splicing',
+         abs(coexpression != 1)) %>%
+  gather(Comparison, coexpression, -feature, -target, -feature.assay, -target.assay, -dataSource, -Assay) 
 
+# Plot the distribution of coexpression values
+writeLines('Distribution of absolute coexpression for differentially expressed entities')
+p = ggplot(coexpression, aes(y = abs(coexpression), x = Assay)) + geom_boxplot()
+p
+
+# Get top 20% of coexpressed interactions for every interaction assay type (except splicing related interactions)
+coexpression = split(coexpression, coexpression$Assay)
+coexpression = lapply(coexpression, function(foo){
+  if (unique(foo$Assay) == 'splicing_mrna')
+    return(foo)
+  
+  if (unique(foo$Assay) == 'mirna_mrna')
+    foo = filter(foo, coexpression <= 0)
+  
+  cut.off = quantile(abs(foo$coexpression), na.rm = T, probs = 0.8)
+  foo = filter(foo, abs(coexpression) >= cut.off)
+  return(foo)
+}) %>%
+  rbindlist
+
+# Split TFs from non-TFs
 ind = which(coexpression$feature %in% TFs$feature)
 coexpression$feature.assay[ind] = 'TF'
 
@@ -162,13 +170,9 @@ coexpression$target.assay[ind] = 'TF'
 
 coexpression$Assay = paste(coexpression$feature.assay, coexpression$target.assay, sep = '_')
 
-# Filter co-expression
+# Filter any mrna-mrna related interactions
 coexpression = coexpression %>%
-  filter(feature %in% diffexp$feature, target %in% diffexp$feature) %>%
-  gather(Comparison, coexpression, -feature, -target, -feature.assay, -target.assay, -dataSource, -Assay) %>%
-  filter((Assay %in% c("TF_mrna", "TF_TF", "mrna_mrna", "mrna_TF", "methyl_mirna", "methyl_TF",
-                       "methyl_mrna", "TF_mirna", "mrna_mirna") & abs(coexpression) >= 0.8) |
-           (Assay %in% c("mirna_TF", "mirna_mrna") & coexpression <= -0.8)) 
+  filter(Assay != "mrna_mrna")
 gc()
 ```
 
@@ -211,7 +215,11 @@ tmp.methyl = read.xlsx(enrich.obj@filePath, sheetName = "methyl-methyl-FDR0.01-T
 #   getGenes %>%
 #   dplyr::select(-x)
 
-pathways = rbindlist(list(tmp.mrna, tmp.mirna, tmp.methyl), use.names=T, fill = T)
+pathways = rbindlist(list(tmp.mrna, tmp.mirna, tmp.methyl), use.names=T, fill = T) %>%
+  filter(target %in% diffexp$feature)
+
+ind = which(pathways$target %in% TFs$feature)
+pathways$target.assay[ind] = 'TF'
 gc()
 ```
 
@@ -229,6 +237,17 @@ mrna.ident = c("1" = "Not ECTO and MESO15", "4" = "DE and MESO5", "7" = "Late in
                "76" = "Late", "78" = "EB", "79" = "Late wo MESO15", "81" = "SC and Late","83" = "Not MESO15","94" = "MESO15",
                "119" = "Not ECTO","130" = "Early with MESO15","133" = "SC, ECTO, MESO30 and EB", "136" = "SC, DE and MESO5")
 mrna.ident = rownameToFirstColumn(mrna.ident, "cluster")
+
+# Subset TFs only from mrnas (for Bruce A)
+diffexp.cluster.TF = diffexp.cluster.mrna %>%
+  ddply(.(cluster, cluster.name), function(x, TF){
+    x$feature = x$feature %>%
+      str_split('\\,') %>%
+      unlist %>%
+      intersect(TFs$feature) %>%
+      paste(collapse = ',')
+    return(x)
+  }, TFs)
 
 diffexp.cluster.mrna = dplyr::mutate(diffexp.cluster.mrna, cluster = as.character(cluster)) %>%
   left_join(mrna.ident) %>%
@@ -306,14 +325,19 @@ gc()
 
 #### Get active interactions
 ```{r actInt}
+# Get all possible interactions
 all.interactions = coexpression %>%
   dplyr::mutate(Assay = paste(feature.assay, target.assay, sep = '_')) %>%
-  inner_join(diffexp %>% 
+  right_join(diffexp %>% 
                dplyr::rename(feature.assay = Assay, feature.fdr = adj.P.value,
                              feature.lfc = logFC, feature.chb = changeBETA, feature.cpsi = changePSI)) %>%
-  inner_join(diffexp %>%
+  left_join(diffexp %>%
               dplyr::rename(target = feature, target.assay = Assay, target.fdr = adj.P.value,
-                            target.lfc = logFC, target.chb = changeBETA, target.cpsi = changePSI))
+                            target.lfc = logFC, target.chb = changeBETA, target.cpsi = changePSI)) %>%
+  tidyr::separate(Comparison, c('from.state','to.state'), sep = '_vs_') %>%
+  dplyr::mutate(feature.direction = feature.lfc/abs(feature.lfc),
+                target.direction = target.lfc/abs(target.lfc)) %>%
+  filter(feature.assay != 'splicing')
 
 # Write all active interactions to synapse
 write.table(all.interactions, file = paste('allInteractions','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
@@ -321,6 +345,86 @@ allInt.obj = File(paste('allInteractions','tsv',sep = '.'),
                   name = 'All Active Interactions', 
                   parentId = CODE$properties$id)
 allInt.obj = synStore(allInt.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+```
+
+#### Extract and store interaction results in synapse
+```{r storeIntResult, results='asis', fig.height = 15, fig.width = 15}
+# Creat a folder
+fullNet.fold = Folder(name = 'Full Networks (without annotations)', parentId = CODE$properties$id)
+fullNet.fold = synStore(fullNet.fold)
+
+all.objs = lapply(orderedDiffState, function(diffstate, all.interactions, counts, fullNet.fold){
+    edges = all.interactions %>%
+      filter(from.state == diffstate | to.state == diffstate)
+    
+    edges.reverse = edges %>%
+      dplyr::rename(from.state = to.state, to.state = from.state) %>%
+      dplyr::mutate(feature.lfc = -feature.lfc, target.lfc = -target.lfc, 
+                    feature.direction = -feature.direction, target.direction = -target.direction)
+    
+    edges = rbindlist(list(edges, edges.reverse), use.names=T, fill = T) %>%
+      filter(feature.direction == 1, from.state == diffstate, to.state %in% setdiff(orderedDiffState, 'EB'))
+    
+    vertices = filter(counts, feature %in% unique(c(edges$feature, edges$target))) %>%
+      data.frame
+     
+    # Write filtered interactions to synapse
+    write.table(edges, file = paste(diffstate,'edges','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+    edge.obj = File(paste(diffstate,'edges','tsv',sep = '.'), name = paste(diffstate,'Edges'), parentId = fullNet.fold$properties$id)
+    edge.obj = synStore(edge.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+    
+    # Write filtered nodes to synapse
+    write.table(vertices, file = paste(diffstate,'vertices','tsv',sep = '.'), sep = '\t', row.names=F, quote=F)
+    vertices.obj = File(paste(diffstate,'vertices','tsv',sep = '.'), 
+                        name = paste(diffstate,'Vertices'), 
+                        parentId = fullNet.fold$properties$id)
+    vertices.obj = synStore(vertices.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+    
+    return(c(edge.obj, vertices.obj))
+  }, all.interactions, counts, fullNet.fold)
+```
+
+Call ranking script seperately (see calculateVertexRanks.R, because of parallel implementation)
+
+#### Get miRNA regulated TFs
+```{r miRNATFS}
+# Get stem cell specific mirnas and tfs
+mirna.tf = all.interactions %>%
+  filter(feature.assay == "mirna", target.assay == "TF", !is.na(target.lfc)) %>% 
+  tidyr::separate(Comparison, c("to.state","from.state"), sep = '_vs_') %>%
+  dplyr::select(-contains('chb'), -contains('cpsi'))
+
+mirna.tf1 = mirna.tf %>%
+  dplyr::mutate(feature.lfc = -feature.lfc,
+                target.lfc = -target.lfc)
+mirna.tf1$from.state = mirna.tf$to.state
+mirna.tf1$to.state = mirna.tf$from.state
+
+mirna.tf = rbindlist(list(mirna.tf, mirna.tf1),
+                     use.names = T, fill = T) %>%
+  dplyr::mutate(direction = feature.lfc/abs(feature.lfc)) %>%
+  filter(direction == -1) %>%
+  unique
+  
+imp.mirna.tf.edges = mirna.tf %>%
+  filter((from.state == 'SC' & to.state %in% c('DE', 'ECTO', 'MESO5')) |
+           (from.state == 'ECTO' & to.state %in% c('DE', 'MESO5')) |
+           (from.state == 'MESO5' & to.state == 'DE')) %>%
+  group_by(from.state, to.state) %>%
+  top_n(25, feature.lfc)
+
+imp.mirna.tf.counts = counts %>%
+  filter(feature %in% c(imp.mirna.tf.edges$feature, imp.mirna.tf.edges$target))
+
+# Write filtered interactions to synapse
+write.table(imp.mirna.tf.edges, file = 'mirnaTFedges.tsv', sep = '\t', row.names=F, quote=F)
+edge.obj = File('mirnaTFedges.tsv', name = 'miRNA TF Edges', parentId = CODE$properties$id)
+edge.obj = synStore(edge.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
+    
+# Write filtered nodes to synapse
+write.table(imp.mirna.tf.counts, file = 'mirnaTFvertices.tsv', sep = '\t', row.names=F, quote=F)
+vertices.obj = File('mirnaTFvertices.tsv' , name = 'miRNA TF Vertices', parentId = CODE$properties$id)
+vertices.obj = synStore(vertices.obj, used = as.character(ALL_USED_IDs), executed = ThisFile, activityName = ActivityName)
 ```
 
 #### Store interaction results in synapse
@@ -331,8 +435,7 @@ fullNet.fold = synStore(fullNet.fold)
 
 all.objs = all.interactions %>%
   dlply(.(Comparison), function(edge.prop, counts){
-    loadLibs()
-    synapseLogin()
+    
     vertex.prop = filter(counts,
                           feature %in% unique(c(edge.prop$feature, edge.prop$target))) %>%
        data.frame
@@ -366,7 +469,7 @@ ALL_USED_IDs = c(ALL_USED_IDs, rank = rank.id)
 rankList = downloadFile(rank.id)
 
 # Creat a folder
-smallNet.fold = Folder(name = 'Filtered Networks - Top 50 Nodes (with annotations)', parentId = CODE$properties$id)
+smallNet.fold = Folder(name = 'Filtered Networks - Top 100 Nodes (with annotations)', parentId = CODE$properties$id)
 smallNet.fold = synStore(smallNet.fold)
 
 all.objs = all.interactions %>%

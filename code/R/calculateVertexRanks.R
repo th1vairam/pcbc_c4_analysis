@@ -24,9 +24,8 @@ loadLibs <- function(){
 }
 loadLibs()
 
-cl <- makeCluster(14)
+cl <- makeCluster(2)
 registerDoParallel(cl)
-tmp = clusterEvalQ(cl, .libPaths('/mnt/mylibs/'))
 
 synapseLogin()
 
@@ -38,36 +37,36 @@ diffexp = downloadFile('syn6039731')
 ALL_USED_IDs = 'syn6039731'
 
 #### Get all active interactions
-all.interactions = downloadFile('syn6039630')
+all.interactions = downloadFile('syn6039630') %>%
+  unite(Comparison, from.state, to.state, sep = '_vs_')
 ALL_USED_IDs = c(ALL_USED_IDs, 'syn6039630')
 
 #### Get regulatory influence scores for each node
 rankList = all.interactions %>%
-  ddply(.(Comparison), 
-        function(edge.prop, diffexp, rankVertices, loadLibs){
+  ddply(.(Comparison), .fun = function(edges, diffexp, rankVertices, loadLibs){
     loadLibs()
-    
-    vertex.prop = filter(diffexp,
-                         feature %in% unique(c(edge.prop$feature, edge.prop$target)),
-                         Comparison == unique(edge.prop$Comparison)) %>%
+    vertices = filter(diffexp,
+                      feature %in% unique(c(edges$feature, edges$target)),
+                      Comparison == unique(edges$Comparison)) %>%
       data.frame
-    rownames(vertex.prop) = vertex.prop$feature
+    rownames(vertices) = vertices$feature
     
-    g = igraph::graph_from_edgelist(edge.prop %>%
+    edges$target[is.na(edges$target)] = 'NULL'
+    g = igraph::graph_from_edgelist(edges %>%
                                       dplyr::select(feature, target) %>% 
                                       as.matrix,
                                     directed = T)
-    E(g)$weight = abs(edge.prop$coexpression)
+    E(g)$weight = abs(edges$coexpression)
+    g = g - V(g)[V(g)$name == 'NULL']
     
-    V(g)$fc = abs(vertex.prop[V(g)$name, 'logFC'])
-    V(g)$fdr = vertex.prop[V(g)$name, 'adj.P.value']
+    V(g)$fc = abs(vertices[V(g)$name, 'logFC'])
+    V(g)$fdr = vertices[V(g)$name, 'adj.P.value']
     
     rk = rankVertices(g, 3) %>%
       rownameToFirstColumn('feature') %>%
       plyr::rename(c('DF' = 'rank')) %>%
-      dplyr::mutate(Comparison = unique(edge.prop$Comparison))
-  }, 
-        diffexp, rankVertices, loadLibs, .progress = 'text', .parallel = T)
+      dplyr::mutate(Comparison = unique(edges$Comparison))
+  }, diffexp, rankVertices, loadLibs, .progress = 'text', .parallel = T)
 
 #### Store results in synapse
 # Create folder to store results in synapse
