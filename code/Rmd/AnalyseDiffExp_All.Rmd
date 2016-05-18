@@ -92,10 +92,14 @@ counts = downloadFile(counts.id)
 
 #### Use co-expression results to map miRNA and methylation to mRNA
 ```{r coexpp}
-coexp.id = 'syn5713477'
+coexp.id = 'syn5662375'
 ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
+coexp = downloadFile(coexp.id) %>%
+  gather(compariosn, coex, -feature, -target, -feature.assay, -target.assay, -dataSource, -Assay) %>% 
+  filter(!(feature.assay == 'mirna' && coex >= 0))
 
-coexp = downloadFile(coexp.id)
+p = ggplot(coexp, aes(x = paste(feature.assay, target.assay, sep = '_'), y = coex)) + geom_boxplot()
+p
 ```
 
 #### Get mRNA differential expression clusters
@@ -165,7 +169,6 @@ figure_size = list(title_gp = gpar(fontsize = 18), labels_gp = gpar(fontsize = 1
 
 Heatmap(clust.median, name = 'Counts', column_title = 'mRNA: Cluster medians', 
         cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
-        # split = mrna.cluster,
         column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
         row_title_gp = gpar(fontsize = 22, fontface = "bold"),
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
@@ -174,14 +177,39 @@ Heatmap(clust.median, name = 'Counts', column_title = 'mRNA: Cluster medians',
 ```
 
 ```{r mrna.clust3, fig.height=25, fig.widht=10}
+# Get identity mapping for individual clusters
+mrna.ident = c("1" = "Not ECTO and MESO15", "4" = "DE and MESO5", "7" = "Late including ECTO", 
+               "8" = "ECTO", "17" = "MESO30 and EB", "19" = "Everything", "20" = "Early including ECTO", 
+               "21" = "SC and Early", "24" = "Not SC", "30" = "Not DE and MESO5", "31" = "SC and MESO15",
+               "37" = "SC, ECTO and MESO15", "47" = 'DE and all MESO', "57" = "MESO5", "70" = "Not SC and ECTO",
+               "76" = "Late", "78" = "EB", "79" = "Late wo MESO15", "81" = "SC and Late","83" = "Not MESO15","94" = "MESO15",
+               "119" = "Not ECTO","130" = "Early with MESO15","133" = "SC, ECTO, MESO30 and EB", "136" = "SC, DE and MESO5")
+mrna.ident = rownameToFirstColumn(mrna.ident, "cluster.number") %>%
+  dplyr::rename(cluster.name = DF) %>%
+  dplyr::mutate(cluster.number = as.numeric(cluster.number)) %>%
+  right_join(rownameToFirstColumn(mrna.cluster, 'hgnc_symbol') %>%
+               dplyr::rename(cluster.number = DF)) %>%
+  as.data.frame
+rownames(mrna.ident) = mrna.ident$hgnc_symbol
+
+mrna.ident$cluster.name = factor(mrna.ident$cluster.name, 
+                                  levels = c("SC and Early", "Not SC", "SC and MESO15", "SC, ECTO and MESO15", "Not SC and ECTO", 
+                                             "SC, DE and MESO5", "DE and MESO5", "MESO5",  "Not DE and MESO5", "DE and all MESO", 
+                                             "Early including ECTO", "ECTO", "Not ECTO", "Not ECTO and MESO15",  "Not MESO15", "MESO15", 
+                                             "Early with MESO15", "MESO30 and EB", "EB", "SC, ECTO, MESO30 and EB", "SC and Late", 
+                                             "Late including ECTO", "Late wo MESO15", "Late", "Everything"))
+mrna.ident = mrna.ident[order(mrna.ident$cluster.name),]
+mrna.counts.scaled = mrna.counts.scaled[rownames(mrna.ident), ]
+
+ha = rowAnnotation(mrna.ident[,'cluster.name',drop=F])
 Heatmap(mrna.counts.scaled, name = 'Counts', column_title = 'mRNA: Scaled median counts', 
         cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
-        split = mrna.cluster,
+        split = mrna.ident$cluster.name,
         column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
         row_title_gp = gpar(fontsize = 22, fontface = "bold"),
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
         show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_dend = F,
-        heatmap_legend_param = figure_size)
+        heatmap_legend_param = figure_size) + ha
 
 pdf(file = 'mrnaClusters.pdf', width = 15, height = 20)
 for (i in unique(mrna.cluster)){
@@ -203,15 +231,6 @@ dev.off()
 # Pick related clusters
 # c(94 = 'MESO15', 78 = 'EB', 17 = 'MESO30-EB',
 #   76 = 'LATE', 8 = 'ECTO', 20 = 'EARLY', 83 = 'MESO15')
-Heatmap(mrna.counts.scaled, name = 'Counts', column_title = 'mRNA: Scaled median counts', 
-        cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
-        split = mrna.cluster,
-        column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
-        row_title_gp = gpar(fontsize = 22, fontface = "bold"),
-        column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
-        show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_dend = F,
-        heatmap_legend_param = figure_size)
-
 # Extract clusters into gct files
 mrna.cluster.gct = data.frame(feature = names(mrna.cluster), cluster = mrna.cluster) %>%
   group_by(cluster) %>%
@@ -294,14 +313,33 @@ Heatmap(clust.median, name = 'Counts', column_title = 'mirna: Cluster medians',
 ```
 
 ```{r mirna.clust3, fig.height=25, fig.width=10}
+# Get identity mapping for individual clusters
+mirna.ident = c("1" = "SC", "2" = "EB", "3" = "Late", "4" = "ECTO", 
+               "6" = "All", "7" = "MESO5", "8" = "MESO15", "10" = "SC and ECTO", 
+               "11" = "DE and MESO5", "12" = "Early", "15" = "SC and DE")
+
+mirna.ident = rownameToFirstColumn(mirna.ident, "cluster.number") %>%
+  dplyr::rename(cluster.name = DF) %>%
+  dplyr::mutate(cluster.number = as.numeric(cluster.number)) %>%
+  right_join(rownameToFirstColumn(mirna.cluster, 'hgnc_symbol') %>%
+               dplyr::rename(cluster.number = DF)) %>%
+  as.data.frame
+rownames(mirna.ident) = mirna.ident$hgnc_symbol
+mirna.ident$cluster.name = factor(mirna.ident$cluster.name, levels = c('Early', 'SC', 'SC and DE', 'SC and ECTO', 
+                                                               'DE and MESO5', 'MESO5', 'MESO15', 
+                                                               'ECTO', 'EB', 'Late', 'All'))
+mirna.ident = mirna.ident[order(mirna.ident$cluster.name),]
+mirna.counts.scaled = mirna.counts.scaled[rownames(mirna.ident), ]
+
+ha = rowAnnotation(mirna.ident[,'cluster.name',drop=F])
 Heatmap(mirna.counts.scaled, name = 'Counts', column_title = 'mirna: Scaled median counts', 
         cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
-        split = mirna.cluster,
+        split = mirna.ident$cluster.name,
         column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
         row_title_gp = gpar(fontsize = 22, fontface = "bold"),
-        column_names_gp = gpar(fontsize = 18), #combined_name_fun =  NULL,
+        column_names_gp = gpar(fontsize = 18), combined_name_fun =  NULL,
         show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_dend = F,
-        heatmap_legend_param = figure_size)
+        heatmap_legend_param = figure_size) + ha
 
 pdf(file = 'mirnaClusters.pdf', width = 15, height = 20)
 for (i in unique(mirna.cluster)){
@@ -327,9 +365,11 @@ mirna.cluster.gct = data.frame(feature = names(mirna.cluster), cluster = mirna.c
 ```{r mirna.mrna}
 mirna.mrna = coexp %>%
   filter(feature.assay == 'mirna', target.assay %in% c('TF', 'mrna'),
+         feature %in% diffexp.mirna$feature,
+         target %in% diffexp.mrna$feature,
          abs(feature.lfc) >= mirna.lfc.th,
          abs(target.lfc) >= mrna.lfc.th,
-         coexpression <= -0.8)
+         coexpression <= -4.323334e-01) # 75th percentile of the mirna-mrna distribution was used to obtain this cutoff
 
 map.mrna <- function(x){
   filter(counts, feature %in% str_split(x, ',')[[1]]) %>%
@@ -432,14 +472,35 @@ Heatmap(clust.median, name = 'Counts', column_title = 'methyl: Cluster medians',
 ```
 
 ```{r methyl.clust3, fig.height=25, fig.width=10}
+# Get identity mapping for individual clusters
+methyl.ident = c('2' = 'Not ECTO', '5' = 'Not SC', 
+                 '7' = 'Not SC and ECTO', '9' = 'EB', 
+                 '12' = 'All', '13' = 'Early', 
+                 '19' = 'ECTO and EB')
+
+methyl.ident = rownameToFirstColumn(methyl.ident, "cluster.number") %>%
+  dplyr::rename(cluster.name = DF) %>%
+  dplyr::mutate(cluster.number = as.numeric(cluster.number)) %>%
+  right_join(rownameToFirstColumn(methyl.cluster, 'hgnc_symbol') %>%
+               dplyr::rename(cluster.number = DF)) %>%
+  as.data.frame
+rownames(methyl.ident) = methyl.ident$hgnc_symbol
+
+methyl.ident$cluster.name = factor(methyl.ident$cluster.name, 
+                                   levels = c('Early', 'Not SC', 'Not SC and ECTO', 'Not ECTO',  
+                                              'ECTO and EB', 'EB', 'All'))
+methyl.ident = methyl.ident[order(methyl.ident$cluster.name),]
+methyl.counts.scaled = methyl.counts.scaled[rownames(methyl.ident), ]
+
+ha = rowAnnotation(methyl.ident[,'cluster.name',drop=F])
 Heatmap(methyl.counts.scaled, name = 'Counts', column_title = 'methyl: Scaled median counts', 
         cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
-        split = methyl.cluster,
+        split = methyl.ident$cluster.name,
         column_title_gp = gpar(fontsize = 22, fontface = "bold"), 
         row_title_gp = gpar(fontsize = 22, fontface = "bold"),
-        column_names_gp = gpar(fontsize = 18), #combined_name_fun =  NULL,
+        column_names_gp = gpar(fontsize = 18), combined_name_fun =  NULL,
         show_row_names = F, row_names_side = 'left', show_column_names = T, show_row_dend = F,
-        heatmap_legend_param = figure_size)
+        heatmap_legend_param = figure_size) + ha
 
 pdf(file = 'methylClusters.pdf', width = 15, height = 20)
 for (i in unique(methyl.cluster)){
@@ -468,7 +529,7 @@ methyl.mrna = coexp %>%
   filter(feature.assay == 'methyl', target.assay %in% c('TF', 'mrna'),
          abs(feature.cb) >= methyl.changeBeta.th,
          abs(target.lfc) >= mrna.lfc.th,
-         abs(coexpression) >= 0.8)
+         abs(coexpression) >= 3.369130e-01)
 
 map.concordant.mrna <- function(x){
   tmp = filter(counts, feature %in% str_split(x, ',')[[1]]) %>%
@@ -593,6 +654,13 @@ Heatmap(clust.median, name = 'Counts', column_title = 'splicing: Cluster medians
         column_names_gp = gpar(fontsize = 18), combined_name_fun = NULL,
         show_row_names = T, row_names_side = 'left', show_column_names = T, show_row_dend = T,
         heatmap_legend_param = figure_size)
+
+# Get identity mapping for individual clusters
+splicing.ident = c('1' = 'Early', '3' = 'Late1', 
+                   '4' = 'All', '5' = 'Not ECTO1', 
+                   '6' = 'ECTO', '7' = 'Ecto and not Late', 
+                   '8' = 'Not ECTO2', '14' = 'All', '18' = 'Late2',
+                   '19' = 'Late3')
 
 Heatmap(splicing.counts.scaled, name = 'Counts', column_title = 'splicing: Scaled median counts', 
         cluster_columns = F, cluster_rows=T, col = brewer.pal(5, "RdPu"), 
