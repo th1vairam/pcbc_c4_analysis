@@ -95,14 +95,13 @@ counts = downloadFile(counts.id)
 coexp.id = 'syn5662375'
 ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
 coexp = downloadFile(coexp.id) %>%
-  gather(compariosn, coex, -feature, -target, -feature.assay, -target.assay, -dataSource, -Assay) %>% 
-  filter(!(feature.assay == 'mirna' && coex >= 0))
-
-p = ggplot(coexp, aes(x = paste(feature.assay, target.assay, sep = '_'), y = coex)) + geom_boxplot()
-p
+  gather(comparison, coex, -feature, -target, -feature.assay, -target.assay, -dataSource, -Assay) %>% 
+  dplyr::select(-Assay,-dataSource) %>%
+  separate(comparison, c('from.state', 'to.state'), sep = '_vs_')
 ```
 
-#### Get mRNA differential expression clusters
+### Differential expression
+#### Get mRNA differential expression
 ```{r mrna}
 ### Download differential expression results from synapse
 diffexp.mrna.id = c(mrna = 'syn5013690')
@@ -118,7 +117,269 @@ diffexp.mrna = downloadFile(diffexp.mrna.id) %>%
   tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
   dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mrna.lfc.th & Comparison %in% Comparisons) %>%
   dplyr::select(feature, Comparison, adj.P.value, logFC) 
+```
 
+#### Get miRNA differential expression
+```{r mirna}
+### Download differential expression results from synapse
+diffexp.mirna.id = c(mirna = 'syn5014584')
+ALL_USED_IDs = c(ALL_USED_IDs, diffexp.mirna.id)
+
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState = c("DE", "EB", "ECTO", "MESO15", "MESO30", "MESO5", "SC")
+Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+# Get mirna differential expression results from synapse
+diffexp.mirna = downloadFile(diffexp.mirna.id) %>%
+  dplyr::rename(feature = GeneSymbol) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mirna.lfc.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC) 
+```
+
+#### Get DNA methylation differential expression
+```{r methyl}
+### Download differential expression results from synapse
+diffexp.methyl.id = c(methyl = 'syn4527629')
+ALL_USED_IDs = c(ALL_USED_IDs, diffexp.methyl.id)
+
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState = c("DE", "EB", "ECTO", "MESO5", "SC")
+Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+# Get methyl differential expression results from synapse
+diffexp.methyl = downloadFile(diffexp.methyl.id) %>%
+  dplyr::select(-one_of('feature')) %>%
+  dplyr::rename(feature = methProbeIDs) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(changeBETA) >= methyl.changeBeta.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC, changeBETA) 
+```
+
+#### Get mRNA differentially spliced junction clusters
+```{r splicing}
+### Download differential expression results from synapse
+diffexp.splicing.id = c(splicing = 'syn5049321')
+ALL_USED_IDs = c(ALL_USED_IDs, diffexp.splicing.id)
+
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState = c("DE", "EB", "ECTO", "MESO5", "MESO15", "MESO30", "SC")
+Comparisons = apply(combn(orderedDiffState, 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+# Get splicing differential expression results from synapse
+diffexp.splicing = downloadFile(diffexp.splicing.id) %>%
+  dplyr::select(-one_of('feature')) %>%
+  plyr::rename(c('Minor-Isoform' = 'feature')) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(changePSI) >= splicing.changePSI.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC, changePSI) 
+```
+
+#### Differential expression analysis summary 
+```{r combine}
+diffexp.all = rbindlist(list(mrna = diffexp.mrna, mirna = diffexp.mirna,
+                             methyl = diffexp.methyl, splicing = diffexp.splicing),
+                        use.names = T, fill = T, idcol = 'Assay') %>%
+  tidyr::separate(Comparison, c('from.state','to.state'), sep = '_vs_') %>%
+  dplyr::mutate(direction = logFC/abs(logFC))
+
+orderedDiffState = c("SC", "DE", "MESO5", "ECTO", "MESO15", "MESO30", "EB")
+diffexp.all = rbindlist(list(diffexp.all,
+                             diffexp.all %>%
+                               dplyr::mutate(from.state = diffexp.all$to.state,
+                                             to.state = diffexp.all$from.state,
+                                             logFC = -logFC,
+                                             changeBETA = -changeBETA,
+                                             changePSI = -changePSI,
+                                             direction = -direction)),
+                        use.names = T, fill = T) %>%
+  dplyr::mutate(from.state = factor(from.state, orderedDiffState),
+                to.state = factor(to.state, orderedDiffState),
+                Assay = factor(Assay, c('mrna', 'mirna', 'methyl', 'splicing')))
+
+writeLines('Summary of differentially expressed entities')
+tmp = group_by(diffexp.all, Assay, from.state, direction) %>% 
+  summarise(count = length(unique(feature))) %>% 
+  spread(Assay, count)
+kable(tmp)
+
+# Store
+write.table(diffexp.all, file = 'diffexp.tsv', row.names = F, sep = '\t', quote=F)
+mrna.obj = File('diffexp.tsv', name = "Differentially Expressed Molecular Entities (all)", parentId = CODE$properties$id)
+mrna.obj = synStore(mrna.obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs))
+```
+
+```{r extract.specific.ent}
+# Seperate gene sets based on transitions
+# Up regulated set
+tmp = diffexp.all %>%   
+  filter(direction == 1, from.state != 'EB', to.state != 'EB') %>%
+  group_by(Assay, feature) %>%
+  summarise(num.from.state = length(unique(from.state)),
+            num.to.state = length(unique(to.state)),
+            from.state = paste(sort(unique(from.state)), collapse = ','),
+            to.state = paste(sort(unique(to.state)), collapse = ',')) %>%
+  filter(num.from.state == 1) %>%
+  ddply(.(Assay, feature), .fun = function(x){
+    if (unique(x$Assay) == 'methyl'){
+      x = filter(x, num.to.state == 3)
+    } else {
+      x = filter(x, num.to.state == 5)
+    }
+  }) %>%
+  group_by(Assay, from.state, to.state, num.from.state, num.to.state) %>%
+  summarise(num.feature = length(unique(feature)),
+            feature = paste(unique(feature), collapse = ','))
+
+# Down regulated set
+tmp = group_by(diffexp.all, Assay, feature) %>%
+  filter(direction == -1, from.state != 'EB', to.state != 'EB') %>%
+  summarise(num.from.state = length(unique(from.state)),
+            num.to.state = length(unique(to.state)),
+            from.state = paste(sort(unique(from.state)), collapse = ','),
+            to.state = paste(sort(unique(to.state)), collapse = ',')) %>%
+  filter(num.from.state == 1) %>%
+  ddply(.(Assay, feature), .fun = function(x){
+    if (unique(x$Assay) == 'methyl'){
+      x = filter(x, num.to.state == 3)
+    } else {
+      x = filter(x, num.to.state == 5)
+    }
+  }) %>%
+  group_by(Assay, from.state, to.state, num.from.state, num.to.state) %>%
+  summarise(num.feature = length(unique(feature)),
+            feature = paste(unique(feature), collapse = ','))
+
+# Up regulated set
+tmp = diffexp.all %>%   
+  filter(direction == 1, !(from.state %in% c('EB', 'MESO5', 'MESO15')), !(to.state %in% c('EB', 'MESO5', 'MESO15'))) %>%
+  group_by(Assay, feature) %>%
+  summarise(num.from.state = length(unique(from.state)),
+            num.to.state = length(unique(to.state)),
+            from.state = paste(sort(unique(from.state)), collapse = ','),
+            to.state = paste(sort(unique(to.state)), collapse = ',')) %>%
+  filter(num.from.state == 1) %>%
+  ddply(.(Assay, feature), .fun = function(x){
+    if (unique(x$Assay) == 'methyl'){
+      x = filter(x, num.to.state == 2)
+    } else {
+      x = filter(x, num.to.state == 3)
+    }
+  }) %>%
+  group_by(Assay, from.state, to.state, num.from.state, num.to.state) %>%
+  summarise(num.feature = length(unique(feature)),
+            feature = paste(unique(feature), collapse = ','))
+
+# Down regulated set
+tmp = diffexp.all %>%   
+  filter(direction == -1, !(from.state %in% c('EB', 'MESO5', 'MESO15')), !(to.state %in% c('EB', 'MESO5', 'MESO15'))) %>%
+  group_by(Assay, feature) %>%
+  summarise(num.from.state = length(unique(from.state)),
+            num.to.state = length(unique(to.state)),
+            from.state = paste(sort(unique(from.state)), collapse = ','),
+            to.state = paste(sort(unique(to.state)), collapse = ',')) %>%
+  filter(num.from.state == 1) %>%
+  ddply(.(Assay, feature), .fun = function(x){
+    if (unique(x$Assay) == 'methyl'){
+      x = filter(x, num.to.state == 2)
+    } else {
+      x = filter(x, num.to.state == 3)
+    }
+  }) %>%
+  group_by(Assay, from.state, to.state, num.from.state, num.to.state) %>%
+  summarise(num.feature = length(unique(feature)),
+            feature = paste(unique(feature), collapse = ','))
+
+```
+
+```{r extract.specific.trans}
+# Seperate gene sets based on transitions
+# Up regulated set
+tmp = diffexp.all %>%   
+  filter(direction == 1, from.state != 'EB', to.state != 'EB') %>%
+  group_by(Assay, feature) %>%
+  summarise(num.from.state = length(unique(from.state)),
+            num.to.state = length(unique(to.state)),
+            from.state = paste(sort(unique(from.state)), collapse = ','),
+            to.state = paste(sort(unique(to.state)), collapse = ',')) %>%
+  filter(num.from.state == 1, num.to.state == 1) %>%
+  group_by(Assay, from.state, to.state, num.from.state, num.to.state) %>%
+  summarise(num.feature = length(unique(feature)),
+            feature = paste(unique(feature), collapse = ','))
+
+# Down regulated set
+tmp = group_by(diffexp.all, Assay, feature) %>%
+  filter(direction == -1, from.state != 'EB', to.state != 'EB') %>%
+  summarise(num.from.state = length(unique(from.state)),
+            num.to.state = length(unique(to.state)),
+            from.state = paste(sort(unique(from.state)), collapse = ','),
+            to.state = paste(sort(unique(to.state)), collapse = ',')) %>%
+  filter(num.from.state == 1, num.to.state == 1) %>%
+  group_by(Assay, from.state, to.state, num.from.state, num.to.state) %>%
+  summarise(num.feature = length(unique(feature)),
+            feature = paste(unique(feature), collapse = ','))
+```
+
+```{r plot.coexp}
+coexp = coexp %>%
+  filter(feature %in% diffexp.all$feature, target %in% diffexp.all$feature)
+
+p = list()
+p[[1]] = ggplot(coexp, aes(x = Assay, y = coex)) + geom_violin()
+p[[2]] = ggplot(coexp, aes(x = Assay, y = coex)) + geom_boxplot()
+multiplot(plotlist = p, cols = 1)
+
+# Filter coexpression based on 75th percentile
+coexp = ddply(coexp, .(Assay), .fun = function(x){
+  if (unique(x$feature.assay) == 'mirna'){
+    x = x %>% filter(coex <= unlist(quantile(x$coex, 0.2, na.rm=T)))
+  } else if (unique(x$feature.assay) == 'splicing'){
+    x = x 
+  } else {
+    x = x %>% filter(abs(coex) >= unlist(quantile(x$coex, 0.8, na.rm = T)))
+  }
+}, .progress = 'text')
+
+writeLines('After filtering')
+p = list()
+p[[1]] = ggplot(coexp, aes(x = Assay, y = coex)) + geom_violin()
+p[[2]] = ggplot(coexp, aes(x = Assay, y = coex)) + geom_boxplot()
+multiplot(plotlist = p, cols = 1)
+
+all.interactions = rbindlist(list(coexp,
+                                  coexp %>%
+                                    dplyr::rename(target = feature,
+                                                  feature = target,
+                                                  from.state = to.state,
+                                                  to.state = from.state,
+                                                  feature.assay = target.assay,
+                                                  target.assay = feature.assay)), 
+                             use.names = T, fill = T) %>%
+  inner_join(diffexp.all %>% dplyr::select(-changeBETA, -changePSI) %>%
+               dplyr::rename(feature.assay = Assay, feature.fdr = adj.P.value, feature.lfc = logFC, feature.direction = direction)) %>%
+  inner_join(diffexp.all %>% dplyr::select(-changeBETA, -changePSI) %>%
+                  dplyr::rename(target = feature, target.assay = Assay, target.fdr = adj.P.value, target.lfc = logFC, target.direction = direction))
+  
+tmp = group_by(all.interactions, feature, target, feature.assay, target.assay) %>%
+  summarise(num.from.state = length(unique(from.state)),
+            num.to.state = length(unique(to.state)),
+            from.state = paste(sort(unique(from.state)), collapse = ','),
+            to.state = paste(sort(unique(to.state)), collapse = ',')) %>%
+  filter(num.from.state == 1)
+
+tmp1 = tmp %>%
+  ddply(.(feature, feature.assay, target, target.assay), .fun = function(x){
+    if (unique(x$feature.assay) == 'methyl'){
+      x = filter(x, num.to.state == 3)
+    } else {
+      x = filter(x, num.to.state == 5)
+    }
+  })
+```
+
+### Clustering
+#### Cluster differentially expressed mRNAs 
+```{r mrna.cluster}
 # Extract median mrna counts for differentially expressed genes
 mrna.counts = counts %>%
   filter(feature %in% unique(diffexp.mrna$feature))
