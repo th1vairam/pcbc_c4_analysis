@@ -62,7 +62,7 @@ knitr::opts_chunk$set(
   out.width = '8in')
 ```
 
-```{r synapseStore.params}
+```{r synapseStore.params, include=FALSE}
 parentId = "syn5194922"
 ALL_USED_IDs = c()
 
@@ -82,8 +82,8 @@ thisFile <- getPermlink(repository = thisRepo,
 CODE <- Folder(name = 'Differentiation State Specific Signatures', parentId = parentId)
 CODE <- synStore(CODE)
 ```
-
-```{r set.thresholds}
+Threshold parameters
+```{r set.thresholds, echo=TRUE}
 pval.th <- 0.01
 
 mrna.lfc.th <- log2(2)
@@ -161,7 +161,7 @@ diffexp = rbindlist(list(diffexp,
   dplyr::mutate(Direction = logFC/abs(logFC))
 ```
 
-#### Get co-expression from synapse
+#### Get co-expression data from synapse
 ```{r coexpp, include=FALSE}
 coexp.id = 'syn5662375'
 ALL_USED_IDs = c(ALL_USED_IDs, coexp.id)
@@ -193,7 +193,7 @@ coexp = rbindlist(list(coexp,
 
 ### Differential expression analysis summary 
 ```{r combine}
-writeLines('# entities that are differentially expressed in our data are')
+writeLines('Number of entities that are differentially expressed in our data are')
 kable(group_by(diffexp, from.state, Assay, Direction) %>%
         summarise(count = length(unique(feature))) %>%
         tidyr::spread(from.state, count) %>%
@@ -356,9 +356,10 @@ ha1 = HeatmapAnnotation(clust[,'cluster',drop=F], which = 'row',
 # Draw heatmap
 writeLines(paste('Heatmap of',dim(mrna)[1],'mrna'))
 h1 = Heatmap(mrna, name = 'Scaled logCPM', top_annotation = ha, split = clust$cluster,
-        col = colorRamp2(c(-2,0,2), c("#E69F00","#999999","#D55E00")),
+        col = colorRamp2(c(-2,0,2), c("blue","black","yellow")),
         cluster_columns = F, show_row_names = F, show_column_names = F, show_row_dend = F) + ha1
-  
+draw(h1)
+
 # PC plot mrna
 PC = prcomp(mrna, scale. = T, center = T)
   
@@ -409,7 +410,8 @@ writeLines(paste('Heatmap of',dim(mirna)[1],'mirna'))
 h2 = Heatmap(mirna, name = 'Scaled logCPM', top_annotation = ha, split = clust$cluster,
         col = colorRamp2(c(-1, 0, 1), c('blue','white','red')),
         cluster_columns = F, show_row_names = F, show_column_names = F, show_row_dend = F) + ha1
-  
+draw(h2)
+
 # PC plot mirna
 PC = prcomp(mirna, scale. = T, center = T)
   
@@ -461,7 +463,8 @@ writeLines(paste('Heatmap of',dim(methyl)[1],'methyl'))
 h3 = Heatmap(methyl, name = 'Scaled Beta', top_annotation = ha, split = clust$cluster,
         col = colorRamp2(c(-1.5,0,1.5), c('blue','black','yellow')),
         cluster_columns = F, show_row_names = F, show_column_names = F, show_row_dend = F) + ha1
-  
+draw(h3)
+
 # PC plot methyl
 PC = prcomp(methyl, scale. = T, center = T)
   
@@ -517,6 +520,7 @@ writeLines(paste('Heatmap of',dim(splicing)[1],'spliced junctions'))
 h4 = Heatmap(splicing, name = 'Scaled PSI', top_annotation = ha,
         col = colorRamp2(c(-2,0,2), c('blue','black','yellow')),
         cluster_columns = F, show_row_names = F, show_column_names = F, show_row_dend = F)
+draw(h4)
 
 # PC plot splicing
 PC = prcomp(splicing, scale. = T, center = T)
