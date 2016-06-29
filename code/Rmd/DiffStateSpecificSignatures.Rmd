@@ -1,8 +1,8 @@
 ---
-title: "Identifying specific signatures of differentiation states from all molecular assays (i.e., mRNA, miRNA, DNA methylation probes and splicing junctions)"
+title: Identifying molecular signatures of differentiation states from ainter omic assays (i.e., mRNA, miRNA, DNA methylation probes and splicing junctions)
 author: "Thanneer Perumal"
 date: '`r date()`'
-output: html_document
+output: pdf_document
 ---
 ```{r knit2synapse, eval = FALSE, include=FALSE}
 library(synapseClient)
@@ -39,6 +39,12 @@ library(fpc)
 library(WGCNA)
 library(flashClust)
 
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
 library(circlize)
 colfunc <- colorRampPalette(c("white", "red"))
 
@@ -50,7 +56,10 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE)
+  cache = TRUE,
+  fig.align = 'left',
+  results = 'asis',
+  out.width = '8in')
 ```
 
 ```{r synapseStore.params}
@@ -92,20 +101,20 @@ expr = lapply(expr.id, downloadFile)
 ```
 
 #### Get covariates from synapse
-```{r getRawCount, include=FALSE}
+```{r covars, include=FALSE}
 covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669', splicing = 'syn5048719')
 ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id))
 covariates = lapply(covariates.id, downloadFile)
 ```
 
 #### Get differential expression results from synapse
-```{r diffexp}
+```{r diffexp, include=FALSE}
 ### Download differential expression results from synapse
 diffexp.id = c(mrna = 'syn5013690', mirna = 'syn5014584', methyl = 'syn4527629', splicing = 'syn5049321')
 ALL_USED_IDs = c(ALL_USED_IDs, as.character(diffexp.id))
 
 # Diff states in a sensible, quasi time-based ordering
-orderedDiffState = c("SC", "MESO5", "DE", "MESO15", "MESO30", "ECTO", "EB")
+orderedDiffState = sort(c("SC", "MESO5", "DE", "MESO15", "MESO30", "ECTO", "EB"))
 Comparisons = apply(combn(sort(orderedDiffState), 2), 2, function(x){paste(x, collapse = '_vs_')})
 
 # Get mrna differential expression results from synapse
@@ -149,11 +158,11 @@ diffexp = rbindlist(list(diffexp,
                              to.state = diffexp$from.state,
                              logFC = -logFC, changeBETA = -changeBETA, changePSI = -changePSI)),
                     use.names = T, fill =T) %>%
-  dplyr::mutate(Direction = logFC/-abs(logFC))
+  dplyr::mutate(Direction = logFC/abs(logFC))
 ```
 
 #### Get co-expression from synapse
-```{r coexpp}
+```{r coexpp, include=FALSE}
 coexp.id = 'syn5662375'
 ALL_USED_IDs = c(ALL_USED_IDs, coexp.id)
 coexp = downloadFile(coexp.id) %>%
@@ -184,23 +193,22 @@ coexp = rbindlist(list(coexp,
 
 ### Differential expression analysis summary 
 ```{r combine}
-writeLines('Unique entities that are differentially expressed in our data are')
+writeLines('# entities that are differentially expressed in our data are')
 kable(group_by(diffexp, from.state, Assay, Direction) %>%
         summarise(count = length(unique(feature))) %>%
         tidyr::spread(from.state, count) %>%
         dplyr::mutate(Direction = factor(Direction, labels = c('-1' = 'Down', '1' = 'Up'))))  
 
-# Combine diffexp and coexpression
-all.int = right_join(coexp,
+# Combine diffexp and coexpression (criteria is the entities in the network should be both differentially expressed and co-expressed in a diff state)
+all.int = inner_join(coexp,
                      diffexp %>%
-                     dplyr::rename(feature.assay = Assay, feature.fdr = adj.P.value, feature.lfc = logFC, 
-                                   feature.cb = changeBETA, feature.psi = changePSI, feature.direction = Direction)) %>%
-  left_join(diffexp %>%
+                       dplyr::rename(feature.assay = Assay, feature.fdr = adj.P.value, feature.lfc = logFC, 
+                                     feature.cb = changeBETA, feature.psi = changePSI, feature.direction = Direction)) %>%
+  inner_join(diffexp %>%
               dplyr::rename(target = feature, target.assay = Assay, target.fdr = adj.P.value, target.lfc = logFC, 
-                            target.cb = changeBETA, target.psi = changePSI, target.direction = Direction)) %>%
-  dplyr::filter(!(feature.assay %in% c('mirna', 'methyl') & is.na(target.assay)))
+                            target.cb = changeBETA, target.psi = changePSI, target.direction = Direction)) 
 
-writeLines('Unique entities that are differentially expressed and coexpressed in the same comparison in our data are')
+writeLines('Unique miRNA and methylation probes that are differentially expressed and coexpressed in the same comparison in our data are')
 kable(group_by(all.int, from.state, feature.assay, feature.direction) %>%
         summarise(count = length(unique(feature))) %>%
         tidyr::spread(from.state, count) %>%
@@ -211,7 +219,7 @@ kable(group_by(all.int, from.state, feature.assay, feature.direction) %>%
 
 ### Differentiation stages
 Clustering samples based on gene signatures of differentiation stages from GO 
-```{r mesendo.test, fig.height= 20, fig.width=15}
+```{r mesendo.test, out.height= '10in'}
 # These signatures are 
 DE.Sig = c('ONECUT1', 'OTX2', 'GATA6', 'NKX2-1', 'GATA4', 'BPTF', 'HHEX', 'SOX7', 'NKX2-5', 'PAX9', 'MMP14', 'HDAC1')
 MESO.Sig = c('BTK', 'FOXC1', 'TEAD2', 'LEF1', 'T', 'SRF', 'FOXH1', 'KDM6A', 'IKZF1', 'SMAD1', 'TBX1', 'FOXC2', 'SNAI1',
@@ -235,133 +243,509 @@ rownames(markers) = markers$signature
 
 tmp1 = covariates$mrna
 rownames(tmp1) = tmp1$UID
-ha = HeatmapAnnotation(tmp1[,'Diffname_short', drop = F])
+tmp1 = tmp1[tmp1$Diffname_short != 'EB',]
 
-Heatmap(tmp, top_annotation = ha, split = markers[rownames(tmp), 'diff.state'])
+tmp = scale(tmp[,rownames(tmp1)])
+tmp = t(scale(t(tmp)))
+
+ha = HeatmapAnnotation(tmp1[,'Diffname_short', drop = F], col = list(
+  Diffname_short = c('SC' = 'violet', 'MESO5' = 'blue', 'DE' = 'green', 'ECTO' = 'yellow',  
+                     'MESO15' = 'brown', 'MESO30' = 'purple')
+))
+Heatmap(tmp, name = 'Scaled logCPM', top_annotation = ha, split = markers[rownames(tmp), 'diff.state'],
+        col = colorRamp2(c(-2,0,2), c("blue","black","yellow")),
+        show_column_names = F, show_row_names = F)
 ```
-From the above heatmap we only get four clusters of differentiation stages. Especially ECTO, SC, EB-MESO15-MESO30, and DE-MESO5 clusters. Therefore, for extracting unique signatures of differentiation stages, we are using this four clusters, excluding EB (which is potentially hypothesised to be a mixture of SC and all germ layers)
 
-### Indentify entities that are differentially expressed between one diff state and all the other diff states (called signatures here after)
+```{r mesendo.test1}
+PC = prcomp(tmp, scale. = T, center = T)
+  
+plotdata = data.frame(UID = rownames(PC$rotation), PC1 = PC$rotation[,1], PC2 = PC$rotation[,2]) %>%
+  left_join(tmp1)
+  
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+p = ggplot(plotdata, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname_short)) + geom_point()
+p = p + scale_shape_manual(values = c(0,2,4,13,14,15)) + scale_color_manual(values = cbPalette[c(1,2,3,4,6,7)])
+print(p)
+```
+From the above heatmap we get four big clusters of differentiation stages. Especially ECTO, SC, MESO15-MESO30, and DE-MESO5 clusters. Therefore, for extracting unique signatures of differentiation stages, we are using this four clusters, excluding EB (which is potentially hypothesised to be a mixture of SC and all germ layers)
+
+### Indentify entities that are differentially expressed between the above four clusters (called here as signature of diff clusters)
 Here four groups SC, MESENDODERM, MESODERM and ECTODERM are considered
-```{r extract.specific.ent, fig.height=12, fig.width=15}
+```{r extract.specific.ent}
 # Seperate gene sets based on transitions
-specific.signatures = all.int %>% 
+specific.signatures = diffexp %>%
+  ddply(.(Assay), .fun = function(x){
+    if (unique(x$Assay) == 'mirna' || unique(x$Assay) == 'methyl')
+      x = filter(x, feature %in% all.int$feature)
+    return(x)
+  }) %>%
+  dplyr::rename(feature.assay = Assay, feature.direction = Direction) %>% 
   dplyr::select(feature, feature.assay, feature.direction, from.state, to.state) %>% 
   unique %>% 
   dplyr::mutate(from.state = gsub('MESO5','MESENDO',from.state), from.state = gsub('DE','MESENDO',from.state),
                 to.state = gsub('MESO5','MESENDO',to.state), to.state = gsub('DE','MESENDO',to.state),
                 from.state = gsub('MESO15','MESO',from.state), from.state = gsub('MESO30','MESO',from.state),
                 to.state = gsub('MESO15','MESO',to.state), to.state = gsub('MESO30','MESO',to.state)) %>%
-  dplyr::filter(from.state != 'EB', to.state != 'EB', !(from.state == 'MESO' & to.state == 'MESO'), !(from.state == 'MESENDO' & to.state == 'MESENDO')) %>%
+  dplyr::filter(from.state != 'EB', to.state != 'EB', 
+                !(from.state == 'MESO' & to.state == 'MESO'), 
+                !(from.state == 'MESENDO' & to.state == 'MESENDO')) %>%
   group_by(feature, feature.assay, feature.direction, from.state) %>%
   summarise(ncount = length(unique(to.state)), to.state = paste(unique(to.state), collapse = ',')) %>%
   filter((ncount == 3 & feature.assay != 'methyl') | (ncount == 2 & feature.assay == 'methyl')) %>%
   data.frame
 
-splicing.annot = expr$splicing[,c(1, 227:236)]
-expr$splicing = expr$splicing[,1:226]
-
-for (assay in unique(specific.signatures$feature.assay)){
-  tmp = expr[[assay]]
-  rownames(tmp) = tmp[,1]
-  tmp[,1] = NULL
-  tmp[is.na(tmp)] = 0
-  
-  tmp = tmp[rownames(tmp) %in% unique(specific.signatures$feature),]
-  tmp1 = covariates[[assay]]
-  rownames(tmp1) = tmp1$UID
-  ha = HeatmapAnnotation(tmp1[,'Diffname_short', drop = F])
-
-  writeLines(paste('Heatmap of',dim(tmp)[1],assay))
-  draw(Heatmap(tmp, top_annotation = ha, show_row_names = F, show_column_names = F))
-  
-  PC = prcomp(tmp, scale. = T, center = T)
-  
-  plotdata = data.frame(UID = rownames(PC$rotation), PC1 = PC$rotation[,1], PC2 = PC$rotation[,2]) %>%
-    left_join(tmp1)
-  
-  p = ggplot(plotdata, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname_short)) + geom_point()
-  p = p + scale_shape_manual(values = 1:length(unique(plotdata$Diffname_short)))
-  print(p)
-}
-
-writeLines('# of entities that are differentially expressed between one diff state and all the other diff state are')
+writeLines('# of entities that are differentially expressed between one diff cluster with respect to all the other are')
 kable(specific.signatures %>%
         group_by(from.state, feature.assay, feature.direction) %>%
         summarise(ncount = length(unique(feature))) %>%
         spread(from.state, ncount))
 
-# Store results in synapse
-specific.signatures = specific.signatures %>%
-  dplyr::select(-ncount) %>%
-  dplyr::arrange(from.state, feature.assay, feature.direction, to.state)
+# Extract results to store in synapse
+specific.signatures.store = specific.signatures %>%
+  dplyr::select(feature, feature.assay, feature.direction, from.state) %>%
+  left_join(diffexp %>%
+              dplyr::rename(feature.direction = Direction, feature.assay = Assay) %>%
+              dplyr::mutate(from.state = gsub('MESO5','MESENDO',from.state), from.state = gsub('DE','MESENDO',from.state),
+                            to.state = gsub('MESO5','MESENDO',to.state), to.state = gsub('DE','MESENDO',to.state),
+                            from.state = gsub('MESO15','MESO',from.state), from.state = gsub('MESO30','MESO',from.state),
+                            to.state = gsub('MESO15','MESO',to.state), to.state = gsub('MESO30','MESO',to.state)) %>%
+              dplyr::filter(from.state != 'EB', to.state != 'EB', !(from.state == 'MESO' & to.state == 'MESO'), 
+                            !(from.state == 'MESENDO' & to.state == 'MESENDO'))) %>%
+  filter(!is.na(to.state))
+```
+Visualise mRNA expression profiles
+```{r extract.specific.ent.mrna, out.height= '10in'}
+mrna = expr[['mrna']]
+rownames(mrna) = mrna[,1]
+mrna[,1] = NULL
+mrna[is.na(mrna)] = 0
+  
+mrna.cov = covariates[['mrna']]
+rownames(mrna.cov) = mrna.cov$UID
+mrna.cov = mrna.cov[mrna.cov$Diffname_short != 'EB',]
+  
+mrna = mrna[rownames(mrna) %in% unique(specific.signatures$feature),rownames(mrna.cov)]
+mrna = scale(mrna)
+mrna = t(scale(t(mrna)))
+
+mrna.cov = split(mrna.cov, mrna.cov$Diffname_short)
+mrna = lapply(mrna.cov, function(x, mrna){
+  mrna = mrna[,x$UID]
+  clust = hclust(dist(t(mrna)))
+  mrna = mrna[,clust$order]
+}, mrna)
+  
+mrna.cov = do.call(rbind, mrna.cov[c('SC','DE','MESO5','ECTO','MESO15','MESO30')])
+colnames(mrna.cov) = gsub('Diffname_short','DifferentiationStage', colnames(mrna.cov))
+mrna = do.call(cbind, mrna[c('SC','DE','MESO5','ECTO','MESO15','MESO30')])
+  
+clust = pamk(mrna, krange = 2:10, seed = 123456, usepam = F)
+clust = rownameToFirstColumn(clust$pamobject$clustering, 'hgnc_symbol') %>%
+  dplyr::rename(cluster = DF) %>%
+  dplyr::mutate(cluster = factor(cluster, labels = c('1' = 'SC', '2' = 'MESENDO', '3' = 'ECTO', '4' = 'MESO')))
+  
+# Top Annotation
+ha = HeatmapAnnotation(mrna.cov[,c('DifferentiationStage'), drop = F], name = 'DifferentiationStage', 
+                       col = list('DifferentiationStage' = c('SC' = 'violet', 'MESO5' = 'blue', 'DE' = 'green', 
+                                                              'ECTO' = 'yellow', 'MESO15' = 'brown', 'MESO30' = 'purple')))
+# Side Annotation
+ha1 = HeatmapAnnotation(clust[,'cluster',drop=F], which = 'row',
+                        col = list('cluster' = c('SC' = 'orange', 'MESENDO' = 'cyan', 'ECTO'= 'grey', 'MESO' = 'pink')))
+  
+# Draw heatmap
+writeLines(paste('Heatmap of',dim(mrna)[1],'mrna'))
+h1 = Heatmap(mrna, name = 'Scaled logCPM', top_annotation = ha, split = clust$cluster,
+        col = colorRamp2(c(-2,0,2), c("#E69F00","#999999","#D55E00")),
+        cluster_columns = F, show_row_names = F, show_column_names = F, show_row_dend = F) + ha1
+  
+# PC plot mrna
+PC = prcomp(mrna, scale. = T, center = T)
+  
+plotdata = data.frame(UID = rownames(PC$rotation), PC1 = PC$rotation[,1], PC2 = PC$rotation[,2], assay = 'mrna', row = 1, col = 1) %>%
+  left_join(mrna.cov[,c('UID', 'DifferentiationStage'), drop=F])
+```
+Visualise miRNA expression profiles
+```{r extract.specific.ent.mirna, out.height= '10in'}
+mirna = expr[['mirna']]
+rownames(mirna) = mirna[,1]
+mirna[,1] = NULL
+mirna[is.na(mirna)] = 0
+  
+mirna.cov = covariates[['mirna']]
+rownames(mirna.cov) = mirna.cov$UID
+mirna.cov = mirna.cov[mirna.cov$Diffname_short != 'EB',]
+  
+mirna = mirna[rownames(mirna) %in% unique(specific.signatures$feature),rownames(mirna.cov)]
+mirna = scale(mirna)
+mirna = t(scale(t(mirna)))
+
+mirna.cov = split(mirna.cov, mirna.cov$Diffname_short)
+mirna = lapply(mirna.cov, function(x, mirna){
+  mirna = mirna[,x$UID]
+  clust = hclust(dist(t(mirna)))
+  mirna = mirna[,clust$order]
+}, mirna)
+  
+mirna.cov = do.call(rbind, mirna.cov[c('SC','DE','MESO5','ECTO','MESO15','MESO30')])
+colnames(mirna.cov) = gsub('Diffname_short','DifferentiationStage', colnames(mirna.cov))
+mirna = do.call(cbind, mirna[c('SC','DE','MESO5','ECTO','MESO15','MESO30')])
+  
+clust = pamk(mirna, krange = 2:10, seed = 123456, usepam = T)
+clust = rownameToFirstColumn(clust$pamobject$clustering, 'hgnc_symbol') %>%
+  dplyr::rename(cluster = DF) %>%
+  dplyr::mutate(cluster = factor(cluster, labels = c('1' = 'LATE', '2' = 'EARLY')))
+  
+# Top Annotation
+ha = HeatmapAnnotation(mirna.cov[,c('DifferentiationStage'), drop = F], name = 'DifferentiationStage', 
+                       col = list('DifferentiationStage' = c('SC' = 'violet', 'MESO5' = 'blue', 'DE' = 'green', 
+                                                              'ECTO' = 'yellow', 'MESO15' = 'brown', 'MESO30' = 'purple')))
+# Side Annotation
+ha1 = HeatmapAnnotation(clust[,'cluster',drop=F], which = 'row',
+                        col = list('cluster' = c('EARLY' = 'orange', 'LATE' = 'cyan')))
+  
+# Draw heatmap
+writeLines(paste('Heatmap of',dim(mirna)[1],'mirna'))
+h2 = Heatmap(mirna, name = 'Scaled logCPM', top_annotation = ha, split = clust$cluster,
+        col = colorRamp2(c(-1, 0, 1), c('blue','white','red')),
+        cluster_columns = F, show_row_names = F, show_column_names = F, show_row_dend = F) + ha1
+  
+# PC plot mirna
+PC = prcomp(mirna, scale. = T, center = T)
+  
+plotdata = rbind(plotdata,
+                 data.frame(UID = rownames(PC$rotation), PC1 = PC$rotation[,1], PC2 = PC$rotation[,2], assay = 'mirna', row = 1, col = 2) %>%
+                   left_join(mirna.cov[,c('UID', 'DifferentiationStage'), drop=F]))
+```
+Visualise methylation expression profiles
+```{r extract.specific.ent.methyl, out.height= '10in'}
+methyl = expr[['methyl']]
+rownames(methyl) = methyl[,1]
+methyl[,1] = NULL
+methyl[is.na(methyl)] = 0
+  
+methyl.cov = covariates[['methyl']]
+rownames(methyl.cov) = methyl.cov$UID
+methyl.cov = methyl.cov[methyl.cov$Diffname_short != 'EB',]
+  
+methyl = methyl[rownames(methyl) %in% unique(specific.signatures$feature),rownames(methyl.cov)]
+methyl = scale(methyl)
+methyl = t(scale(t(methyl)))
+
+methyl.cov = split(methyl.cov, methyl.cov$Diffname_short)
+methyl = lapply(methyl.cov, function(x, methyl){
+  methyl = methyl[,x$UID]
+  clust = hclust(dist(t(methyl)))
+  methyl = methyl[,clust$order]
+}, methyl)
+  
+methyl.cov = do.call(rbind, methyl.cov[c('SC','DE','MESO5','ECTO')])
+colnames(methyl.cov) = gsub('Diffname_short','DifferentiationStage', colnames(methyl.cov))
+methyl = do.call(cbind, methyl[c('SC','DE','MESO5','ECTO')])
+  
+clust = pamk(methyl, krange = 2:10, seed = 123456, usepam = T)
+clust = rownameToFirstColumn(clust$pamobject$clustering, 'hgnc_symbol') %>%
+  dplyr::rename(cluster = DF) %>%
+  dplyr::mutate(cluster = factor(cluster, labels = c('1' = 'EARLY', '2' = 'LATE')))
+  
+# Top Annotation
+ha = HeatmapAnnotation(methyl.cov[,c('DifferentiationStage'), drop = F], name = 'DifferentiationStage', 
+                       col = list('DifferentiationStage' = c('SC' = 'violet', 'MESO5' = 'blue', 'DE' = 'green', 
+                                                              'ECTO' = 'yellow', 'MESO15' = 'brown', 'MESO30' = 'purple')))
+# Side Annotation
+ha1 = HeatmapAnnotation(clust[,'cluster',drop=F], which = 'row',
+                        col = list('cluster' = c('EARLY' = 'orange', 'LATE' = 'cyan')))
+  
+# Draw heatmap
+writeLines(paste('Heatmap of',dim(methyl)[1],'methyl'))
+h3 = Heatmap(methyl, name = 'Scaled Beta', top_annotation = ha, split = clust$cluster,
+        col = colorRamp2(c(-1.5,0,1.5), c('blue','black','yellow')),
+        cluster_columns = F, show_row_names = F, show_column_names = F, show_row_dend = F) + ha1
+  
+# PC plot methyl
+PC = prcomp(methyl, scale. = T, center = T)
+  
+plotdata = rbind(plotdata,
+                 data.frame(UID = rownames(PC$rotation), PC1 = PC$rotation[,1], PC2 = PC$rotation[,2], assay = 'methyl', row = 2, col = 1) %>%
+                   left_join(methyl.cov[,c('UID', 'DifferentiationStage'), drop=F]))
+```
+Visualise splicing expression profiles
+```{r extract.specific.ent.splicing, out.height= '10in'}
+# Remove annotations from splicing
+splicing.annot = expr$splicing[,c(1, 227:236)]
+expr$splicing = expr$splicing[,1:226]
+
+splicing = expr[['splicing']]
+rownames(splicing) = splicing[,1]
+splicing[,1] = NULL
+splicing[is.na(splicing)] = 0
+  
+splicing.cov = covariates[['splicing']]
+rownames(splicing.cov) = splicing.cov$UID
+splicing.cov = splicing.cov[splicing.cov$Diffname_short != 'EB',]
+  
+splicing = splicing[rownames(splicing) %in% unique(specific.signatures$feature),rownames(splicing.cov)]
+splicing = scale(splicing)
+splicing = t(scale(t(splicing)))
+
+splicing.cov = split(splicing.cov, splicing.cov$Diffname_short)
+splicing = lapply(splicing.cov, function(x, splicing){
+  splicing = splicing[,x$UID]
+  clust = hclust(dist(t(splicing)))
+  splicing = splicing[,clust$order]
+}, splicing)
+  
+splicing.cov = do.call(rbind, splicing.cov[c('SC','DE','MESO5','ECTO','MESO15','MESO30')])
+colnames(splicing.cov) = gsub('Diffname_short','DifferentiationStage', colnames(splicing.cov))
+splicing = do.call(cbind, splicing[c('SC','DE','MESO5','ECTO','MESO15','MESO30')])
+  
+clust = pamk(splicing, krange = 2:10, seed = 123456, usepam = T)
+clust = rownameToFirstColumn(clust$pamobject$clustering, 'hgnc_symbol') %>%
+  dplyr::rename(cluster = DF) %>%
+  dplyr::mutate(cluster = factor(cluster, labels = c('1' = 'EARLY', '2' = 'LATE')))
+  
+# Top Annotation
+ha = HeatmapAnnotation(splicing.cov[,c('DifferentiationStage'), drop = F], name = 'DifferentiationStage', 
+                       col = list('DifferentiationStage' = c('SC' = 'violet', 'MESO5' = 'blue', 'DE' = 'green', 
+                                                              'ECTO' = 'yellow', 'MESO15' = 'brown', 'MESO30' = 'purple')))
+# Side Annotation
+ha1 = HeatmapAnnotation(clust[,'cluster',drop=F], which = 'row',
+                        col = list('cluster' = c('EARLY' = 'orange', 'LATE' = 'cyan')))
+  
+# Draw heatmap
+writeLines(paste('Heatmap of',dim(splicing)[1],'spliced junctions'))
+h4 = Heatmap(splicing, name = 'Scaled PSI', top_annotation = ha,
+        col = colorRamp2(c(-2,0,2), c('blue','black','yellow')),
+        cluster_columns = F, show_row_names = F, show_column_names = F, show_row_dend = F)
+
+# PC plot splicing
+PC = prcomp(splicing, scale. = T, center = T)
+  
+plotdata = rbind(plotdata,
+                 data.frame(UID = rownames(PC$rotation), PC1 = PC$rotation[,1], PC2 = PC$rotation[,2], assay = 'splicing', row = 2, col = 2) %>%
+                   left_join(splicing.cov[,c('UID', 'DifferentiationStage'), drop=F]))
 ```
 
+```{r plot.pca}
+pl = list()
+plotdata$DifferentiationStage = factor(plotdata$DifferentiationStage)
+for (assays in levels(plotdata$assay)){
+  p = ggplot(filter(plotdata, assay == assays), 
+             aes(x = PC1, y = PC2, color = DifferentiationStage, shape = DifferentiationStage, size = assays)) 
+  p = p + geom_point(stroke = 0.75) + theme_bw()
+  if (assays == 'methyl')
+    p = p + scale_shape_manual(values = c(0,2,13,14)) + scale_color_manual(values = cbPalette[c(1,2,6,7)]) + theme(legend.position = 'none')
+  else if (assays == 'mirna' || assays == 'splicing')
+    p = p + scale_shape_manual(values = c(0,2,5,12,13,14)) + scale_color_manual(values = cbPalette[c(1:4,6:7)]) + theme(legend.position = 'none')
+  else
+    p = p + scale_shape_manual(values = c(0,2,5,12,13,14)) + scale_color_manual(values = cbPalette[c(1:4,6:7)]) + theme(legend.position = 'none')
+  p = p + ggtitle(assays) + scale_size_manual(values = 4)
+  
+  pl[[assays]] = p
+}
+multiplot(plotlist = pl, cols = 2)
+```
 
-### Indentify entities that are differentially expressed between one diff state and all the other diff states (called signatures here after)
-Here three groups SC, DE, MESO5 are considered
-```{r extract.specific.ent2, fig.height=12, fig.width=15}
-# Seperate gene sets based on transitions
-specific.signatures2 = all.int %>% 
-  dplyr::select(feature, feature.assay, feature.direction, from.state, to.state) %>% 
-  unique %>% 
-  dplyr::filter(!(from.state %in% c('EB', 'MESO15', 'MESO30', 'ECTO')),
-                !(to.state %in% c('EB', 'MESO15', 'MESO30', 'ECTO'))) %>%
-  group_by(feature, feature.assay, feature.direction, from.state) %>%
-  summarise(ncount = length(unique(to.state)), to.state = paste(unique(to.state), collapse = ',')) %>%
-  filter((ncount == 2 & feature.assay != 'methyl') | (ncount == 2 & feature.assay == 'methyl')) %>%
-  data.frame
+### Perform enrichment analysis
+```{r filter.genesets}
+# Get mrna specific genesets
+genesets.to.test.mrna = specific.signatures %>%
+  filter(feature.assay == 'mrna') %>%
+  dplyr::mutate(feature.direction = factor(feature.direction, labels = c('-1' = 'DOWN', '1' = 'UP'))) %>%
+  dlply(.(from.state, feature.assay, feature.direction), .fun = function(x){
+    unlist(x$feature) %>% unique %>% as.character
+  })
 
-writeLines('# of entities that are differentially expressed between one diff state and all the other diff state are')
-kable(specific.signatures2 %>%
-        group_by(from.state, feature.assay, feature.direction) %>%
-        summarise(ncount = length(unique(feature))) %>%
-        spread(from.state, ncount))
+# Get mirna, methylation specific genesets
+genesets.to.test.others = specific.signatures.store %>%
+  filter(feature.assay != 'mrna', feature.assay != 'splicing') %>%
+  dplyr::select(-adj.P.value, -logFC, -changeBETA, -changePSI) %>%
+  left_join(all.int  %>%
+              dplyr::mutate(from.state = gsub('MESO5','MESENDO',from.state), from.state = gsub('DE','MESENDO',from.state),
+                            to.state = gsub('MESO5','MESENDO',to.state), to.state = gsub('DE','MESENDO',to.state),
+                            from.state = gsub('MESO15','MESO',from.state), from.state = gsub('MESO30','MESO',from.state),
+                            to.state = gsub('MESO15','MESO',to.state), to.state = gsub('MESO30','MESO',to.state)) %>%
+              dplyr::filter(from.state != 'EB', to.state != 'EB', !(from.state == 'MESO' & to.state == 'MESO'), 
+                            !(from.state == 'MESENDO' & to.state == 'MESENDO'))) %>%
+  dplyr::filter(!is.na(target)) %>%
+  dplyr::mutate(feature.direction = factor(feature.direction, labels = c('-1' = 'DOWN', '1' = 'UP')),
+                target.direction = factor(target.direction, labels = c('-1' = 'DOWN', '1' = 'UP'))) %>%
+  dlply(.(from.state, feature.assay, feature.direction, target.direction),
+        .fun = function(x){
+          unique(x$feature)
+  })
+genesets.to.test.others = genesets.to.test.others[setdiff(1:length(genesets.to.test.others), grep('DOWN.DOWN', names(genesets.to.test.others)))]
+genesets.to.test.others = genesets.to.test.others[setdiff(1:length(genesets.to.test.others), grep('UP.UP', names(genesets.to.test.others)))]
 
-for (assay in unique(specific.signatures2$feature.assay)){
-  tmp = expr[[assay]]
-  rownames(tmp) = tmp[,1]
-  tmp[,1] = NULL
-  tmp[is.na(tmp)] = 0
-  
-  tmp1 = covariates[[assay]]
-  rownames(tmp1) = tmp1$UID
-  tmp1 = tmp1[tmp1$Diffname_short %in% c('SC','MESO5','DE'),]
-  
-  tmp = tmp[rownames(tmp) %in% unique(specific.signatures2$feature),rownames(tmp1)]
-  
-  ha = HeatmapAnnotation(tmp1[,'Diffname_short', drop = F])
+# Get splicing specific genesets
+genesets.to.test.splicing = specific.signatures.store %>%
+  filter(feature.assay == 'splicing') %>%
+  dplyr::select(-adj.P.value, -logFC, -changeBETA, -changePSI) %>%
+  left_join(splicing.annot  %>%
+              dplyr::select(one_of(c('Minor-Isoform', 'Symbol'))) %>%
+              plyr::rename(c('Minor-Isoform' = 'feature'))) %>%
+  dplyr::mutate(feature.direction = factor(feature.direction, labels = c('-1' = 'DOWN', '1' = 'UP'))) %>%
+  dlply(.(from.state, feature.assay, feature.direction),
+        .fun = function(x){
+          unique(x$Symbol)
+  })
 
-  writeLines(paste('Heatmap of',dim(tmp)[1],assay))
-  draw(Heatmap(tmp, top_annotation = ha, show_row_names = F, show_column_names = F))
+genesets.to.test = c(genesets.to.test.mrna, genesets.to.test.splicing, genesets.to.test.others)
+genes.in.background = expr[['mrna']]$GeneName %>% unique()
+```
+
+```{r perform.enrichment}
+# Download gene sets
+GENE.SETS_ID = 'syn4867851'
+ALL_USED_IDs = c(ALL_USED_IDs, GENE.SETS_ID)
+load(synGet(GENE.SETS_ID)@filePath)
+
+# Choose gene sets for testing
+gsets = c("BioCarta", "GO_Biological_Process", "KEGG_2015", "Reactome", "WikiPathways_2015")
+GeneSets = GeneSets[gsets]
+GeneSets = filterGeneSets(GeneSets, genes.in.background, minSize = 2, maxSize = 5000)
+GeneSets = mapply(function(x, y){
+  names(x) = paste(y,names(x),sep = '_')
+  return(x)
+}, GeneSets, names(GeneSets))
+GeneSets = do.call(c, GeneSets)
+
+# Function to perform Fishers enrichment analysis
+fisherEnrichment <- function(genesInSignificantSet, # A character vector of differentially expressed or some significant genes to test
+                             genesInGeneSet, # A character vector of genes in gene set like GO annotations, pathways etc...
+                             genesInBackground # Background genes that are 
+){
+  genesInSignificantSet = intersect(genesInSignificantSet, genesInBackground) # back ground filtering
+  genesInNonSignificantSet = base::setdiff(genesInBackground, genesInSignificantSet)
+  genesInGeneSet = intersect(genesInGeneSet, genesInBackground) # back ground filtering
+  genesOutGeneSet = base::setdiff(genesInBackground,genesInGeneSet)
   
-  PC = prcomp(tmp, scale. = T, center = T)
-  
-  plotdata = data.frame(UID = rownames(PC$rotation), PC1 = PC$rotation[,1], PC2 = PC$rotation[,2]) %>%
-    left_join(tmp1)
-  
-  p = ggplot(plotdata, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname_short)) + geom_point()
-  p = p + scale_shape_manual(values = 1:length(unique(plotdata$Diffname_short)))
-  print(p)
+  pval = fisher.test(
+    matrix(c(length(intersect(genesInGeneSet, genesInSignificantSet)),             
+             length(intersect(genesInGeneSet, genesInNonSignificantSet)),
+             length(intersect(genesOutGeneSet, genesInSignificantSet)),
+             length(intersect(genesOutGeneSet, genesInNonSignificantSet))), 
+           nrow=2, ncol=2),
+    alternative="greater")
+  OR = (length(intersect(genesInGeneSet, genesInSignificantSet)) * length(intersect(genesOutGeneSet, genesInNonSignificantSet))) / (length(intersect(genesInGeneSet, genesInNonSignificantSet)) * length(intersect(genesOutGeneSet, genesInSignificantSet)))
+  return(data.frame(pval = pval$p.value,
+                    ngenes = length(genesInGeneSet),
+                    noverlap = length(intersect(genesInGeneSet, genesInSignificantSet)),
+                    Odds.Ratio = OR,
+                    Genes = paste(intersect(genesInGeneSet, genesInSignificantSet), collapse = '|')))
 }
 
-# Store results in synapse
-specific.signatures2 = specific.signatures2 %>%
-  dplyr::select(-ncount) %>%
-  dplyr::arrange(from.state, feature.assay, feature.direction, to.state)
+library(doParallel)
+library(foreach)
+
+cl = makeCluster(14)
+registerDoParallel(cl)
+
+enrichment.results = foreach(i = 1:length(genesets.to.test),
+                             .export = c('genesets.to.test', 'genes.in.background', 'GeneSets', 'fisherEnrichment'),
+                             .packages = c('dplyr', 'data.table')) %dopar% {
+  tmp = lapply(GeneSets, function(x){fisherEnrichment(genesets.to.test[[i]], x, genes.in.background)}) %>%
+    rbindlist(idcol = 'GeneSetName') %>%
+    dplyr::mutate(fdr = p.adjust(pval, method = 'BH'))
+                             }
+names(enrichment.results) = names(genesets.to.test)
+enrichment.results = rbindlist(enrichment.results, idcol = 'ComparisonName')
 ```
 
 ### Store results in synapse
 ```{r synstore, cache=FALSE}
+tfs.id = 'syn6040938'
+ALL_USED_IDs = c(ALL_USED_IDs, tfs.id)
+tfs = downloadFile(tfs.id)
+
 # Store signatures in synapse
-write.table(specific.signatures, file = 'GlobalSignatures.tsv', row.names = F, sep = '\t', quote=F)
+tmp = specific.signatures.store
+tmp$feature.assay[tmp$feature %in% tfs$feature] = 'TF'
+write.table(tmp, file = 'GlobalSignatures.tsv', row.names = F, sep = '\t', quote=F)
 obj = File('GlobalSignatures.tsv', name = "Signatures (Global)", parentId = CODE$properties$id)
 obj = synStore(obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs))
 
-# Store signatures in synapse
-write.table(specific.signatures2, file = 'MESENDOSignatures.tsv', row.names = F, sep = '\t', quote=F)
-obj = File('MESENDOSignatures.tsv', name = "Signatures (SC-MESO5-DE)", parentId = CODE$properties$id)
+# Store enrichment results in synapse
+write.table(enrichment.results, file = 'EnrichmentResults.tsv', row.names = F, sep = '\t', quote=F)
+obj = File('EnrichmentResults.tsv', name = "Enrichment Results (Global)", parentId = CODE$properties$id)
 obj = synStore(obj, activityName = ActivityName, executed = thisFile, used = as.character(ALL_USED_IDs))
+```
+
+```{r top.features}
+writeLines('Top 5 differentially expressed TFs, and nonTFs signatures')
+# Get top n differentially expresed entities
+tmp %>% 
+  filter(feature.assay %in% c('mrna', 'TF')) %>%
+  dplyr::group_by(feature, feature.assay, feature.direction, from.state) %>% 
+  summarise(median.lfc = median(logFC)) %>% 
+  group_by(from.state, feature.assay, feature.direction) %>% 
+  top_n(5, median.lfc) %>% 
+  group_by(from.state,feature.assay, feature.direction) %>%
+  summarise(feature = paste(unique(feature), collapse=',')) %>%
+  spread(feature.assay, feature) %>%
+  kable
+
+writeLines('Top 5 differentially expressed miRNA signatures')
+# Get top n differentially expresed entities
+tmp %>% 
+  filter(feature.assay %in% c('mirna')) %>%
+  left_join(all.int  %>%
+              dplyr::mutate(from.state = gsub('MESO5','MESENDO',from.state), from.state = gsub('DE','MESENDO',from.state),
+                            to.state = gsub('MESO5','MESENDO',to.state), to.state = gsub('DE','MESENDO',to.state),
+                            from.state = gsub('MESO15','MESO',from.state), from.state = gsub('MESO30','MESO',from.state),
+                            to.state = gsub('MESO15','MESO',to.state), to.state = gsub('MESO30','MESO',to.state)) %>%
+              dplyr::filter(from.state != 'EB', to.state != 'EB', !(from.state == 'MESO' & to.state == 'MESO'), 
+                            !(from.state == 'MESENDO' & to.state == 'MESENDO'))) %>%
+  filter(!is.na(target.assay)) %>%
+  ddply(.(feature, feature.assay, feature.direction, from.state),
+        .fun = function(x){
+          x = x[which.max(abs(x$target.lfc)), ]
+        }) %>% 
+  group_by(from.state, feature.assay, feature.direction) %>% 
+  top_n(5, feature.lfc) %>% 
+  group_by(from.state,feature.assay, feature.direction) %>%
+  summarise(feature = paste(unique(feature), collapse=','),
+            target = paste(unique(target), collapse=',')) %>%
+  kable
+
+writeLines('Top 5 differentially expressed methylation signatures')
+tmp %>% 
+  filter(feature.assay %in% c('methyl')) %>%
+  left_join(all.int  %>%
+              dplyr::mutate(from.state = gsub('MESO5','MESENDO',from.state), from.state = gsub('DE','MESENDO',from.state),
+                            to.state = gsub('MESO5','MESENDO',to.state), to.state = gsub('DE','MESENDO',to.state),
+                            from.state = gsub('MESO15','MESO',from.state), from.state = gsub('MESO30','MESO',from.state),
+                            to.state = gsub('MESO15','MESO',to.state), to.state = gsub('MESO30','MESO',to.state)) %>%
+              dplyr::filter(from.state != 'EB', to.state != 'EB', !(from.state == 'MESO' & to.state == 'MESO'), 
+                            !(from.state == 'MESENDO' & to.state == 'MESENDO'))) %>%
+  filter(!is.na(target.assay)) %>%
+  ddply(.(feature, feature.assay, feature.direction, from.state),
+        .fun = function(x){
+          x = x[which.max(abs(x$target.lfc)), ]
+        }) %>% 
+  group_by(from.state, feature.assay, feature.direction) %>% 
+  top_n(5, feature.lfc) %>% 
+  group_by(from.state,feature.assay, feature.direction) %>%
+  summarise(feature = paste(unique(feature), collapse=','),
+            target = paste(unique(target), collapse=',')) %>%
+  kable
+
+writeLines('Top 10 differentially spliced signatures and their targets')
+# Get top n differentially expresed entities
+tmp %>% 
+  filter(feature.assay %in% c('splicing')) %>%
+  left_join(splicing.annot %>% 
+              dplyr::select(one_of('Minor-Isoform', 'Symbol')) %>% 
+              plyr::rename(c('Minor-Isoform' = 'feature', 'Symbol' = 'target')) %>%
+              unique) %>%
+  dplyr::group_by(feature, feature.assay, feature.direction, from.state) %>% 
+  summarise(median.lfc = median(logFC), target = paste(sort(unique(target)), collapse = ',')) %>% 
+  group_by(from.state, feature.assay, feature.direction) %>% 
+  top_n(10, median.lfc) %>% 
+  group_by(from.state,feature.assay, feature.direction) %>%
+  summarise(feature = paste(unique(feature), collapse=','),
+            target = paste(unique(target), collapse=',')) %>%
+  kable
 ```
 
 ### Source Code
