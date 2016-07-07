@@ -295,7 +295,7 @@ specific.signatures = diffexp %>%
   filter((ncount == 3 & feature.assay != 'methyl') | (ncount == 2 & feature.assay == 'methyl')) %>%
   data.frame
 
-writeLines('# of entities that are differentially expressed between one diff cluster with respect to all the other are')
+writeLines('Number of entities that are differentially expressed between one diff cluster with respect to all the other are')
 kable(specific.signatures %>%
         group_by(from.state, feature.assay, feature.direction) %>%
         summarise(ncount = length(unique(feature))) %>%
@@ -408,7 +408,7 @@ ha1 = HeatmapAnnotation(clust[,'cluster',drop=F], which = 'row',
 # Draw heatmap
 writeLines(paste('Heatmap of',dim(mirna)[1],'mirna'))
 h2 = Heatmap(mirna, name = 'Scaled logCPM', top_annotation = ha, split = clust$cluster,
-        col = colorRamp2(c(-1, 0, 1), c('blue','white','red')),
+        col = colorRamp2(c(-1, 0, 1), c('blue','black','yellow')),
         cluster_columns = F, show_row_names = F, show_column_names = F, show_row_dend = F) + ha1
 draw(h2)
 
