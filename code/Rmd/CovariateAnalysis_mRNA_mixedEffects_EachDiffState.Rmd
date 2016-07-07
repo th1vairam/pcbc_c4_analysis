@@ -508,7 +508,7 @@ storeFilesInSynapse <- function(covariates, processedCounts,
                           activityName = ActivityName, executed = thisFile)
       
   # Design Matrix
-  design <- postAdjustedExpression[[diffState]]$GENE.EXPRESSION$design
+  design <- postAdjustedCovars[[diffState]]$GENE.EXPRESSION$design
   design <- rownameToFirstColumn(design, 'UID')
 
   write.table(design,
