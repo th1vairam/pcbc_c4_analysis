@@ -1,0 +1,176 @@
+---
+title: Decompose EB's with stem cell and germ layer signatures
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: pdf_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'EBDecomposeWithSignatures.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = 'Decompose EBs')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+
+library(fpc)
+library(WGCNA)
+library(flashClust)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+library(circlize)
+colfunc <- colorRampPalette(c("white", "red"))
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE,
+  fig.align = 'left',
+  results = 'asis',
+  out.width = '8in')
+```
+
+```{r synapseStore.params, include=FALSE}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+ActivityName <- 'Decompose EBs'
+
+# Get the latest commit of this code from github
+thisFileName <- 'EBDecomposeWithSignatures.Rmd'
+
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis",
+                    ref="branch",
+                    refName='diff_exp')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Populate wiki with results
+CODE <- Folder(name = 'Decompose EBs', parentId = parentId)
+CODE <- synStore(CODE)
+```
+
+### Data download from synapse
+#### Get raw logCPM counts from synapse
+```{r getRawCount, include=FALSE}
+expr.id = c(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642', splicing = 'syn5048714')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
+expr = lapply(expr.id, downloadFile)
+```
+
+#### Get covariates from synapse
+```{r covars, include=FALSE}
+covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669', splicing = 'syn5048719')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id))
+covariates = lapply(covariates.id, downloadFile)
+```
+
+#### Get SC and germlayer signatures
+```{r sign, include=FALSE}
+signatures.id = 'syn6137714'
+ALL_USED_IDs = c(ALL_USED_IDs, signatures.id)
+signatures = downloadFile(signatures.id)
+```
+
+### Decompose EBs
+#### Projects EBs in PCA space of germ layers and stem cell
+```{r project1}
+plotlist2 = list()
+
+for (assay in names(expr)){
+  tmp.covar = covariates[[assay]]
+  rownames(tmp.covar) = tmp.covar$UID
+
+  tmp.expr = expr[[assay]][,-(1)]
+  rownames(tmp.expr) = expr[[assay]][,1]
+  tmp.expr = tmp.expr[,tmp.covar$UID]
+
+  if (assay == 'mrna'){
+    feature = dplyr::filter(signatures, feature.assay %in% c('mrna','TF')) %>% 
+      dplyr::select(feature) %>% unlist %>% unique
+  } else {
+    feature = dplyr::filter(signatures, feature.assay %in% assay) %>% 
+      dplyr::select(feature) %>% unlist %>% unique
+  }
+  
+  tmp.expr = tmp.expr[rownames(tmp.expr) %in% feature, ]
+  tmp.expr[is.na(tmp.expr)] = 0
+  
+  tmp.expr = scale(tmp.expr)
+  tmp.expr = t(scale(t(tmp.expr)))
+
+  PC = prcomp(tmp.expr[,tmp.covar$UID[!(tmp.covar$Diffname_short %in% c('EB'))]], scale. = T, center = T)
+  PC.var = PC$sdev^2/sum(PC$sdev^2)*100 %>% round
+  plotdata = data.frame(UID = rownames(PC$rotation),
+                        PC1 = PC$rotatio[,1],
+                        PC2 = PC$rotatio[,2],
+                        PC3 = PC$rotatio[,3],
+                        PC4 = PC$rotatio[,4]) %>%
+    left_join(tmp.covar) %>%
+    dplyr::mutate(Diffname_short = factor(Diffname_short, levels = c('SC', 'DE', 'MESO5', 'ECTO', 'MESO15', 'MESO30')))
+
+  writeLines(assay)
+  pl = list()
+  p = ggplot(plotdata, aes(x = PC1, y = PC2, color = Diffname_short))
+  p = p + geom_point(stroke = 0.75) + theme_bw()
+  p = p + ylab(paste('PC2(',round(PC.var[2]),'%)')) + xlab(paste('PC1(',round(PC.var[1]),'%)'))
+  pl[[1]] = p
+
+  p = ggplot(plotdata, aes(x = PC3, y = PC4, color = Diffname_short))
+  p = p + geom_point(stroke = 0.75) + theme_bw()
+  p = p + ylab(paste('PC3(',round(PC.var[3]),'%)')) + xlab(paste('PC4(',round(PC.var[4]),'%)'))
+  pl[[2]] = p
+
+  print(multiplot(plotlist = pl, cols = 1))
+
+  # Calculate gene loadings and project EBs back into this space
+  PC = prcomp(t(tmp.expr[,tmp.covar$UID[!(tmp.covar$Diffname_short %in% c('EB'))]]), scale. = T, center = T)
+  PC = PC$rotation
+
+  # Reproject all samples in to the PC space
+  eb.pc = sapply(1:dim(tmp.expr)[2], function(i){
+    tmp = lm(expr ~ 0 + ., cbind(data.frame(expr = scale(tmp.expr[rownames(PC),i])), PC))$coefficients
+  }) %>% t
+  rownames(eb.pc) = colnames(tmp.expr)
+  eb.pc = rownameToFirstColumn(eb.pc, 'UID') %>%
+  left_join(tmp.covar)
+
+  p = ggplot(eb.pc, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname_short))+geom_point()
+  p = p + scale_shape_manual(values = c(0,1,2,3,6,13,14)) + theme(legend.position = 'left')
+  plotlist2[[assay]] = p + ggtitle(assay)
+}
+multiplot(plotlist = plotlist2, cols = 2)
+```
