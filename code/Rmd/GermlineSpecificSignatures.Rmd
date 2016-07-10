@@ -576,7 +576,7 @@ plotdata = rbind(plotdata, data.frame(UID = rownames(pc), PC1 = pc[,1], PC2 = pc
   left_join(splicing.cov[,c('UID', 'DifferentiationStage'), drop=F]))
 ```
 All samples projected in to the pc space of germ layers
-```{r plot.pca}
+```{r plot.pca, fig.height=15, fig.width=10}
 pl = list()
 plotdata$DifferentiationStage = factor(plotdata$DifferentiationStage,
                                        levels = c("SC","EB","DE","MESO5","ECTO","MESO15","MESO30"))
@@ -591,6 +591,75 @@ for (assays in levels(plotdata$assay)){
   pl[[assays]] = p
 }
 multiplot(plotlist = pl, cols = 2)
+```
+
+```{r association.test, fig.height=6, fig.width=6}
+library(CovariateAnalysis)
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+for (assays in unique(plotdata$assay)){
+  for(DiffState in c('SC','EB')){
+    writeLines(paste('DiffState:',DiffState,'Assay:',assays))
+    tmp = filter(plotdata, assay == assays, DifferentiationStage == DiffState) %>%
+      left_join(covariates[[assays]]) 
+    ind = colnames(tmp) %in% c('PC1', 'PC2', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 
+                    'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 
+                    'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 
+                    'Reprogramming_Vector_Type',  'PassageAtThaw', 'PassageAtHarvest')
+    tmp = tmp[,ind]
+    
+    if(assays != 'splicing'){
+      tmp$Culture_Conditions2 = tmp$Culture_Conditions
+      tmp$Culture_Conditions2[tmp$Culture_Conditions != 'unknown' &
+                                tmp$Culture_Conditions != 'Stromalprimed'] = 'Stromalnonprimed'
+    }
+    ind1 = which(sapply(tmp, class) == "character")
+    ind2 = setdiff(1:dim(tmp)[2], ind1)
+    tmp[is.na(tmp)] = 0
+    tmp[,ind1] = lapply(tmp[,ind1], factor)
+    tmp[,ind2] = lapply(tmp[,ind2], as.integer)
+    
+    ind1 = ind1[which((sapply(tmp[,ind1], levels) %>% sapply(length)) != 1)]
+    tmp = tmp[,c(ind1,ind2)]
+    
+    tmp1 = getAssociationStatistics(tmp, PVAL = 0.1)
+    ggheatmap.show(tmp1$plot, col.width=0.4, row.width=0.25)
+
+    writeLines ('Variables associated with PC1 at an FDR 0.05 are')
+    setdiff(colnames(tmp1$PVAL)[which(tmp1$PVAL['PC1',] <= 0.05)], c('PC1', 'PC2'))
+    # writeLines('Effect size are')
+    # print(tmp1$ESTIMATE['PC1', which(tmp1$PVAL['PC1',] <= 0.05)])
+
+    writeLines ('Variables associated with PC2 at an FDR 0.05 are')
+    setdiff(colnames(tmp1$PVAL)[which(tmp1$PVAL['PC2',] <= 0.05)], c('PC1', 'PC2'))
+    # writeLines('Effect size are')
+    # print(tmp1$ESTIMATE['PC2', which(tmp1$PVAL['PC2',] <= 0.05)])
+  }
+}
+
+```
+
+```{r pcs.culture.condition, fig.height=12, fig.width=10}
+tmp = lapply(covariates[c('mrna','mirna','methyl')], function(x){
+  x = dplyr::select(x, UID, Diffname_short, Culture_Conditions)
+  x$Culture_Conditions[x$Culture_Conditions != 'unknown' &
+                         x$Culture_Conditions != 'Stromalprimed'] = 'Stromalnonprimed'
+  x$Culture_Conditions = factor(x$Culture_Conditions)
+  return(x)
+}) %>%
+  rbindlist(idcol = 'assay', fill = T, use.names=T) %>% data.table %>%
+  left_join(plotdata %>% data.table) %>%  
+  filter(assay != 'splicing') %>%
+  droplevels
+
+plotlist = list()
+for (assays in c('mrna','mirna','methyl')){
+  p = ggplot(tmp %>% filter(assay == assays, Culture_Conditions != 'unknown'), 
+             aes(x = PC1, y = PC2, color = Culture_Conditions, shape = DifferentiationStage))
+  p = p + geom_point() + theme_bw() + scale_shape_manual(values = 1:7)
+  plotlist[[assays]] = p + ggtitle(assays)
+}
+multiplot(plotlist = plotlist, cols = 1)
 ```
 
 ### Perform enrichment analysis

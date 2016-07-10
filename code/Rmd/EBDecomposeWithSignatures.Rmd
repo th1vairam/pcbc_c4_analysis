@@ -107,7 +107,7 @@ signatures = downloadFile(signatures.id)
 
 ### Decompose EBs
 #### Projects EBs in PCA space of germ layers and stem cell
-```{r project1}
+```{r project1, fig.width=12}
 plotlist2 = list()
 
 for (assay in names(expr)){
