@@ -103,8 +103,16 @@ expr = lapply(expr.id, downloadFile)
 #### Get covariates from synapse
 ```{r covars, include=FALSE}
 covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669', splicing = 'syn5048719')
-ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id))
+covariates.table.id = c(mrna = 'syn3156503', mirna = 'syn3219876', methyl = 'syn3156828', splicing = 'syn3156503')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
 covariates = lapply(covariates.id, downloadFile)
+covariates.table = lapply(covariates.table.id, function(x){
+  synTableQuery(paste('select UID,C4_Cell_Line_ID from',x))@values
+})
+
+covariates = mapply(function(x,y){
+  left_join(x,y)
+},covariates, covariates.table)
 ```
 
 #### Get differential expression results from synapse
@@ -153,9 +161,8 @@ diffexp = rbindlist(diffexp, use.names = T, fill = T, idcol = 'Assay') %>%
 
 diffexp = rbindlist(list(diffexp,
                          diffexp %>%
+                           dplyr::rename(to.state = from.state, from.state = to.state) %>%
                            dplyr::mutate(
-                             from.state = diffexp$to.state,
-                             to.state = diffexp$from.state,
                              logFC = -logFC, changeBETA = -changeBETA, changePSI = -changePSI)),
                     use.names = T, fill =T) %>%
   dplyr::mutate(Direction = logFC/abs(logFC))
@@ -576,21 +583,117 @@ plotdata = rbind(plotdata, data.frame(UID = rownames(pc), PC1 = pc[,1], PC2 = pc
   left_join(splicing.cov[,c('UID', 'DifferentiationStage'), drop=F]))
 ```
 All samples projected in to the pc space of germ layers
-```{r plot.pca, fig.height=15, fig.width=10}
-pl = list()
+```{r plot.pca, fig.height=10, fig.width=10}
+plotdata = plotdata %>%
+  left_join(covariates.table %>% 
+              rbindlist(idcol = 'assay'))
 plotdata$DifferentiationStage = factor(plotdata$DifferentiationStage,
                                        levels = c("SC","EB","DE","MESO5","ECTO","MESO15","MESO30"))
-for (assays in levels(plotdata$assay)){
-  p = ggplot(filter(plotdata, assay == assays), 
+
+pl = list()
+for (assays in c('mrna','mirna','methyl','splicing')){
+  p = ggplot(filter(plotdata, assay == assays),
              aes(x = PC1, y = PC2, color = DifferentiationStage, shape = DifferentiationStage)) 
   p = p + geom_point(stroke = 0.75) + theme_bw()
   p = p + scale_shape_manual(values = c(0,2,5,8,12,13,14)) + scale_color_manual(values = cbPalette[c(1:4,6:8)])
   p = p + theme(legend.position = 'top')
-  p = p + ggtitle(assays) + scale_size_manual(values = 4)
+  p = p + ggtitle(assays) + scale_size_manual(values = 4) 
   
   pl[[assays]] = p
 }
 multiplot(plotlist = pl, cols = 2)
+```
+```{r plot.pca1, fig.height=5, fig.width=10}
+writeLines('Plots for SC and EB alone')
+for (assays in c('mrna','mirna','methyl','splicing')){
+  pl = list()
+  for (diffstate in c('EB', 'SC')){
+    p = ggplot(filter(plotdata, assay == assays, DifferentiationStage == diffstate), 
+               aes(x = PC1, y = PC2, color = DifferentiationStage, shape = DifferentiationStage)) 
+    p = p + geom_point(stroke = 0.75) + theme_bw() + theme(legend.position = 'top')
+    p = p + geom_text(aes(label=ifelse(DifferentiationStage == 'EB' | DifferentiationStage == 'SC', C4_Cell_Line_ID, ''), hjust=0, vjust=0))
+    p = p + ggtitle(assays) + scale_size_manual(values = 4) 
+    pl[[diffstate]] = p
+  }
+  multiplot(plotlist = pl, cols = 2)
+}
+
+all.pc1 = list()
+all.pc2 = list()
+for (assays in c('mrna','mirna','methyl','splicing')){
+  # PC1
+  PC1 = filter(plotdata, assay == assays) %>% 
+    dplyr::select(UID, C4_Cell_Line_ID, DifferentiationStage, PC1) %>% 
+    spread(DifferentiationStage, PC1) %>%
+    ddply(.(C4_Cell_Line_ID), .fun = function(x){
+      apply(x[,-(1:2)], 2, mean, na.rm = T)
+    })
+  rownames(PC1) = PC1$C4_Cell_Line_ID
+
+  # PC2
+  PC2 = filter(plotdata, assay == assays) %>% 
+    dplyr::select(UID, C4_Cell_Line_ID, DifferentiationStage, PC2) %>% 
+    spread(DifferentiationStage, PC2) %>%
+    ddply(.(C4_Cell_Line_ID), .fun = function(x){
+      apply(x[,-(1:2)], 2, mean, na.rm = T)
+    })
+  rownames(PC2) = PC2$C4_Cell_Line_ID
+
+  writeLines(paste('Correlation between SC and EB ordering in',assays))
+  print(cor(PC1[,'SC'], PC2[rownames(PC1), 'EB'], use = 'pairwise.complete.obs') %>% as.numeric())
+  
+  all.pc1[[assays]] = PC1; all.pc2[[assays]] = PC2
+}
+
+# PC1 mrna
+PC1.mrna = filter(plotdata, assay == 'mrna') %>% 
+  dplyr::select(UID, C4_Cell_Line_ID, DifferentiationStage, PC1) %>% 
+  spread(DifferentiationStage, PC1) %>%
+  ddply(.(C4_Cell_Line_ID), .fun = function(x){
+    apply(x[,-(1:2)], 2, mean, na.rm = T)
+  })
+rownames(PC1.mrna) = PC1.mrna$C4_Cell_Line_ID
+
+# PC2 mrna
+PC2 = filter(plotdata, assay == 'mrna') %>% 
+  dplyr::select(UID, C4_Cell_Line_ID, DifferentiationStage, PC2) %>% 
+  spread(DifferentiationStage, PC2) %>%
+  ddply(.(C4_Cell_Line_ID), .fun = function(x){
+    apply(x[,-(1:2)], 2, mean, na.rm = T)
+  })
+rownames(PC2) = PC2$C4_Cell_Line_ID
+
+writeLines('Correlation between EBs in mrna and methylation')
+tmp1 = all.pc2[['mrna']][,'EB']
+names(tmp1) = all.pc2[['mrna']][,'C4_Cell_Line_ID']
+tmp2 = all.pc1[['methyl']][,'EB']
+names(tmp2) = all.pc1[['methyl']][,'C4_Cell_Line_ID']
+
+cor(tmp1, tmp2[names(tmp1)], use = 'pairwise.complete.obs') %>% as.numeric()
+
+writeLines('Correlation between EBs in mrna and mirna')
+tmp1 = all.pc2[['mrna']][,'EB']
+names(tmp1) = all.pc2[['mrna']][,'C4_Cell_Line_ID']
+tmp2 = all.pc2[['mirna']][,'EB']
+names(tmp2) = all.pc2[['mirna']][,'C4_Cell_Line_ID']
+
+cor(tmp1, tmp2[names(tmp1)], use = 'pairwise.complete.obs') %>% as.numeric()
+
+writeLines('Correlation between SCs in mrna and methylation')
+tmp1 = all.pc1[['mrna']][,'SC']
+names(tmp1) = all.pc1[['mrna']][,'C4_Cell_Line_ID']
+tmp2 = all.pc1[['methyl']][,'SC']
+names(tmp2) = all.pc1[['methyl']][,'C4_Cell_Line_ID']
+
+cor(tmp1, tmp2[names(tmp1)], use = 'pairwise.complete.obs') %>% as.numeric()
+
+writeLines('Correlation between SCs in mrna and mirna')
+tmp1 = all.pc1[['mrna']][,'SC']
+names(tmp1) = all.pc1[['mrna']][,'C4_Cell_Line_ID']
+tmp2 = all.pc2[['mirna']][,'SC']
+names(tmp2) = all.pc2[['mirna']][,'C4_Cell_Line_ID']
+
+cor(tmp1, tmp2[names(tmp1)], use = 'pairwise.complete.obs') %>% as.numeric()
 ```
 
 ```{r association.test, fig.height=6, fig.width=6}
