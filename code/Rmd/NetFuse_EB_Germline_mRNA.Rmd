@@ -1,0 +1,311 @@
+---
+title: Network fusion analysis on EB samples based on germline mRNA signatures with their upstream methylation, miRNA and TF targetsnctions)
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: pdf_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'NetFuse_EB_Germline_mRNA.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = "Network Fusion Analysis on EBs with Germline Signatures (mRNA only)")
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+
+library(fpc)
+library(WGCNA)
+library(flashClust)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+library(SNFtool)
+library(igraph)
+library(Vennerable)
+
+synapseLogin()
+
+library(circlize)
+colfunc <- colorRampPalette(c("white", "red"))
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE,
+  fig.align = 'left',
+  results = 'asis',
+  out.width = '8in')
+```
+
+```{r synapseStore.params, include=FALSE}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+ActivityName <- 'Decompose EBs based on germline signatures'
+
+# Get the latest commit of this code from github
+thisFileName <- 'NetFuse_EB_Germline_mRNA.Rmd'
+
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='netfuse')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Populate wiki with results
+CODE <- Folder(name = "Network Fusion Analysis on EBs with Germline Signatures (mRNA only)", parentId = parentId)
+CODE <- synStore(CODE)
+```
+### Data download from synapse
+#### Get raw logCPM counts from synapse
+```{r getRawCount, include=FALSE}
+expr.id = c(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
+expr = lapply(expr.id, downloadFile)
+```
+
+#### Get covariates from synapse
+```{r covars, include=FALSE}
+covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669')
+covariates.table.id = c(mrna = 'syn3156503', mirna = 'syn3219876', methyl = 'syn3156828')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
+covariates = lapply(covariates.id, downloadFile)
+covariates.table = lapply(covariates.table.id, function(x){
+  synTableQuery(paste('select UID,C4_Cell_Line_ID from',x))@values
+})
+
+covariates = mapply(function(x,y){
+  left_join(x,y)
+},covariates, covariates.table)
+```
+
+#### Get all the interactions from synapse
+```{r interactions, include=FALSE}
+all.int = downloadFile('syn5643683') %>%
+  filter(feature.assay != 'splicing', target.assay != 'splicing')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn5643683')
+```
+
+#### Get germline specific mRNA signatures from synapse
+```{r germline.sig}
+germline.sig = downloadFile('syn6828794') %>%
+  filter(feature.assay %in% c('mrna','TF')) %>%
+  dplyr::select(feature, feature.assay) %>% 
+  unique
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn6828794')
+
+germline.sig = filter(all.int, target %in% germline.sig$feature) %>%
+  filter(feature.assay != 'splicing') %>%
+  dplyr::select(feature, feature.assay) %>%
+  rbind(germline.sig) %>%
+  unique()
+germline.sig$feature.assay[germline.sig$feature.assay == 'TF'] = 'mrna'
+germline.sig = dlply(germline.sig, .(feature.assay), .fun = function(x){unique(x$feature)})
+```
+
+### Merge expression data to unique cell line ID
+#### Merge expression data
+```{r expr.merge.eb}
+# Subset logcpm matrix for EBs and summarise them
+merged.expr.eb = mapply(function(exp, covar, sig){
+  rownames(exp) = exp[,1]
+  exp[,1] = NULL
+  exp = exp[unique(sig),]
+  
+  covar = filter(covar, Diffname_short == 'EB')
+  tmp = ddply(covar %>% droplevels, .(C4_Cell_Line_ID), .fun = function(x, exp){
+    rowMeans(exp[,x$UID,drop=F], na.rm=T)
+  }, exp)
+  return(tmp)
+}, expr, covariates[names(expr)], germline.sig[names(expr)])
+
+kable(sapply(merged.expr.eb,dim))
+
+# Filter common set of samples across assays
+writeLines('Samples in EBs')
+sampleIds.eb = lapply(merged.expr.eb, function(x){x$C4_Cell_Line_ID})
+tmp = Venn(sampleIds.eb)
+plot(tmp, doWeights = F)
+
+intersecting.ids.eb = intersect(sampleIds.eb$mrna, sampleIds.eb$mirna) %>% intersect(sampleIds.eb$methyl)
+```
+
+```{r expr.merge.sc}
+# Subset logcpm matrix for SCs and summarise them
+merged.expr.sc = mapply(function(exp, covar, sig){
+  rownames(exp) = exp[,1]
+  exp[,1] = NULL
+  exp = exp[unique(sig),]
+  
+  covar = filter(covar, Diffname_short == 'SC')
+  tmp = ddply(covar %>% droplevels, .(C4_Cell_Line_ID), .fun = function(x, exp){
+    rowMeans(exp[,x$UID,drop=F], na.rm=T)
+  }, exp)
+  return(tmp)
+}, expr, covariates[names(expr)], germline.sig[names(expr)])
+
+kable(sapply(merged.expr.sc,dim))
+
+# Filter common set of samples across assays
+writeLines('Samples in SCs')
+sampleIds.sc = lapply(merged.expr.sc, function(x){x$C4_Cell_Line_ID})
+tmp = Venn(sampleIds.sc)
+plot(tmp, doWeights = F)
+
+intersecting.ids.sc = intersect(sampleIds.sc$mrna, sampleIds.sc$mirna) %>% intersect(sampleIds.sc$methyl)
+```
+
+#### Similarity Network Fusion (EBs)
+```{r snf.eb}
+# Standard normalisation
+normalised.expr.eb = lapply(merged.expr.eb, function(x,ids){
+  rownames(x) = x[,1]
+  x[,1] = NULL
+  x = t(x[ids,])
+  x = scale(x)
+}, intersecting.ids.eb)
+
+# Calculate distance between samples (biweight correlation is used)
+dist.eb = lapply(normalised.expr.eb, function(x){
+  D = dist2(t(x),t(x))
+})
+
+# Calculate average degree from individual data
+k.eb = mean(sapply(dist.eb, function(x){
+  g = igraph::graph.adjacency(x/max(x), mode="undirected", weighted = TRUE)
+  k = mean(igraph::graph.strength(g),na.rm=T)
+  return(k)
+}))
+
+# Get affinity matrix for combining with SNF
+affinity.eb = lapply(dist.eb, function(x, K, alpha){
+  A = affinityMatrix(x, K, alpha)
+  rownames(A) = rownames(x)
+  colnames(A) = colnames(A)
+  return(A)
+  }, k.eb, 0.5); # where alpha = 0.5 is the hyperparameter
+
+# Similarity Network Fusion
+fused.eb = SNF(affinity.eb, k.eb, t = 20); # where t is the number of iteration 10-20
+rownames(fused.eb) = colnames(normalised.expr.eb$mrna)
+colnames(fused.eb) = colnames(normalised.expr.eb$mrna)
+
+# Plot fused matrix
+Heatmap(fused.eb, col = colorRamp2(c(0,0.5,1), c('white','grey','black')))
+```
+
+#### Similarity Network Fusion (SCs)
+```{r snf.sc}
+# Standard normalisation
+normalised.expr.sc = lapply(merged.expr.sc, function(x,ids){
+  rownames(x) = x[,1]
+  x[,1] = NULL
+  x = t(x[ids,])
+  x = scale(x)
+}, intersecting.ids.sc)
+
+# Calculate distance between samples (biweight correlation is used)
+dist.sc = lapply(normalised.expr.sc, function(x){
+  D = dist2(t(x),t(x))
+})
+
+# Calculate average degree from individual data
+k.sc = mean(sapply(dist.sc, function(x){
+  g = igraph::graph.adjacency(x/max(x), mode="undirected", weighted = TRUE)
+  k = mean(igraph::graph.strength(g),na.rm=T)
+  return(k)
+}))
+
+# Get affinity matrix for combining with SNF
+affinity.sc = lapply(dist.sc, function(x, K, alpha){
+  A = affinityMatrix(x, K, alpha)
+  rownames(A) = rownames(x)
+  colnames(A) = colnames(A)
+  return(A)
+  }, k.sc, 0.5); # where alpha = 0.5 is the hyperparameter
+
+# Similarity Network Fusion
+fused.sc = SNF(affinity.sc, k.sc, t = 20); # where t is the number of iteration 10-20
+rownames(fused.sc) = colnames(normalised.expr.sc$mrna)
+colnames(fused.sc) = colnames(normalised.expr.sc$mrna)
+
+# Plot fused matrix
+Heatmap(fused.sc, col = colorRamp2(c(0,0.5,1), c('white','grey','black')))
+```
+
+#### Similarity Network Fusion (EBs and SCs)
+```{r snf.eb.sc}
+# Standard normalisation
+normalised.expr.sc.eb = mapply(function(x, y, ids.x, ids.y){
+  rownames(x) = paste(x[,1],'sc',sep = '.')
+  x[,1] = NULL
+  x = t(x[ids.x,])
+  x = scale(x)
+  
+  rownames(y) = paste(y[,1],'eb',sep = '.')
+  y[,1] = NULL
+  y = t(y[ids.y,])
+  y = scale(y)
+  
+  return(cbind(x,y))
+  
+}, merged.expr.sc, merged.expr.eb[names(merged.expr.sc)], MoreArgs = list(intersecting.ids.sc, intersecting.ids.eb), SIMPLIFY = F)
+
+# Calculate distance between samples (biweight correlation is used)
+dist.sc.eb = lapply(normalised.expr.sc.eb, function(x){
+  D = dist2(t(x),t(x))
+})
+
+# Calculate average degree from individual data
+k.sc.eb = mean(sapply(dist.sc.eb, function(x){
+  g = igraph::graph.adjacency(x/max(x), mode="undirected", weighted = TRUE)
+  k = mean(igraph::graph.strength(g),na.rm=T)
+  return(k)
+}))
+
+# Get affinity matrix for combining with SNF
+affinity.sc.eb = lapply(dist.sc.eb, function(x, K, alpha){
+  A = affinityMatrix(x, K, alpha)
+  rownames(A) = rownames(x)
+  colnames(A) = colnames(A)
+  return(A)
+  }, k.sc.eb, 0.5); # where alpha = 0.5 is the hyperparameter
+
+# Similarity Network Fusion
+fused.sc.eb = SNF(affinity.sc.eb, k.sc.eb, t = 20); # where t is the number of iteration 10-20
+rownames(fused.sc.eb) = colnames(normalised.expr.sc.eb$mrna)
+colnames(fused.sc.eb) = colnames(normalised.expr.sc.eb$mrna)
+
+# Plot fused matrix
+Heatmap(fused.sc.eb, col = colorRamp2(c(0,0.5,1), c('white','grey','black')))
+```
