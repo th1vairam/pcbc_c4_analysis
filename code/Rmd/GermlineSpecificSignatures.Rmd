@@ -1,5 +1,5 @@
 ---
-title: Identifying molecular signatures of differentiation states from ainter omic assays (i.e., mRNA, miRNA, DNA methylation probes and splicing junctions)
+title: Identifying molecular signatures of differentiation states from inter omic assays (i.e., mRNA, miRNA, DNA methylation probes and splicing junctions)
 author: "Thanneer Perumal"
 date: '`r date()`'
 output: pdf_document
