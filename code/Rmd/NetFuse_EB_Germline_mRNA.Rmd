@@ -1,5 +1,5 @@
 ---
-title: Network fusion analysis on EB samples based on germline mRNA signatures with their upstream methylation, miRNA and TF targetsnctions)
+title: Network fusion analysis on EB samples based on germline mRNA signatures with their upstream methylation, miRNA and TF targets
 author: "Thanneer Perumal"
 date: '`r date()`'
 output: pdf_document
