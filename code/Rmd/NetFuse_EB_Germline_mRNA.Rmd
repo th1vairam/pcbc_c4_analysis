@@ -109,7 +109,68 @@ covariates = mapply(function(x,y){
 },covariates, covariates.table)
 ```
 
-#### Get all the interactions from synapse
+#### Get differential expression results from synapse
+```{r thresholds, echo=TRUE}
+pval.th <- 0.01
+
+mrna.lfc.th <- log2(2)
+mirna.lfc.th <- log2(2)
+methyl.changeBeta.th <- 0.35
+splicing.changePSI.th <- 0.2
+```
+
+```{r diffexp, include=FALSE}
+### Download differential expression results from synapse
+diffexp.id = c(mrna = 'syn5013690', mirna = 'syn5014584', methyl = 'syn4527629', splicing = 'syn5049321')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(diffexp.id))
+
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState = sort(c("SC", "MESO5", "DE", "MESO15", "MESO30", "ECTO", "EB"))
+Comparisons = apply(combn(sort(orderedDiffState), 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+# Get mrna differential expression results from synapse
+diffexp = list()
+diffexp$mrna = downloadFile(diffexp.id['mrna']) %>%
+  dplyr::rename(feature = GeneSymbol) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mrna.lfc.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC) 
+
+# Get mirna differential expression results from synapse
+diffexp$mirna = downloadFile(diffexp.id['mirna']) %>%
+  dplyr::rename(feature = GeneSymbol) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mirna.lfc.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC) 
+
+# Get methyl differential expression results from synapse
+diffexp$methyl = downloadFile(diffexp.id['methyl']) %>%
+  dplyr::select(-one_of('feature')) %>%
+  dplyr::rename(feature = methProbeIDs) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(changeBETA) >= methyl.changeBeta.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC, changeBETA) 
+
+# Get splicing differential expression results from synapse
+diffexp$splicing = downloadFile(diffexp.id['splicing']) %>%
+  dplyr::select(-one_of('feature')) %>%
+  plyr::rename(c('Minor-Isoform' = 'feature')) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(changePSI) >= splicing.changePSI.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC, changePSI) 
+
+diffexp = rbindlist(diffexp, use.names = T, fill = T, idcol = 'Assay') %>%
+  tidyr::separate(Comparison, c('from.state','to.state'), sep = '_vs_')
+
+diffexp = rbindlist(list(diffexp,
+                         diffexp %>%
+                           dplyr::rename(to.state = from.state, from.state = to.state) %>%
+                           dplyr::mutate(
+                             logFC = -logFC, changeBETA = -changeBETA, changePSI = -changePSI)),
+                    use.names = T, fill =T) %>%
+  dplyr::mutate(Direction = logFC/abs(logFC))
+```
+#### Get all the interactions from synapse 
 ```{r interactions, include=FALSE}
 all.int = downloadFile('syn5643683') %>%
   filter(feature.assay != 'splicing', target.assay != 'splicing')
@@ -221,7 +282,8 @@ rownames(fused.eb) = colnames(normalised.expr.eb$mrna)
 colnames(fused.eb) = colnames(normalised.expr.eb$mrna)
 
 # Plot fused matrix
-Heatmap(fused.eb, col = colorRamp2(c(0,0.5,1), c('white','grey','black')))
+diag(fused.eb) = 0
+Heatmap(fused.eb, col = colorRamp2(c(0,median(fused.eb),2*median(fused.eb)), c('white','grey','black')))
 ```
 
 #### Similarity Network Fusion (SCs)
@@ -260,7 +322,8 @@ rownames(fused.sc) = colnames(normalised.expr.sc$mrna)
 colnames(fused.sc) = colnames(normalised.expr.sc$mrna)
 
 # Plot fused matrix
-Heatmap(fused.sc, col = colorRamp2(c(0,0.5,1), c('white','grey','black')))
+diag(fused.sc) = 0
+Heatmap(fused.sc, col = colorRamp2(c(0,median(fused.sc),2*median(fused.sc)), c('white','grey','black')))
 ```
 
 #### Similarity Network Fusion (EBs and SCs)
@@ -307,5 +370,6 @@ rownames(fused.sc.eb) = colnames(normalised.expr.sc.eb$mrna)
 colnames(fused.sc.eb) = colnames(normalised.expr.sc.eb$mrna)
 
 # Plot fused matrix
-Heatmap(fused.sc.eb, col = colorRamp2(c(0,0.5,1), c('white','grey','black')))
+diag(fused.sc.eb) = 0
+Heatmap(fused.sc.eb, col = colorRamp2(c(0,0.05,0.1), c('white','grey','black')))
 ```
