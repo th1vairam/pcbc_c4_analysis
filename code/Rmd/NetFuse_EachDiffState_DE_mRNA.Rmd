@@ -1,0 +1,274 @@
+---
+title: Network fusion analysis at each differentiation stage based on differentially expression/methylation signatures
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: pdf_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'NetFuse_EachDiffState_DE_mRNA.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = "Network Fusion Analysis at Each Diff State with Differential Expression Signatures")
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+
+library(fpc)
+library(WGCNA)
+library(flashClust)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+library(SNFtool)
+library(igraph)
+library(Vennerable)
+
+synapseLogin()
+
+library(circlize)
+colfunc <- colorRampPalette(c("white", "red"))
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE,
+  fig.align = 'left',
+  results = 'asis',
+  out.width = '8in')
+```
+
+```{r synapseStore.params, include=FALSE}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+ActivityName <- 'Integrated clustering of samples at each diff state'
+
+# Get the latest commit of this code from github
+thisFileName <- 'NetFuse_EachDiffState_DE_mRNA.Rmd'
+
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='netfuse')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Populate wiki with results
+CODE <- Folder(name = "Network Fusion Analysis at Each Diff State with Differential Expression Signatures", parentId = parentId)
+CODE <- synStore(CODE)
+```
+### Data download from synapse
+#### Get raw logCPM counts from synapse
+```{r getRawCount, include=FALSE}
+expr.id = c(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
+expr = lapply(expr.id, downloadFile)
+```
+
+#### Get covariates from synapse
+```{r covars, include=FALSE}
+covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669')
+covariates.table.id = c(mrna = 'syn3156503', mirna = 'syn3219876', methyl = 'syn3156828')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
+covariates = lapply(covariates.id, downloadFile)
+covariates.table = lapply(covariates.table.id, function(x){
+  synTableQuery(paste('select UID,C4_Cell_Line_ID from',x))@values
+})
+
+covariates = mapply(function(x,y){
+  left_join(x,y)
+},covariates, covariates.table)
+```
+
+#### Get differential expression results from synapse
+```{r thresholds, echo=TRUE}
+pval.th <- 0.01
+
+mrna.lfc.th <- log2(2)
+mirna.lfc.th <- log2(2)
+methyl.changeBeta.th <- 0.35
+splicing.changePSI.th <- 0.2
+```
+
+```{r diffexp, include=FALSE}
+### Download differential expression results from synapse
+diffexp.id = c(mrna = 'syn5013690', mirna = 'syn5014584', methyl = 'syn4527629', splicing = 'syn5049321')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(diffexp.id))
+
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState = sort(c("SC", "MESO5", "DE", "MESO15", "MESO30", "ECTO", "EB"))
+Comparisons = apply(combn(sort(orderedDiffState), 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+# Get mrna differential expression results from synapse
+diffexp = list()
+diffexp$mrna = downloadFile(diffexp.id['mrna']) %>%
+  dplyr::rename(feature = GeneSymbol) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mrna.lfc.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC) 
+
+# Get mirna differential expression results from synapse
+diffexp$mirna = downloadFile(diffexp.id['mirna']) %>%
+  dplyr::rename(feature = GeneSymbol) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mirna.lfc.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC) 
+
+# Get methyl differential expression results from synapse
+diffexp$methyl = downloadFile(diffexp.id['methyl']) %>%
+  dplyr::select(-one_of('feature')) %>%
+  dplyr::rename(feature = methProbeIDs) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(changeBETA) >= methyl.changeBeta.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC, changeBETA) 
+
+# Get splicing differential expression results from synapse
+diffexp$splicing = downloadFile(diffexp.id['splicing']) %>%
+  dplyr::select(-one_of('feature')) %>%
+  plyr::rename(c('Minor-Isoform' = 'feature')) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(changePSI) >= splicing.changePSI.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC, changePSI) 
+
+diffexp = rbindlist(diffexp, use.names = T, fill = T, idcol = 'Assay') %>%
+  tidyr::separate(Comparison, c('from.state','to.state'), sep = '_vs_')
+
+diffexp = rbindlist(list(diffexp,
+                         diffexp %>%
+                           dplyr::rename(to.state = from.state, from.state = to.state) %>%
+                           dplyr::mutate(
+                             logFC = -logFC, changeBETA = -changeBETA, changePSI = -changePSI)),
+                    use.names = T, fill =T) %>%
+  dplyr::mutate(Direction = logFC/abs(logFC))
+
+diff.exp.sig = dlply(diffexp, .(Assay), .fun = function(x){
+  unique(x$feature)
+})
+```
+
+### Merge expression data to unique cell line ID
+#### Merge expression data
+```{r expr.merge}
+# Summarise expression data to unique cell line IDs
+merged.expr = filter(diffexp, Assay != 'splicing') %>%
+  dlply( .(Assay, from.state), .fun = function(dexp, exp, covar){
+  exp = exp[[unique(dexp$Assay)]]
+    
+  rownames(exp) = exp[,1]
+  exp[,1] = NULL
+  exp = exp[unique(dexp$feature),]
+  
+  covar = filter(covar[[unique(dexp$Assay)]], Diffname_short == unique(dexp$from.state))
+
+  tmp = ddply(covar %>% droplevels, .(C4_Cell_Line_ID), .fun = function(x, exp){
+    rowMeans(exp[,x$UID,drop=F], na.rm=T)
+  }, exp)
+  return(tmp)
+}, expr, covariates)
+
+writeLines('Total number of samples and features present in each assay are')
+kable(as.data.frame(t(sapply(merged.expr,dim))))
+
+# Filter common set of samples across assays
+writeLines('Common set of samples across assays are')
+intersect.ids = lapply(orderedDiffState, function(diffstate){
+  writeLines(diffstate)
+  sampleIds = lapply(merged.expr[grep(diffstate, names(merged.expr))], function(x){x$C4_Cell_Line_ID})
+  tmp = Venn(sampleIds)
+  print(plot(tmp, doWeights = F))
+  
+  return(Reduce(intersect,sampleIds))
+})
+names(intersect.ids) = orderedDiffState
+```
+
+#### Similarity Network Fusion (EBs)
+```{r snf}
+# Standard normalisation
+normalised.expr = lapply(orderedDiffState, function(diffstate, merged.expr, intersect.ids){
+  expr = lapply(merged.expr[grep(diffstate, names(merged.expr))], function(x,ids){
+  rownames(x) = x[,1]
+  x[,1] = NULL
+  x = t(x[ids,])
+  x = scale(x)
+}, intersect.ids[[diffstate]])}, merged.expr, intersect.ids)
+names(normalised.expr) = orderedDiffState
+
+# Calculate distance between samples (biweight correlation is used)
+dist.diffstate = lapply(normalised.expr, function(expr){
+  lapply(expr, function(x){
+    D = dist2(t(x),t(x))
+  })
+})
+
+# Calculate average degree from individual data
+k.diffstate = lapply(dist.diffstate, function(D){
+  mean(sapply(D, function(x){
+    g = igraph::graph.adjacency(x/max(x), mode="undirected", weighted = TRUE)
+    k = mean(igraph::graph.strength(g),na.rm=T)
+    return(k)
+  }))})
+
+# Get affinity matrix for combining with SNF
+affinity.diffstate = mapply(function(D, K){
+  browser();
+  lapply(D, function(x, K, alpha){
+    A = affinityMatrix(x, K, alpha)
+    rownames(A) = rownames(x)
+    colnames(A) = colnames(A)
+    return(A)
+  }, max(round(K), 2), 0.5); # where alpha = 0.5 is the hyperparameter
+}, dist.diffstate, k.diffstate, SIMPLIFY = F)
+
+# Similarity Network Fusion
+fused.diffstate = mapply(function(AF, K, expr){
+  FusedMat = SNF(AF, max(round(K), 2), t = 20); # where t is the number of iteration 10-20
+  diag(FusedMat) = 0
+  rownames(FusedMat) = colnames(expr$mrna)
+  colnames(FusedMat) = colnames(expr$mrna)
+  
+  return(FusedMat)
+}, affinity.diffstate, k.diffstate, normalised.expr, SIMPLIFY = F)
+
+# Plot fused matrix
+h = lapply(orderedDiffState, function(diffstate, x){
+  x = x[[diffstate]]
+  draw(Heatmap(x, col = colorRamp2(c(0,median(x),2*median(x)), c('white','grey','black')), name = diffstate))
+}, fused.diffstate)
+```
+
+### Store results in Synapse
+```{r syn.store}
+save(list = ls(), file = 'NetworkFusion_EachDiffState.RData')
+OBJ = File('NetworkFusion_EachDiffState.RData', name = 'Network Fusion at Each Differentiation Stages', parentId = CODE@properties$id)
+OBJ = synStore(OBJ, used = ALL_USED_IDs, executed = thisFile, ActivityName = ActivityName)
+```
