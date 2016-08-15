@@ -211,7 +211,7 @@ intersect.ids = lapply(orderedDiffState, function(diffstate){
 names(intersect.ids) = orderedDiffState
 ```
 
-#### Similarity Network Fusion (EBs)
+#### Similarity Network Fusion (At each differentiation stage)
 ```{r snf}
 # Standard normalisation
 normalised.expr = lapply(orderedDiffState, function(diffstate, merged.expr, intersect.ids){
