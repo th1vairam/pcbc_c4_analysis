@@ -265,6 +265,33 @@ h = lapply(orderedDiffState, function(diffstate, x){
 }, fused.diffstate)
 ```
 
+#### Lineages that are present in more than one differentiation stage
+```{r intersect.lineage}
+writeLines('Present in SC, DE, ECTO, MESO5 and EB')
+ids = Reduce(intersect, intersect.ids[c('SC','DE','ECTO','MESO5','EB')])
+for(i in c('SC','DE','ECTO','MESO5','EB')){
+  draw(Heatmap(fused.diffstate[[i]][ids,ids], name = i))
+}
+
+writeLines('Present in SC, DE')
+ids = Reduce(intersect, intersect.ids[c('SC','DE')])
+for(i in c('SC','DE')){
+  draw(Heatmap(fused.diffstate[[i]][ids,ids], name = i))
+}
+
+writeLines('Present in SC, ECTO')
+ids = Reduce(intersect, intersect.ids[c('SC','ECTO')])
+for(i in c('SC','ECTO')){
+  draw(Heatmap(fused.diffstate[[i]][ids,ids], name = i))
+}
+
+writeLines('Present in SC, MESO5')
+ids = Reduce(intersect, intersect.ids[c('SC','MESO5')])
+for(i in c('SC','MESO5')){
+  draw(Heatmap(fused.diffstate[[i]][ids,ids], name = i))
+}
+```
+
 ### Store results in Synapse
 ```{r syn.store}
 save(list = ls(), file = 'NetworkFusion_EachDiffState.RData')
