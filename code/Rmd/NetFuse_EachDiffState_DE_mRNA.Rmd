@@ -240,7 +240,6 @@ k.diffstate = lapply(dist.diffstate, function(D){
 
 # Get affinity matrix for combining with SNF
 affinity.diffstate = mapply(function(D, K){
-  browser();
   lapply(D, function(x, K, alpha){
     A = affinityMatrix(x, K, alpha)
     rownames(A) = rownames(x)
@@ -270,5 +269,5 @@ h = lapply(orderedDiffState, function(diffstate, x){
 ```{r syn.store}
 save(list = ls(), file = 'NetworkFusion_EachDiffState.RData')
 OBJ = File('NetworkFusion_EachDiffState.RData', name = 'Network Fusion at Each Differentiation Stages', parentId = CODE@properties$id)
-OBJ = synStore(OBJ, used = ALL_USED_IDs, executed = thisFile, ActivityName = ActivityName)
+OBJ = synStore(OBJ, used = ALL_USED_IDs, executed = thisFile, activityName = ActivityName)
 ```
