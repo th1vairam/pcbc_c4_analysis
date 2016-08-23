@@ -1,5 +1,5 @@
 ---
-title: Summary of all differential and coexpression analysis 
+title: Differential expression analysis (Global summary)
 author: "Thanneer Perumal"
 date: '`r date()`'
 output: pdf_document
@@ -493,3 +493,34 @@ p = p + scale_color_manual(values=c("blueviolet", "darkgoldenrod3","darkcyan","b
 p
 ```
 As seen from the above heatmap, signatures of SC and ECTODERM shows higher expression in comparison to other differentiation stages. Also, MESODERMS at days 15 and 30 also shows either high or low expression for signature genes when comparing with other differentiation stages. However, MESODERM at day 5 and DEFINITIVE ENDODERM are clustered together and shows expression of both mesodermal and endodermal signatures. It is also due to the differentiation protocol used in our current analysis, which will generate cardiomyocyte specific mesoderms. Therefore for the remiander of the global analysis we are going to combine mesoderm at day 5 and DE to call mesendoderm and mesoderms at day 15 and 30 to call them as late mesoderms.
+### Store intermediate results in synapse
+```{r synapse.store}
+# Populate wiki with results
+CODE <- Folder(name = '1 Global Analysis',parentId = 'syn7162983')
+CODE <- synStore(CODE)
+
+# Store differential expression results in synapse
+diffexp %>%
+  filter(Assay == 'mrna') %>%
+  write.table(file = 'DifferentialExpressionMrna.tsv', sep = '\t', quote=F, row.names = F)
+obj = File('DifferentialExpressionMrna.tsv', 
+           name = 'Differential Expression Summary (mRNA)',
+           parentId = CODE$properties$id)
+obj = synStore(obj, 
+               activityName = 'Global summary of differential expression analysis', 
+               executed = thisFile, 
+               used = ALL_USED_IDs)
+
+# Store differential expression results in synapse
+diffexp.int %>%
+  filter(feature.assay %in% c('mirna','methyl'),
+         target.assay %in% c('mrna','mirna')) %>%
+  write.table(file = 'DifferentialExpressionOthers.tsv', sep = '\t', quote=F, row.names = F)
+obj = File('DifferentialExpressionOthers.tsv', 
+           name = 'Differential Expression Summary (miRNA and methylation)',
+           parentId = CODE$properties$id)
+obj = synStore(obj, 
+               activityName = 'Global summary of differential expression analysis', 
+               executed = thisFile, 
+               used = ALL_USED_IDs)
+```
