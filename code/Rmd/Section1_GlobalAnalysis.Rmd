@@ -108,7 +108,6 @@ covariates = mapply(function(x,y){
 all.int = downloadFile('syn5643683')
 ```
 
-
 #### Get differential expression results from synapse
 ```{r thresholds, echo=TRUE}
 pval.th <- 0.01
@@ -435,11 +434,11 @@ multiplot(plotlist = plotlist, cols = 3)
 From the above PC plots, we can conclusde the following
 1. Differentiation stages are more stratified interms of early (i.e., SC, DE, and MESO5) vs late stages (i.e., ECTO, EB, MESO15 and MESO30)
 2. Within early vs late clusters we can identify 5 distinct clusters in the RNA assays and 4 in the DNA methylation expression. The unique cluster are SC, DE & MESO5, ECTO, EB and MESO15 & MESO30 
-3. DE cluster together with MESODERM at day 5 and MESODERMS at day 15 and 30 cluster together and are more close to EB's than DE and SC
+3. DE cluster together with MESODERM at day 5, whereas MESODERMS at day 15 and 30 cluster together and are more close to EB's than DE and SC
 4. Eventhough the RNA expression changes are distinct between DE and MESO5, and between MESO15 and MESO30, in comparison to all the other differentiation stages the changes are less significant. 
 
 ### Characterise differentiation stages using GO terms
-Inorder to test, whether our differentiation stages are unique and well chracterised, we checked the expression patterns of specific genes that are present in the GO terms for DE, MESO, ECTO and SC 
+Inorder to test, whether our differentiation stages are unique and well chracterised, we checked the expression patterns of differentiation state specific genes that are present in the GO terms for DE, MESO, ECTO and SC 
 
 Clustering samples based on gene signatures of differentiation stages from Gene Ontology 
 ```{r mesendo.test, out.height= '10in'}
@@ -492,7 +491,7 @@ p = p + scale_shape_manual(values = c(1,3:7))
 p = p + scale_color_manual(values=c("blueviolet", "darkgoldenrod3","darkcyan","brown4","deeppink","yellow4"))
 p
 ```
-As seen from the above heatmap, signatures of SC and ECTODERM shows higher expression in comparison to other differentiation stages. Also, MESODERMS at days 15 and 30 also shows either high or low expression for signature genes when comparing with other differentiation stages. However, MESODERM at day 5 and DEFINITIVE ENDODERM are clustered together and shows expression of both mesodermal and endodermal signatures. It is also due to the differentiation protocol used in our current analysis, which will generate cardiomyocyte specific mesoderms. Therefore for the remiander of the global analysis we are going to combine mesoderm at day 5 and DE to call mesendoderm and mesoderms at day 15 and 30 to call them as late mesoderms.
+As seen from the above heatmap, signatures of SC and ECTODERM shows higher expression in comparison to other differentiation stages. Also, MESODERMS at days 15 and 30 show either high or low expression for signature genes when comparing with other differentiation stages. However, MESODERM at day 5 and DEFINITIVE ENDODERM are clustered together and shows expression of both mesodermal and endodermal signatures. It is mainly due to the differentiation protocol used in our current analysis, which will generate cardiomyocyte specific mesoderms. Therefore for the remainder of the global analysis we are going to consider mesoderms at day 15 and 30 as mesoderms and DE as endoderm
 ### Store intermediate results in synapse
 ```{r synapse.store}
 # Populate wiki with results
