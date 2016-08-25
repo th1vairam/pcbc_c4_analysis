@@ -187,20 +187,12 @@ diffexp.int = diffexp %>%
   filter(feature.direction != target.direction) 
 
 # Combine mrna, mirna, and dna methylation results
-diffexp.all = rbind(
-  diffexp %>%
-    filter(Assay == 'mrna') %>%
-    dplyr::rename(feature.assay = Assay, feature.direction = Direction) %>% 
-    dplyr::select(feature, feature.assay, feature.direction, from.state, to.state) %>% 
-    unique %>%
-    dplyr::filter(from.state != 'EB', to.state != 'EB') %>%
-    dplyr::filter(from.state != 'MESO5', to.state != 'MESO5'),
-  diffexp.int %>%
-    dplyr::select(feature, feature.assay, feature.direction, from.state, to.state) %>% 
-    unique %>%
-    dplyr::filter(from.state != 'EB', to.state != 'EB') %>%
-    dplyr::filter(from.state != 'MESO5', to.state != 'MESO5')
-)
+diffexp.all = diffexp %>%
+  dplyr::rename(feature.assay = Assay, feature.direction = Direction) %>% 
+  dplyr::select(feature, feature.assay, feature.direction, from.state, to.state) %>% 
+  unique %>%
+  dplyr::filter(from.state != 'EB', to.state != 'EB') %>%
+  dplyr::filter(from.state != 'MESO5', to.state != 'MESO5')
 
 # Extract specific signatures
 specific.signatures = rbind(
@@ -215,7 +207,8 @@ specific.signatures = rbind(
     group_by(feature, feature.assay, feature.direction) %>%
     summarise(ncount.from = length(unique(from.state)), from.state = paste(unique(from.state), collapse = ','),
               ncount.to = length(unique(to.state)), to.state = paste(unique(to.state), collapse = ',')) %>%
-    filter(ncount.from == 2 & ncount.to == 3) %>%
+  
+      filter(ncount.from == 2 & ncount.to == 3) %>%
     dplyr::mutate(from.state = 'MESO')
   ) %>%
     data.frame
@@ -555,6 +548,141 @@ h3 = Heatmap(methyl, name = 'Scaled Beta', top_annotation = ha, split = clust$cl
 draw(h3)
 ```
 
+Compare the exisiting signatures with the signatures from Gene Ontology
+```{r compare.GO}
+# These signatures are 
+DE.Sig = c('ONECUT1', 'OTX2', 'GATA6', 'NKX2-1', 'GATA4', 'BPTF', 'HHEX', 'SOX7', 'NKX2-5', 'PAX9', 'MMP14', 'HDAC1')
+MESO.Sig = c('BTK', 'FOXC1', 'TEAD2', 'LEF1', 'T', 'SRF', 'FOXH1', 'KDM6A', 'IKZF1', 'SMAD1', 'TBX1', 'FOXC2', 'SNAI1',
+             'ECSIT', 'HNF1A', 'HTT', 'HAND1', 'TCF15', 'WNT5A', 'ETV2', 'IRX3', 'EYA1', 'EYA2', 'KDM6B', 'ZFPM2', 'ZIC2',
+             'CITED2', 'LHX2', 'TP63', 'HES7', 'OSR1', 'CHURC1', 'FOXF1', 'TBX6')
+ECTO.Sig = c('ZBTB17', 'GRHL3', 'ZBTB7B', 'ERF')
+SC.Sig = c('ZSCAN10', 'LDB1', 'ZFP36L2', 'PAX8', 'DPPA4', 'ZNF358', 'NFYA', 'KDM2B', 'PBX1', 'PRDM14', 'CNOT1', 'HES5',
+           'CNOT2', 'CNOT3', 'EPAS1', 'PRO')
+
+geneSets = dlply(specific.signatures, .(from.state, feature.assay, feature.direction), .fun = function(x){
+  unique(x$feature)
+})
+
+venn.sc = Venn(c(list(SC.GO = SC.Sig), geneSets[intersect(grep('SC',names(geneSets)), grep('mrna',names(geneSets)))]))
+plot(venn.sc, doWeights = F)
+
+venn.de = Venn(c(list(DE.GO = DE.Sig), geneSets[intersect(grep('DE',names(geneSets)), grep('mrna',names(geneSets)))]))
+plot(venn.de, doWeights = F)
+
+venn.ecto = Venn(c(list(ECTO.GO = ECTO.Sig), geneSets[intersect(grep('ECTO',names(geneSets)), grep('mrna',names(geneSets)))]))
+plot(venn.ecto, doWeights = F)
+
+venn.meso = Venn(c(list(MESO.GO = MESO.Sig), geneSets[intersect(grep('MESO',names(geneSets)), grep('mrna',names(geneSets)))]))
+plot(venn.meso, doWeights = F)
+```
+
+### Enrichment Analysis
+```{r enrich}
+## Function to compute Fishers enrichment analysis
+fisherEnrichment <- function(genesInSignificantSet, # A character vector of differentially expressed or some significant genes to test
+                             genesInGeneSet, # A character vector of genes in gene set like GO annotations, pathways etc...
+                             genesInBackground # Background genes that are 
+                             ){
+  genesInSignificantSet = intersect(genesInSignificantSet, genesInBackground) # back ground filtering
+  genesInNonSignificantSet = base::setdiff(genesInBackground, genesInSignificantSet)
+  genesInGeneSet = intersect(genesInGeneSet, genesInBackground) # back ground filtering
+  genesOutGeneSet = base::setdiff(genesInBackground,genesInGeneSet)
+
+  pval = fisher.test(
+    matrix(c(length(intersect(genesInGeneSet, genesInSignificantSet)),             
+             length(intersect(genesInGeneSet, genesInNonSignificantSet)),
+             length(intersect(genesOutGeneSet, genesInSignificantSet)),
+             length(intersect(genesOutGeneSet, genesInNonSignificantSet))), 
+           nrow=2, ncol=2),
+    alternative="greater")
+
+  OR = (length(intersect(genesInGeneSet, genesInSignificantSet)) * length(intersect(genesOutGeneSet, genesInNonSignificantSet))) / (length(intersect(genesInGeneSet, genesInNonSignificantSet)) * length(intersect(genesOutGeneSet, genesInSignificantSet)))
+  return(data.frame(pval = as.numeric(pval$p.value),
+                    ngenes = as.numeric(length(genesInGeneSet)),
+                    noverlap = as.numeric(length(intersect(genesInGeneSet, genesInSignificantSet))),
+                    OR = as.numeric(OR)))
+  }
+
+## Get gene sets for enrichment from synapse
+geneset.id = 'syn4867851'
+ALL_USED_IDs = c(ALL_USED_IDs, geneset.id)
+load(synGet(geneset.id)@filePath)
+
+# Choose gene set category for testing
+gsets = c("GO_Biological_Process", "KEGG_2015", "Reactome", "WikiPathways_2015")
+GeneSets = GeneSets[gsets]
+
+## Get background genesets
+genesInBackground = expr$mrna$GeneName
+GeneSets = filterGeneSets(GeneSets, genesInBackground)
+
+## Get list of gene signatures for enrichment
+geneSetsToTest = specific.signatures %>%
+  dplyr::mutate(feature.direction = factor(feature.direction, labels = c('DOWN','UP'))) %>%
+  dlply(.(from.state,feature.direction,feature.assay), .fun = function(x){
+    if (unique(x$feature.assay) == 'mirna' | unique(x$feature.assay) == 'methyl'){
+      x %>%
+        dplyr::select(-to.state) %>%
+        left_join(diffexp.int %>% 
+                    dplyr::mutate(feature.direction = factor(feature.direction, labels = c('DOWN','UP')))) %>%
+        filter(target.assay == 'mrna') %>%
+        dplyr::select(target) %>%
+        unlist %>% unique
+    } else {
+      unique(x$feature)
+    }
+  })
+
+geneSets = list()
+for(diffstate in c('SC','DE','MESO','ECTO')){
+  geneSets[[diffstate]] = list()
+  for (direction in c('UP','DOWN')){
+    if (direction == 'UP')
+      geneSets[[diffstate]][[direction]] = do.call(c, geneSetsToTest[paste(diffstate,c('UP.mrna','DOWN.mirna','DOWN.methyl'),sep='.')]) %>%
+        as.character %>% unique()
+    else
+      geneSets[[diffstate]][[direction]] = do.call(c, geneSetsToTest[paste(diffstate,c('DOWN.mrna','UP.mirna','UP.methyl'),sep='.')]) %>%
+        as.character %>% unique()
+  }
+}
+
+# Perform enrichment analysis
+enrichResults = list()
+for (diffState in names(geneSets)){
+  for (direction in names(geneSets[[diffState]])){
+    tmp = lapply(GeneSets,
+                 function(x, comp, genesInBackground){
+                   tmp = t(sapply(x, fisherEnrichment, comp, genesInBackground))
+                   tmp = cbind(tmp, p.adjust(tmp$pval,'fdr'))
+                   tmp = rownameToFirstColumn(tmp,'GeneSetName')
+                   return(tmp)
+                   }, geneSets[[diffState]][[direction]], genesInBackground)
+    
+    for (name1 in names(tmp))
+      tmp[[name1]]$category = name1
+    
+    enrichResults[[diffState]][[direction]] = rbindlist(tmp)
+    writeLines(paste0('Completed ',diffState,direction))  
+  }
+}
+
+enrichResults = lapply(enrichResults, function(x){
+  rbindlist(x, idcol = 'feature.direction')
+}) %>%
+  rbindlist(idcol = 'from.state')
+
+enrichResults %>% 
+  filter(pval <= 0.01, noverlap >= 5) %>% 
+  dplyr::select(from.state, feature.direction, GeneSetName, OR) %>%
+  dplyr::mutate(OR = as.numeric(OR)) %>%
+  unite(signature.set, from.state, feature.direction) %>%
+  dplyr::select(signature.set, GeneSetName, OR) %>%
+  group_by(signature.set) %>%
+  top_n(10, OR) %>%
+  spread(signature.set, OR) %>%
+  kable
+```
+
 ### Store intermediate results in synapse
 ```{r synapse.store}
 # Populate wiki with results
@@ -566,6 +694,17 @@ specific.signatures %>%
   write.table(file = 'Signatures.tsv', sep = '\t', quote=F, row.names = F)
 obj = File('Signatures.tsv', 
            name = 'Pluripotency and Germline Specific Signatures',
+           parentId = CODE$properties$id)
+obj = synStore(obj, 
+               activityName = 'Signature Identification', 
+               executed = thisFile, 
+               used = ALL_USED_IDs)
+
+# Store enrichment results in synapse
+enrichResults %>%
+  write.table(file = 'EnrichmentResults.tsv', sep = '\t', quote=F, row.names = F)
+obj = File('EnrichmentResults.tsv', 
+           name = 'Pluripotency and Germline Specific Signature Gene Set Enrichment',
            parentId = CODE$properties$id)
 obj = synStore(obj, 
                activityName = 'Signature Identification', 
