@@ -144,7 +144,7 @@ intersect.ids = lapply(merged.expr, function(exp){
 It is assumed that our EBs are a mixture of pluripotent and germlayer cells. Therefore, we characterise our EBs as a mixture model of these states
 
 Normalise and prepare data for CIBERSORT
-```{r cibersort.prep}
+```{r cibersort.prep, include=FALSE}
 # Standard normalisation of signatures
 normalised.expr.sig = mapply(function(diffstate, exp, ids){
   exp = lapply(exp, function(x,ids, diffstate){
@@ -194,7 +194,7 @@ obj = File('Phenotype.txt', name = 'Phenotype Matrix', parentId = CODE$propertie
 obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
 ```
 
-```{rcibersort.mixed}
+```{r cibersort.mixed, include=FALSE}
 # Standard normalisation of signatures
 mixed.expr = mapply(function(diffstate, exp, ids){
   exp = lapply(exp, function(x,ids){
@@ -214,3 +214,17 @@ write.table(mixed.expr, file = 'MixtureExpr.txt',sep = '\t', row.names=F, quote=
 obj = File('MixtureExpr.txt', name = 'Mixture Matrix', parentId = CODE$properties$id)
 obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
 ```
+
+
+```{r cibersort.output, fig.height=10, fig.width=10}
+cibersort.results = downloadFile('syn7187931') %>%
+  plyr::rename(c('Input Sample' = 'Input_Sample')) %>%
+  dplyr::select(Input_Sample, SC, DE, MESO, ECTO) %>%
+  gather(DiffState, Value, -Input_Sample) %>%
+  dplyr::rename(Fraction = Value, DifferentiationStage = DiffState, C4_Cell_Line_ID = Input_Sample) 
+
+p = ggplot(cibersort.results, aes(x = C4_Cell_Line_ID, y = Fraction, fill = DifferentiationStage)) + geom_bar(stat = 'identity')
+p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+p
+```
+
