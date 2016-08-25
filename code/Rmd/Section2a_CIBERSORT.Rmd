@@ -39,6 +39,18 @@ library(fpc)
 library(WGCNA)
 library(flashClust)
 
+library('RColorBrewer')
+library('ggplot2')
+library('gplots')
+library('limma')
+library('edgeR')
+library('ctv')
+library('psych')
+library('reshape2')
+library('vcd')
+library('erer')
+library('fpc')
+
 library(synapseClient)
 library(knitr)
 library(githubr)
@@ -51,6 +63,9 @@ synapseLogin()
 
 library(circlize)
 colfunc <- colorRampPalette(c("white", "red"))
+
+# Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
 
 options(xtable.type="html")
 
@@ -228,3 +243,29 @@ p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 p
 ```
 
+Association test between different covariates and stratified diff state scores of EBs
+```{r associate.with.covars}
+covars = covariates$mrna %>%
+  filter(Diffname_short == 'EB') %>%
+  dplyr::select(C4_Cell_Line_ID, Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin, 
+                Reprogramming_Gene_Combination, Culture_Conditions, Donor_Life_Stage,
+                Gender, Cell_Type_of_Origin_Level2, Reprogramming_Vector_Type) %>%
+  unique() %>%
+  right_join( cibersort.results %>%
+                separate(C4_Cell_Line_ID, c('C4_Cell_Line_ID','Diffname_short'), sep = '\\.') %>%
+                spread(DifferentiationStage, Fraction) ) %>%
+  as.data.frame()
+
+factor_covars = c("Cell_Line_Type", "Cell_Line_of_Origin", "Tissue_of_Origin", "Reprogramming_Gene_Combination", 
+                  "Culture_Conditions", "Donor_Life_Stage", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Vector_Type")
+cont_covars = c("DE", "ECTO", "MESO", "SC")
+
+covars1 = covars[,c(factor_covars, cont_covars)]
+covars1[,factor_covars] = lapply(covars[,factor_covars], as.factor)
+covars1[,cont_covars] = lapply(covars[,cont_covars], as.numeric)
+rownames(covars1) = covars$C4_Cell_Line_ID
+
+COVARIATES.CORRELATION = getAssociationStatistics(covars1, PVAL = 0.1)
+ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
+```
+No Association between any covariates is observed
