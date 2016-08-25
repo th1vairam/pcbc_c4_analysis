@@ -1,0 +1,216 @@
+---
+title: Stratify EBs using markers of pluripotency and germline stages
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: pdf_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'Section2a_CIBERSORT.Rmd',
+                                 parentId = "syn7162983",
+                                 entityName = "2a Stratify EBs using germline and pluripotency markers")
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+
+library(fpc)
+library(WGCNA)
+library(flashClust)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+library(SNFtool)
+library(igraph)
+library(Vennerable)
+
+synapseLogin()
+
+library(circlize)
+colfunc <- colorRampPalette(c("white", "red"))
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE,
+  fig.align = 'left',
+  results = 'asis',
+  out.width = '8in')
+```
+
+```{r synapseStore.params, include=FALSE}
+parentId = "syn7162983"
+ALL_USED_IDs = c()
+
+thisFileName = 'Section2a_CIBERSORT.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='publication')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+```
+### Data download from synapse
+#### Get raw logCPM counts from synapse
+```{r getRawCount, include=FALSE}
+expr.id = c(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
+expr = lapply(expr.id, downloadFile)
+```
+
+#### Get covariates from synapse
+```{r covars, include=FALSE}
+covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669')
+covariates.table.id = c(mrna = 'syn3156503', mirna = 'syn3219876', methyl = 'syn3156828')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
+covariates = lapply(covariates.id, downloadFile)
+covariates.table = lapply(covariates.table.id, function(x){
+  synTableQuery(paste('select UID,C4_Cell_Line_ID from',x))@values
+})
+
+covariates = mapply(function(x,y){
+  left_join(x,y)
+},covariates, covariates.table)
+```
+
+#### Get pluripotency and germline specific markers from synapse
+```{r get.markers}
+state.specific.signatures = downloadFile('syn7187534')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
+```
+
+### Merge expression data to unique cell line ID
+#### Merge expression data
+```{r expr.merge}
+# Summarise expression data to unique cell line IDs
+orderedDiffState = sort(c("SC", "DE", "MESO15", "MESO30", "ECTO", "EB"))
+merged.expr = list()
+for (diffstate in orderedDiffState){
+  merged.expr[[diffstate]] = list()
+  for (assay in c('mrna','mirna')){
+    covar = filter(covariates[[assay]], Diffname_short == diffstate)
+    
+    exp = expr[[assay]]
+    
+    rownames(exp) = exp[,1]
+    exp[,1] = NULL
+    exp = exp[rownames(exp) %in% state.specific.signatures$feature,]
+    
+    merged.expr[[diffstate]][[assay]] = ddply(covar %>% droplevels, .(C4_Cell_Line_ID), .fun = function(x, exp){
+      rowMeans(exp[,x$UID,drop=F], na.rm=T)
+    }, exp)
+  }
+}
+
+merged.expr$MESO15$methyl = NULL
+merged.expr$MESO30$methyl = NULL
+intersect.ids = lapply(merged.expr, function(exp){
+  lapply(exp, function(x){x$C4_Cell_Line_ID }) %>%
+    Reduce(intersect,.)
+})
+```
+
+### Decompose EBs using pluripotency and germline markers
+It is assumed that our EBs are a mixture of pluripotent and germlayer cells. Therefore, we characterise our EBs as a mixture model of these states
+
+Normalise and prepare data for CIBERSORT
+```{r cibersort.prep}
+# Standard normalisation of signatures
+normalised.expr.sig = mapply(function(diffstate, exp, ids){
+  exp = lapply(exp, function(x,ids, diffstate){
+    rownames(x) = x[,1]
+    x[,1] = NULL
+    x = t(x[ids,])
+    x = scale(x)
+    x = rownameToFirstColumn(x, 'feature')
+    colnames(x)[-(1)] = paste(colnames(x)[-(1)],diffstate,sep = '.')
+    
+    return(x)
+  }, ids, diffstate) %>% 
+    rbindlist
+  
+  return(exp)
+}, c("SC", "DE", "ECTO", "MESO15", "MESO30"), 
+merged.expr[c("SC", "DE", "ECTO", "MESO15", "MESO30")], 
+intersect.ids[c("SC", "DE", "ECTO", "MESO15", "MESO30")], 
+SIMPLIFY = F) %>%
+  join_all(type = 'full') 
+
+phenotype = matrix(2, 4, dim(normalised.expr.sig)[2])
+rownames(phenotype) = c('SC', 'DE', 'MESO', 'ECTO')
+ind = c(grep('MESO15', colnames(normalised.expr.sig)),
+        grep('MESO30', colnames(normalised.expr.sig)))
+phenotype['MESO',ind] = 1
+
+ind = grep('ECTO', colnames(normalised.expr.sig))
+phenotype['ECTO',ind] = 1
+
+ind = grep('DE', colnames(normalised.expr.sig))
+phenotype['DE',ind] = 1
+
+ind = grep('SC', colnames(normalised.expr.sig))
+phenotype['SC',ind] = 1
+phenotype[,1] = rownames(phenotype)
+
+CODE <- Folder(name = '2a Stratify EBs using germline and pluripotency markers',parentId = 'syn7162983')
+CODE <- synStore(CODE)
+
+write.table(normalised.expr.sig, file = 'SignatureExpr.txt',sep = '\t', row.names=F, quote=F)
+obj = File('SignatureExpr.txt', name = 'Signature Matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
+
+write.table(phenotype, file = 'Phenotype.txt',sep = '\t', row.names=F, quote=F, col.names=F)
+obj = File('Phenotype.txt', name = 'Phenotype Matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
+```
+
+```{rcibersort.mixed}
+# Standard normalisation of signatures
+mixed.expr = mapply(function(diffstate, exp, ids){
+  exp = lapply(exp, function(x,ids){
+    rownames(x) = x[,1]
+    x[,1] = NULL
+    x = t(x[ids,])
+    x = scale(x)
+    x = rownameToFirstColumn(x, 'feature')
+  }, ids) %>% rbindlist
+  colnames(exp)[-(1)] = paste(colnames(exp)[-(1)], diffstate, sep = '.')
+  
+  return(exp)
+}, c("EB"), merged.expr[c("EB")], intersect.ids[c("EB")], SIMPLIFY = F) %>%
+  join_all(type = 'full')
+
+write.table(mixed.expr, file = 'MixtureExpr.txt',sep = '\t', row.names=F, quote=F)
+obj = File('MixtureExpr.txt', name = 'Mixture Matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
+```
