@@ -702,6 +702,7 @@ obj = synStore(obj,
 
 # Store enrichment results in synapse
 enrichResults %>%
+  sapply(as.character) %>%
   write.table(file = 'EnrichmentResults.tsv', sep = '\t', quote=F, row.names = F)
 obj = File('EnrichmentResults.tsv', 
            name = 'Pluripotency and Germline Specific Signature Gene Set Enrichment',
