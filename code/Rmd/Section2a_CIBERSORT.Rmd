@@ -240,9 +240,22 @@ cibersort.results = downloadFile('syn7187931') %>%
   dplyr::rename(Fraction = Value, ReferenceState = DiffState) %>%
   tidyr::separate(Input_Sample, c('C4_Cell_Line_ID','DifferentiationStage'), sep = '\\.')
 
-p = ggplot(cibersort.results, aes(x = C4_Cell_Line_ID, y = Fraction, fill = ReferenceState)) + geom_bar(stat = 'identity')
+p = ggplot(cibersort.results %>% 
+             filter(DifferentiationStage == 'EB'), aes(x = C4_Cell_Line_ID, y = Fraction, fill = ReferenceState)) + geom_bar(stat = 'identity')
 p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 p = p + facet_grid(DifferentiationStage~.)
+p
+
+tmp = eb.pc %>%
+  tidyr::separate(C4_Cell_Line_ID, c("C4_Cell_Line_ID", "DifferentiationStage"),sep = '\\.') %>%
+  dplyr::select(C4_Cell_Line_ID, DifferentiationStage, PC2) %>%
+  inner_join(cibersort.results) %>%
+  spread(ReferenceState, Fraction) %>%
+  filter(DifferentiationStage == 'EB')
+
+writeLines('Relationship between ecto scores from cibersort and pc2 from the decomposition of signatures')
+p = ggplot(tmp, aes(y = PC2, x = ECTO)) + geom_point() + geom_smooth(method = lm)
+p = p + geom_text(aes(label=C4_Cell_Line_ID),hjust=0, vjust=0)
 p
 ```
 
