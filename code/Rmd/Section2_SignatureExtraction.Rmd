@@ -549,7 +549,7 @@ draw(h3)
 ```
 
 Compare the exisiting signatures with the signatures from Gene Ontology
-```{r compare.GO}
+```{r compare.GO, eval=FALSE}
 # These signatures are 
 DE.Sig = c('ONECUT1', 'OTX2', 'GATA6', 'NKX2-1', 'GATA4', 'BPTF', 'HHEX', 'SOX7', 'NKX2-5', 'PAX9', 'MMP14', 'HDAC1')
 MESO.Sig = c('BTK', 'FOXC1', 'TEAD2', 'LEF1', 'T', 'SRF', 'FOXH1', 'KDM6A', 'IKZF1', 'SMAD1', 'TBX1', 'FOXC2', 'SNAI1',
