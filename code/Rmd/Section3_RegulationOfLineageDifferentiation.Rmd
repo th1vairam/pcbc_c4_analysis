@@ -1,0 +1,312 @@
+---
+title: Regulation of lineage differentiation
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: pdf_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'Section3_RegulationOfLineageDifferentiation.Rmd',
+                                 parentId = "syn7162983",
+                                 entityName = "3 Regulation of Lineage Differentiation")
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+
+library(fpc)
+library(WGCNA)
+library(flashClust)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+library(SNFtool)
+library(igraph)
+library(Vennerable)
+
+synapseLogin()
+
+library(circlize)
+colfunc <- colorRampPalette(c("white", "red"))
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE,
+  fig.align = 'left',
+  results = 'asis',
+  out.width = '8in')
+```
+
+```{r synapseStore.params, include=FALSE}
+parentId = "syn7162983"
+ALL_USED_IDs = c()
+
+thisFileName = 'Section3_RegulationOfLineageDifferentiation.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='publication')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+```
+### Data download from synapse
+#### Get raw logCPM counts from synapse
+```{r getRawCount, include=FALSE}
+expr.id = c(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
+expr = lapply(expr.id, downloadFile)
+```
+
+#### Get covariates from synapse
+```{r covars, include=FALSE}
+covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669')
+covariates.table.id = c(mrna = 'syn3156503', mirna = 'syn3219876', methyl = 'syn3156828')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
+covariates = lapply(covariates.id, downloadFile)
+covariates.table = lapply(covariates.table.id, function(x){
+  synTableQuery(paste('select UID,C4_Cell_Line_ID from',x))@values
+})
+
+covariates = mapply(function(x,y){
+  left_join(x,y)
+},covariates, covariates.table)
+```
+
+#### Get all possible TFs from synapse
+```{r TFs}
+TFs = downloadFile('syn6040938')$feature
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn6040938')
+
+```
+
+#### Get differential expression results from synapse
+```{r thresholds, echo=TRUE}
+pval.th <- 0.01
+
+mrna.lfc.th <- log2(2)
+mirna.lfc.th <- log2(2)
+methyl.changeBeta.th <- 0.35
+splicing.changePSI.th <- 0.2
+```
+
+```{r diffexp, include=FALSE}
+### Download differential expression results from synapse
+diffexp.id = c(mrna = 'syn5013690', mirna = 'syn5014584', methyl = 'syn4527629', splicing = 'syn5049321')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(diffexp.id))
+
+# Diff states in a sensible, quasi time-based ordering
+orderedDiffState = sort(c("SC", "MESO5", "DE", "MESO15", "MESO30", "ECTO", "EB"))
+Comparisons = apply(combn(sort(orderedDiffState), 2), 2, function(x){paste(x, collapse = '_vs_')})
+
+# Get mrna differential expression results from synapse
+diffexp = list()
+diffexp$mrna = downloadFile(diffexp.id['mrna']) %>%
+  dplyr::rename(feature = GeneSymbol) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mrna.lfc.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC) 
+
+# Get mirna differential expression results from synapse
+diffexp$mirna = downloadFile(diffexp.id['mirna']) %>%
+  dplyr::rename(feature = GeneSymbol) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mirna.lfc.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC) 
+
+# Get methyl differential expression results from synapse
+diffexp$methyl = downloadFile(diffexp.id['methyl']) %>%
+  dplyr::select(-one_of('feature')) %>%
+  dplyr::rename(feature = methProbeIDs) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(changeBETA) >= methyl.changeBeta.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC, changeBETA) 
+
+# Get splicing differential expression results from synapse
+diffexp$splicing = downloadFile(diffexp.id['splicing']) %>%
+  dplyr::select(-one_of('feature')) %>%
+  plyr::rename(c('Minor-Isoform' = 'feature')) %>%
+  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
+  dplyr::filter(adj.P.value <= pval.th & abs(changePSI) >= splicing.changePSI.th & Comparison %in% Comparisons) %>%
+  dplyr::select(feature, Comparison, adj.P.value, logFC, changePSI) 
+
+diffexp = rbindlist(diffexp, use.names = T, fill = T, idcol = 'Assay') %>%
+  tidyr::separate(Comparison, c('from.state','to.state'), sep = '_vs_')
+
+diffexp = rbindlist(list(diffexp,
+                         diffexp %>%
+                           dplyr::rename(to.state = from.state, from.state = to.state) %>%
+                           dplyr::mutate(
+                             logFC = -logFC, changeBETA = -changeBETA, changePSI = -changePSI)),
+                    use.names = T, fill =T) %>%
+  dplyr::mutate(Direction = logFC/abs(logFC)) %>%
+  dplyr::select(-changePSI)
+```
+Based on the previous analysis here we define four groups of differentiation stages: SC, DE, ECTO and MESO (which is a intersection of mesoderm at day 15 and 30).
+
+#### Get co-expression results from synapse
+```{r coexp, include = FALSE}
+coexp.id = 'syn5662375'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp = coexp.id)
+coexpression = downloadFile(coexp.id) %>%
+  dplyr::select(feature, target, feature.assay, target.assay, dataSource,contains('SC')) %>%
+  filter(feature.assay != 'splicing', target.assay != 'splicing') %>%
+  tidyr::gather(comparison, coexpression, -feature, -target, 
+                -feature.assay, -target.assay, -dataSource) %>%
+  tidyr::separate(comparison, c('from.state', 'to.state'), sep = '_vs_') %>%
+  dplyr::mutate(Assay = paste(feature.assay,target.assay, sep = '_')) %>%
+  ddply(.(feature.assay), .fun = function(x){
+    if(any(unique(x$feature.assay) %in% c('methyl','mirna')))
+      return(filter(x, coexpression <= 0))
+    else
+      return(x)
+  })
+
+writeLines('Total number of possible interactions between assays are')
+coexpression %>%
+  dplyr::select(feature, target, feature.assay, target.assay) %>%
+  unique %>%
+  group_by(feature.assay, target.assay) %>%
+  summarise(count = n()) %>%
+  spread(target.assay, count) %>%
+  kable
+
+p = ggplot(coexpression, aes(x = Assay, y = coexpression)) + geom_violin()
+p = p + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p
+
+writeLines('Out of all possible interactions filter the top 10% of interactions from both the tails of distribution as active interactions')
+coexpression = coexpression %>%
+  ddply(.(Assay), .fun = function(x){
+    cut_off = quantile(abs(x$coexpression), 0.9, na.rm = T)
+    filter(x, abs(coexpression) >= cut_off)
+  })
+total.interactions = coexpression %>%
+  dplyr::select(feature, target, feature.assay, target.assay) %>%
+  unique %>%
+  group_by(feature.assay, target.assay) %>%
+  summarise(count = n()) 
+
+total.interactions %>%
+  spread(target.assay, count) %>%
+  kable
+
+# Flip states and append interaction list
+coexpression = rbindlist(list(coexpression,
+                              coexpression %>% 
+                                dplyr::rename(from.state = to.state, to.state = from.state)),
+                         use.names = T, fill = T) %>%
+  filter(from.state == 'SC')
+```
+
+### Regulatory network of lineage differentiation
+Relative control of TFs vs mirna vs mrna regulations in SC differentiation
+```{r relative.control}
+all.int = diffexp %>%
+  dplyr::rename(target = feature, target.assay = Assay, target.lfc = logFC, target.fdr = adj.P.value,
+                target.beta = changeBETA, target.direction = Direction) %>%
+  filter(from.state == 'SC', target.assay != 'splicing') %>%
+  left_join(coexpression) %>%
+  left_join( diffexp %>%
+               dplyr::rename(feature.assay = Assay, feature.lfc = logFC, feature.fdr = adj.P.value, 
+                             feature.beta = changeBETA, feature.direction = Direction) %>%
+               filter(from.state == 'SC', feature.assay != 'splicing')) %>%
+  filter(!(target.assay %in% c('mirna','methyl') & is.na(feature.lfc)))
+
+all.int$feature.assay[all.int$feature %in% TFs] = 'TF'
+all.int$feature.assay[is.na(all.int$feature.assay)] = 'NONE'
+all.int$target.assay[is.na(all.int$target.assay)] = 'NONE'
+# all.int$target.assay[all.int$target %in% TFs] = 'TF'
+all.int$Assay = paste(all.int$feature.assay, all.int$target.assay, sep = '_')
+all.int = filter(all.int, ! (Assay %in% c('mrna_mrna', 'mrna_TF')))
+
+# Combine MESO15 and 30 together
+all.int.MESO  = filter(all.int, to.state %in% c('MESO15','MESO30'))
+all.int.notMESO  = filter(all.int, to.state %in% c('DE','ECTO','EB','MESO5'))
+
+all.int.MESO = all.int.MESO %>%
+  ddply(.(feature, target), .fun = function(x){
+    if(dim(x)[1] == 2)
+      x = top_n(x,1,abs(coexpression),abs(target.lfc))
+    else
+      return(NULL)
+  })
+all.int.MESO$to.state = 'MESO'
+all.int = rbindlist(list(all.int.notMESO, all.int.MESO), fill = T, use.names = T)
+
+relative.control = all.int %>%
+  ddply(.(to.state, target.assay, feature.assay, target.direction), .fun = function(x){
+    count = data.frame(count = x %>%
+                         dplyr::select(target) %>%
+                         unlist %>% unique %>% length)
+    })
+
+total.diffexp = group_by(all.int, to.state, target.assay) %>%
+  summarise(count.all = length(unique(target)))
+
+tmp = full_join(relative.control, total.diffexp) %>%
+  dplyr::mutate(percent = 100*(count/count.all))
+
+p = tmp %>% 
+  filter(target.assay == 'mrna') %>%
+  ggplot(aes(x = feature.assay, y = percent, fill = to.state))
+p = p + geom_bar(stat = 'identity', position = 'dodge') + ggtitle('Relative regulation of mrna')
+p
+
+p = tmp %>% 
+  filter(target.assay == 'mrna', to.state %in% c('DE','ECTO','MESO')) %>%
+  ggplot(aes(x = feature.assay, y = percent, fill = to.state))
+p = p + geom_bar(stat = 'identity', position = 'dodge') + ggtitle('Relative regulation of mrna')
+p
+
+p = p + facet_grid(.~target.direction)
+p
+```
+
+### Store intermediate results in synapse
+```{r synapse.store}
+# Populate wiki with results
+CODE <- Folder(name = '3 Regulation of Lineage Differentiation',parentId = 'syn7162983')
+CODE <- synStore(CODE)
+
+# Store active interactions to synapse
+all.int %>%
+  write.table(file = 'ActiveInteractions.tsv', sep = '\t', quote=F, row.names = F)
+obj = File('ActiveInteractions.tsv', 
+           name = 'Active Interactions',
+           parentId = CODE$properties$id)
+obj = synStore(obj, 
+               activityName = 'Network Identification', 
+               executed = thisFile, 
+               used = ALL_USED_IDs)
+```
