@@ -618,6 +618,7 @@ GeneSets = filterGeneSets(GeneSets, genesInBackground)
 
 ## Get list of gene signatures for enrichment
 geneSetsToTest = specific.signatures %>%
+  filter(feature.assay != 'splicing') %>%
   dplyr::mutate(feature.direction = factor(feature.direction, labels = c('DOWN','UP'))) %>%
   dlply(.(from.state,feature.direction,feature.assay), .fun = function(x){
     if (unique(x$feature.assay) == 'mirna' | unique(x$feature.assay) == 'methyl'){
@@ -632,54 +633,35 @@ geneSetsToTest = specific.signatures %>%
       unique(x$feature)
     }
   })
-
-geneSets = list()
-for(diffstate in c('SC','DE','MESO','ECTO')){
-  geneSets[[diffstate]] = list()
-  for (direction in c('UP','DOWN')){
-    if (direction == 'UP')
-      geneSets[[diffstate]][[direction]] = do.call(c, geneSetsToTest[paste(diffstate,c('UP.mrna','DOWN.mirna','DOWN.methyl'),sep='.')]) %>%
-        as.character %>% unique()
-    else
-      geneSets[[diffstate]][[direction]] = do.call(c, geneSetsToTest[paste(diffstate,c('DOWN.mrna','UP.mirna','UP.methyl'),sep='.')]) %>%
-        as.character %>% unique()
-  }
-}
+geneSetsToTest = geneSetsToTest[sapply(geneSetsToTest, length) != 0]
 
 # Perform enrichment analysis
-enrichResults = list()
-for (diffState in names(geneSets)){
-  for (direction in names(geneSets[[diffState]])){
-    tmp = lapply(GeneSets,
-                 function(x, comp, genesInBackground){
-                   tmp = t(sapply(x, fisherEnrichment, comp, genesInBackground))
-                   tmp = cbind(tmp, p.adjust(tmp$pval,'fdr'))
-                   tmp = rownameToFirstColumn(tmp,'GeneSetName')
-                   return(tmp)
-                   }, geneSets[[diffState]][[direction]], genesInBackground)
+enrichResults = lapply(geneSetsToTest, function(x, genesInBackground){
+  tmp = lapply(GeneSets, function(y, comp, genesInBackground){
+    tmp = t(sapply(y, fisherEnrichment, comp, genesInBackground))
+    tmp = rownameToFirstColumn(tmp,'GeneSetName')
+    return(tmp)
+  }, x, genesInBackground) %>%
+    rbindlist(use.names=T, fill = T, idcol = 'CategoryName')
+  tmp$fdr = p.adjust(tmp$pval, method = 'fdr')
+  tmp$pval = as.numeric(tmp$pval)
+  tmp$ngenes = as.numeric(tmp$ngenes)
+  tmp$noverlap = as.numeric(tmp$noverlap)
+  tmp$OR = as.numeric(tmp$OR)
+  
+  return(tmp)
+}, genesInBackground) %>%
+  rbindlist(use.names=T, fill = T, idcol = 'MarkerSetName')
     
-    for (name1 in names(tmp))
-      tmp[[name1]]$category = name1
-    
-    enrichResults[[diffState]][[direction]] = rbindlist(tmp)
-    writeLines(paste0('Completed ',diffState,direction))  
-  }
-}
-
-enrichResults = lapply(enrichResults, function(x){
-  rbindlist(x, idcol = 'feature.direction')
-}) %>%
-  rbindlist(idcol = 'from.state')
-
+# Print top results to wiki
 enrichResults %>% 
+  # tidyr::separate(MarkerSetName, c('from.state','feature.direction','feature.assay'), sep = '\\.') %>%
   filter(pval <= 0.01, noverlap >= 5) %>% 
-  dplyr::select(from.state, feature.direction, GeneSetName, OR) %>%
+  dplyr::select(MarkerSetName, GeneSetName, OR) %>%
   dplyr::mutate(OR = as.numeric(OR)) %>%
-  unite(signature.set, from.state, feature.direction) %>%
-  dplyr::select(signature.set, GeneSetName, OR) %>%
-  group_by(signature.set) %>%
+  group_by(MarkerSetName) %>%
   top_n(10, OR) %>%
-  spread(signature.set, OR) %>%
+  spread(MarkerSetName, OR) %>%
   kable
 ```
 
