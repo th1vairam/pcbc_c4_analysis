@@ -92,7 +92,7 @@ thisFileName = 'EBDecomposeWithSignaturesCompare.Rmd'
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
                     ref="branch", 
-                    refName='publication')
+                    refName='diff_exp')
 
 thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
@@ -251,6 +251,7 @@ phenotype['MESO',diffState %in% c('MESO15','MESO30')] = 1
 phenotype['ECTO',diffState == 'ECTO'] = 1
 phenotype['DE',diffState == 'DE'] = 1
 phenotype['MESO5',diffState == 'MESO5'] = 1
+phenotype[,1] = rownames(phenotype)
 
 CODE <- Folder(name = 'Decompose EBs (Comparison)', parentId = "syn5194922")
 CODE <- synStore(CODE)
@@ -286,6 +287,7 @@ phenotype['MESO',diffState %in% c('MESO15','MESO30')] = 1
 phenotype['ECTO',diffState == 'ECTO'] = 1
 phenotype['DE',diffState == 'DE'] = 1
 phenotype['MESO5',diffState == 'MESO5'] = 1
+phenotype[,1] = rownames(phenotype)
 
 write.table(signature.expr, file = 'NathanSignatureExpr.txt',sep = '\t', row.names=F, quote=F)
 obj = File('NathanSignatureExpr.txt', name = 'Nathan Signature Matrix', parentId = CODE$properties$id)
@@ -300,49 +302,56 @@ obj = File('NathanMixtureExpr.txt', name = 'Nathan Mixture Matrix', parentId = C
 obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
 ```
 
-```{r cibersort.output, fig.height=8, fig.width=8}
-cibersort.results = downloadFile('syn7187931') %>%
+CIBERSORT results with Thanneer's mRNA signature
+```{r cibersort.output1, fig.height=8, fig.width=8}
+cibersort.results.thanneer = downloadFile('syn7213213') %>%
   plyr::rename(c('Input Sample' = 'Input_Sample')) %>%
-  dplyr::select(Input_Sample, MESO, ECTO) %>%
+  dplyr::select(Input_Sample, MESO, ECTO, DE, MESO5) %>%
   gather(DiffState, Value, -Input_Sample) %>%
-  dplyr::rename(Fraction = Value, ReferenceState = DiffState) %>%
-  tidyr::separate(Input_Sample, c('C4_Cell_Line_ID','DifferentiationStage'), sep = '\\.')
+  dplyr::rename(Fraction = Value, ReferenceState = DiffState)
 
-p = ggplot(cibersort.results %>% 
-             filter(DifferentiationStage == 'EB'), aes(x = C4_Cell_Line_ID, y = Fraction, fill = ReferenceState)) + geom_bar(stat = 'identity')
-p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-p = p + facet_grid(DifferentiationStage~.)
-p
-
-tmp = eb.pc %>%
-  tidyr::separate(C4_Cell_Line_ID, c("C4_Cell_Line_ID", "DifferentiationStage"),sep = '\\.') %>%
-  dplyr::select(C4_Cell_Line_ID, DifferentiationStage, PC2) %>%
-  inner_join(cibersort.results) %>%
-  spread(ReferenceState, Fraction) %>%
-  filter(DifferentiationStage == 'EB')
-
-writeLines('Relationship between ecto scores from cibersort and pc2 from the decomposition of signatures')
-p = ggplot(tmp, aes(y = PC2, x = ECTO)) + geom_point() + geom_smooth(method = lm)
-p = p + geom_text(aes(label=C4_Cell_Line_ID),hjust=0, vjust=0)
+p = ggplot(cibersort.results.thanneer, aes(x = Input_Sample, y = Fraction, fill = ReferenceState)) + geom_bar(stat = 'identity')
+p = p + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 p
 ```
 
-Association test between different covariates and stratified diff state scores of EBs
+CIBERSORT results with Nathan's mRNA signature
+```{r cibersort.output2, fig.height=8, fig.width=8}
+cibersort.results.nathan = downloadFile('syn7213212') %>%
+  plyr::rename(c('Input Sample' = 'Input_Sample')) %>%
+  dplyr::select(Input_Sample, MESO, ECTO, DE, MESO5) %>%
+  gather(DiffState, Value, -Input_Sample) %>%
+  dplyr::rename(Fraction = Value, ReferenceState = DiffState)
+
+p = ggplot(cibersort.results.nathan, aes(x = Input_Sample, y = Fraction, fill = ReferenceState)) + geom_bar(stat = 'identity')
+p = p + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p
+
+tmp = full_join(cibersort.results.thanneer %>% dplyr::rename(Thanneer.Fraction = Fraction),
+                cibersort.results.nathan %>% dplyr::rename(Nathan.Fraction = Fraction)) %>%
+  filter(ReferenceState == 'ECTO')
+
+p = ggplot(tmp, aes(x = Thanneer.Fraction, y = Nathan.Fraction)) + geom_point() 
+p = p + geom_smooth(method = lm)
+p = p + geom_text(aes(label = Input_Sample), size = 2, hjust = 0, vjust = 0)
+p
+```
+
+Association test between different covariates and stratified diff state scores of EBs (based only on Thanneers signature)
 ```{r associate.with.covars, fig.height=10, fig.width=10}
 covars = covariates$mrna %>%
   filter(Diffname_short == 'EB') %>%
-  dplyr::select(C4_Cell_Line_ID, Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin, 
+  dplyr::select(UID, Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin, 
                 Reprogramming_Gene_Combination, Culture_Conditions, Donor_Life_Stage,
                 Gender, Cell_Type_of_Origin_Level2, Reprogramming_Vector_Type) %>%
   unique() %>%
-  right_join( cibersort.results ) %>%
+  right_join( cibersort.results.thanneer %>% dplyr::rename(UID = Input_Sample) ) %>%
   as.data.frame() %>%
-  filter(DifferentiationStage == 'EB') %>%
   spread(ReferenceState, Fraction)
 
 factor_covars = c("Cell_Line_Type", "Cell_Line_of_Origin", "Tissue_of_Origin", "Reprogramming_Gene_Combination", 
                   "Culture_Conditions", "Donor_Life_Stage", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Vector_Type")
-cont_covars = c("ECTO", "MESO")
+cont_covars = c("ECTO", "MESO","DE","MESO5")
 
 covars1 = covars[,c(factor_covars, cont_covars)]
 covars1[,factor_covars] = lapply(covars[,factor_covars], as.factor)
@@ -352,4 +361,31 @@ rownames(covars1) = covars$C4_Cell_Line_ID
 COVARIATES.CORRELATION = getAssociationStatistics(covars1, PVAL = 0.1)
 ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.5, row.width=0.1)
 ```
-No Association between any covariates is observed
+A slight gender effect is observed
+
+Association test between different covariates and stratified diff state scores of EBs (based only on Nathans signature)
+```{r associate.with.covars1, fig.height=10, fig.width=10}
+covars = covariates$mrna %>%
+  filter(Diffname_short == 'EB') %>%
+  dplyr::select(UID, Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin, 
+                Reprogramming_Gene_Combination, Culture_Conditions, Donor_Life_Stage,
+                Gender, Cell_Type_of_Origin_Level2, Reprogramming_Vector_Type) %>%
+  unique() %>%
+  right_join( cibersort.results.nathan %>% dplyr::rename(UID = Input_Sample) ) %>%
+  as.data.frame() %>%
+  spread(ReferenceState, Fraction)
+
+factor_covars = c("UID","Cell_Line_Type", "Cell_Line_of_Origin", "Tissue_of_Origin", "Reprogramming_Gene_Combination", 
+                  "Culture_Conditions", "Donor_Life_Stage", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Vector_Type")
+cont_covars = c("ECTO", "MESO","DE","MESO5")
+
+covars1 = covars[,c(factor_covars, cont_covars)]
+covars1[,factor_covars] = lapply(covars[,factor_covars], as.factor)
+covars1[,cont_covars] = lapply(covars[,cont_covars], as.numeric)
+rownames(covars1) = covars$UID
+covars1$UID = NULL
+
+COVARIATES.CORRELATION = getAssociationStatistics(covars1, PVAL = 0.1)
+ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.5, row.width=0.1)
+```
+No significant association with any covariates is observed
