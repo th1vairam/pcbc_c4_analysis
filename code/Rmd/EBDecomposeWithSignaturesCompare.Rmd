@@ -1,0 +1,355 @@
+---
+title: Stratify EBs using markers of pluripotency and germline stages (compare Thanneer, Nathan and Bruce analysis)
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: pdf_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'EBDecomposeWithSignaturesCompare.Rmd',
+                                 parentId = "syn5194922",
+                                 entityName = "Decompose EBs (Comparison)")
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+
+library(fpc)
+library(WGCNA)
+library(flashClust)
+
+library('RColorBrewer')
+library('ggplot2')
+library('gplots')
+library('limma')
+library('edgeR')
+library('ctv')
+library('psych')
+library('reshape2')
+library('vcd')
+library('erer')
+library('fpc')
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+library(SNFtool)
+library(igraph)
+library(Vennerable)
+
+library(biomaRt)
+
+synapseLogin()
+
+library(circlize)
+colfunc <- colorRampPalette(c("white", "red"))
+
+# Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE,
+  fig.align = 'left',
+  results = 'asis',
+  out.width = '8in')
+```
+
+```{r synapseStore.params, include=FALSE}
+parentId = "syn5194922"
+ALL_USED_IDs = c()
+
+thisFileName = 'EBDecomposeWithSignaturesCompare.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='publication')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+```
+### Data download from synapse
+#### Get raw logCPM counts from synapse
+```{r getRawCount, include=FALSE}
+expr.id = c(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
+expr = lapply(expr.id, downloadFile)
+```
+
+#### Get covariates from synapse
+```{r covars, include=FALSE}
+covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669')
+covariates.table.id = c(mrna = 'syn3156503', mirna = 'syn3219876', methyl = 'syn3156828')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
+covariates = lapply(covariates.id, downloadFile)
+covariates.table = lapply(covariates.table.id, function(x){
+  synTableQuery(paste('select UID,C4_Cell_Line_ID from',x))@values
+})
+
+covariates = mapply(function(x,y){
+  left_join(x,y)
+},covariates, covariates.table)
+```
+
+#### Get pluripotency and germline specific markers from synapse
+```{r get.markers}
+thanneer.signatures = downloadFile('syn7187534')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
+```
+
+```{r get.markers2}
+nathan.signatures = downloadFile('syn7213012')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7213012')
+
+# Define biomart object
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl", host = "www.ensembl.org")
+
+# Query biomart
+Ensemble2HGNC <- getBM(attributes = c("ensembl_gene_id", "hgnc_symbol"),
+                       filters = "ensembl_gene_id", values = nathan.signatures$UID,
+                       mart = mart)
+nathan.signatures = nathan.signatures %>%
+  dplyr::rename(ensembl_gene_id = UID, from.state = tissue) %>%
+  left_join(Ensemble2HGNC %>% dplyr::rename(feature = hgnc_symbol))
+```
+
+```{r feature.overlap}
+thanneer.list = thanneer.signatures %>%
+  filter(feature.assay == 'mrna') %>%
+  dlply(.(from.state), .fun = function(x){unique(x$feature)})
+
+nathan.list = nathan.signatures %>%
+  dlply(.(from.state), .fun = function(x){unique(x$feature)})
+
+writeLines('DE')
+plot(Venn(list(Thanneer = thanneer.list$DE, Nathan = nathan.list$DE)))
+
+writeLines('ECTO')
+plot(Venn(list(Thanneer = thanneer.list$ECTO, Nathan = nathan.list$ECTO)))
+
+writeLines('MESO')
+plot(Venn(list(Thanneer = thanneer.list$MESO, Nathan = unique(c(nathan.list$MESO15, nathan.list$MESO30)))))
+```
+
+### Merge expression data to unique cell line ID
+#### Merge expression data
+```{r expr.merge}
+# Reorganise expression data for both the signatures
+assay = 'mrna'
+covar = covariates[[assay]]
+    
+exp.thanneer = expr[[assay]]
+rownames(exp.thanneer) = exp.thanneer[,1]
+exp.thanneer[,1] = NULL
+exp.thanneer = exp.thanneer[rownames(exp.thanneer) %in% thanneer.signatures$feature,]
+    
+exp.nathan = expr[[assay]]
+rownames(exp.nathan) = exp.nathan[,1]
+exp.nathan[,1] = NULL
+exp.nathan = exp.nathan[rownames(exp.nathan) %in% nathan.signatures$feature,]
+```
+
+### Characterise EBs using pluripotency and germline signatures
+Since, EBs are derivatives of pluripotent and/or germlayer states, we characterised our EBs as a mixture model of the above identified signatures
+
+PCA of mrna expression from Thanneer's signature
+```{r pca.ebs1}
+exp.thanneer = na.omit(exp.thanneer)
+
+tmp.EB = exp.thanneer[,covar$UID[covar$Diffname_short == 'EB']]
+tmp.notEB = exp.thanneer[,covar$UID[covar$Diffname_short %in% c('MESO15','MESO30','DE','ECTO','MESO5')]]
+
+# Reproject all eb samples in to the above PC space
+PC.gene.space = prcomp(t(tmp.notEB), scale. = T, center = T)
+eb.pc = sapply(1:dim(exp.thanneer)[2], function(i, expr.eb, pc.rotation){
+  lm(expr ~ 0 + ., cbind(data.frame(expr = scale(expr.eb[rownames(pc.rotation),i])), pc.rotation))$coefficients
+}, exp.thanneer, PC.gene.space$rotation) %>% t
+rownames(eb.pc) = colnames(exp.thanneer)
+eb.pc.thanneer = rownameToFirstColumn(eb.pc, 'UID') %>%
+  left_join(covar %>% dplyr::select(UID, Diffname_short)) 
+
+p = ggplot(eb.pc.thanneer, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname_short)) + geom_point()
+p = p + scale_shape_manual(values = 1:7)
+p
+```
+
+PCA of mrna expression from Nathan's signature
+```{r pca.ebs2}
+exp.nathan = na.omit(exp.nathan)
+
+tmp.EB = exp.nathan[,covar$UID[covar$Diffname_short == 'EB']]
+tmp.notEB = exp.nathan[,covar$UID[covar$Diffname_short %in% c('MESO15','MESO30','DE','ECTO','MESO5')]]
+
+# Reproject all eb samples in to the above PC space
+PC.gene.space = prcomp(t(tmp.notEB), scale. = T, center = T)
+eb.pc = sapply(1:dim(exp.nathan)[2], function(i, expr.eb, pc.rotation){
+  lm(expr ~ 0 + ., cbind(data.frame(expr = scale(expr.eb[rownames(pc.rotation),i])), pc.rotation))$coefficients
+}, exp.nathan, PC.gene.space$rotation) %>% t
+rownames(eb.pc) = colnames(exp.nathan)
+eb.pc.nathan = rownameToFirstColumn(eb.pc, 'UID') %>%
+  left_join(covar %>% dplyr::select(UID, Diffname_short)) 
+
+p = ggplot(eb.pc.nathan, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname_short)) + geom_point()
+p = p + scale_shape_manual(values = 1:7)
+p
+
+tmp = dplyr::select(eb.pc.thanneer, UID, Diffname_short, PC2) %>%
+  dplyr::rename(Thanneer.PC2 = PC2) %>%
+  full_join( dplyr::select(eb.pc.nathan, UID, Diffname_short, PC2) %>%
+               dplyr::rename(Nathan.PC2 = PC2)) %>%
+  # gather(PC, value, -UID, -Diffname_short) %>%
+  filter(Diffname_short == 'EB')
+ggplot(tmp, aes(x = Thanneer.PC2, Nathan.PC2)) + geom_point() + geom_smooth(method = lm)
+```
+Theres a very high concordance between the EB decompostion based on the two signatures
+### Decompose EBs using CIBERSORT analysis
+Normalise and prepare data for CIBERSORT
+```{r cibersort.prep1, include=FALSE}
+# Get signature expression 
+tmp.EB = exp.thanneer[,covar$UID[covar$Diffname_short == 'EB']]
+tmp.notEB = exp.thanneer[,covar$UID[covar$Diffname_short %in% c('MESO15','MESO30','DE','ECTO','MESO5')]]
+
+signature.expr = tmp.notEB %>% rownameToFirstColumn('hgnc_symbol')
+
+mixture.expr = tmp.EB %>% rownameToFirstColumn('hgnc_symbol')
+
+phenotype = matrix(2, 4, dim(signature.expr)[2])
+rownames(phenotype) = c('MESO', 'ECTO','DE','MESO5')
+
+rownames(covar) = covar$UID
+diffState = covar[colnames(signature.expr),'Diffname_short']
+phenotype['MESO',diffState %in% c('MESO15','MESO30')] = 1
+phenotype['ECTO',diffState == 'ECTO'] = 1
+phenotype['DE',diffState == 'DE'] = 1
+phenotype['MESO5',diffState == 'MESO5'] = 1
+
+CODE <- Folder(name = 'Decompose EBs (Comparison)', parentId = "syn5194922")
+CODE <- synStore(CODE)
+
+write.table(signature.expr, file = 'ThanneerSignatureExpr.txt',sep = '\t', row.names=F, quote=F)
+obj = File('ThanneerSignatureExpr.txt', name = 'Thanneer Signature Matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
+
+write.table(phenotype, file = 'ThanneerPhenotype.txt',sep = '\t', row.names=F, quote=F, col.names=F)
+obj = File('ThanneerPhenotype.txt', name = 'Thanneer Phenotype Matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
+
+write.table(mixture.expr, file = 'ThanneerMixtureExpr.txt',sep = '\t', row.names=F, quote=F)
+obj = File('ThanneerMixtureExpr.txt', name = 'Thanneer Mixture Matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
+```
+
+```{r cibersort.prep2, include=FALSE}
+# Get signature expression 
+tmp.EB = exp.nathan[,covar$UID[covar$Diffname_short == 'EB']]
+tmp.notEB = exp.nathan[,covar$UID[covar$Diffname_short %in% c('MESO15','MESO30','DE','ECTO','MESO5')]]
+
+signature.expr = tmp.notEB %>% rownameToFirstColumn('hgnc_symbol')
+
+mixture.expr = tmp.EB %>% rownameToFirstColumn('hgnc_symbol')
+
+phenotype = matrix(2, 4, dim(signature.expr)[2])
+rownames(phenotype) = c('MESO', 'ECTO','DE','MESO5')
+
+rownames(covar) = covar$UID
+diffState = covar[colnames(signature.expr),'Diffname_short']
+phenotype['MESO',diffState %in% c('MESO15','MESO30')] = 1
+phenotype['ECTO',diffState == 'ECTO'] = 1
+phenotype['DE',diffState == 'DE'] = 1
+phenotype['MESO5',diffState == 'MESO5'] = 1
+
+write.table(signature.expr, file = 'NathanSignatureExpr.txt',sep = '\t', row.names=F, quote=F)
+obj = File('NathanSignatureExpr.txt', name = 'Nathan Signature Matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
+
+write.table(phenotype, file = 'NathanPhenotype.txt',sep = '\t', row.names=F, quote=F, col.names=F)
+obj = File('NathanPhenotype.txt', name = 'Nathan Phenotype Matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
+
+write.table(mixture.expr, file = 'NathanMixtureExpr.txt',sep = '\t', row.names=F, quote=F)
+obj = File('NathanMixtureExpr.txt', name = 'Nathan Mixture Matrix', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
+```
+
+```{r cibersort.output, fig.height=8, fig.width=8}
+cibersort.results = downloadFile('syn7187931') %>%
+  plyr::rename(c('Input Sample' = 'Input_Sample')) %>%
+  dplyr::select(Input_Sample, MESO, ECTO) %>%
+  gather(DiffState, Value, -Input_Sample) %>%
+  dplyr::rename(Fraction = Value, ReferenceState = DiffState) %>%
+  tidyr::separate(Input_Sample, c('C4_Cell_Line_ID','DifferentiationStage'), sep = '\\.')
+
+p = ggplot(cibersort.results %>% 
+             filter(DifferentiationStage == 'EB'), aes(x = C4_Cell_Line_ID, y = Fraction, fill = ReferenceState)) + geom_bar(stat = 'identity')
+p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+p = p + facet_grid(DifferentiationStage~.)
+p
+
+tmp = eb.pc %>%
+  tidyr::separate(C4_Cell_Line_ID, c("C4_Cell_Line_ID", "DifferentiationStage"),sep = '\\.') %>%
+  dplyr::select(C4_Cell_Line_ID, DifferentiationStage, PC2) %>%
+  inner_join(cibersort.results) %>%
+  spread(ReferenceState, Fraction) %>%
+  filter(DifferentiationStage == 'EB')
+
+writeLines('Relationship between ecto scores from cibersort and pc2 from the decomposition of signatures')
+p = ggplot(tmp, aes(y = PC2, x = ECTO)) + geom_point() + geom_smooth(method = lm)
+p = p + geom_text(aes(label=C4_Cell_Line_ID),hjust=0, vjust=0)
+p
+```
+
+Association test between different covariates and stratified diff state scores of EBs
+```{r associate.with.covars, fig.height=10, fig.width=10}
+covars = covariates$mrna %>%
+  filter(Diffname_short == 'EB') %>%
+  dplyr::select(C4_Cell_Line_ID, Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin, 
+                Reprogramming_Gene_Combination, Culture_Conditions, Donor_Life_Stage,
+                Gender, Cell_Type_of_Origin_Level2, Reprogramming_Vector_Type) %>%
+  unique() %>%
+  right_join( cibersort.results ) %>%
+  as.data.frame() %>%
+  filter(DifferentiationStage == 'EB') %>%
+  spread(ReferenceState, Fraction)
+
+factor_covars = c("Cell_Line_Type", "Cell_Line_of_Origin", "Tissue_of_Origin", "Reprogramming_Gene_Combination", 
+                  "Culture_Conditions", "Donor_Life_Stage", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Vector_Type")
+cont_covars = c("ECTO", "MESO")
+
+covars1 = covars[,c(factor_covars, cont_covars)]
+covars1[,factor_covars] = lapply(covars[,factor_covars], as.factor)
+covars1[,cont_covars] = lapply(covars[,cont_covars], as.numeric)
+rownames(covars1) = covars$C4_Cell_Line_ID
+
+COVARIATES.CORRELATION = getAssociationStatistics(covars1, PVAL = 0.1)
+ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.5, row.width=0.1)
+```
+No Association between any covariates is observed
