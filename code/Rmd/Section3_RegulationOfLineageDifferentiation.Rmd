@@ -257,7 +257,7 @@ all.int.notMESO  = filter(all.int, to.state %in% c('DE','ECTO','EB','MESO5'))
 all.int.MESO = all.int.MESO %>%
   ddply(.(feature, target), .fun = function(x){
     if(dim(x)[1] == 2)
-      x = top_n(x,1,abs(coexpression),abs(target.lfc))
+        x = top_n(x,1,abs(target.lfc))
     else
       return(NULL)
   })
@@ -308,5 +308,5 @@ obj = File('ActiveInteractions.tsv',
 obj = synStore(obj, 
                activityName = 'Network Identification', 
                executed = thisFile, 
-               used = ALL_USED_IDs)
+               used = as.character(ALL_USED_IDs))
 ```
