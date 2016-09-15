@@ -124,95 +124,68 @@ state.specific.signatures = downloadFile('syn7187534')
 ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
 ```
 
-### Merge expression data to unique cell line ID
-#### Merge expression data
-```{r expr.merge}
-# Summarise expression data to unique cell line IDs
-orderedDiffState = sort(c("SC", "DE", "MESO15", "MESO30", "ECTO", "EB"))
-merged.expr = list()
-for (diffstate in orderedDiffState){
-  merged.expr[[diffstate]] = list()
-  for (assay in c('mrna','mirna','methyl')){
-    covar = filter(covariates[[assay]], Diffname_short == diffstate)
-    
-    exp = expr[[assay]]
-    
-    rownames(exp) = exp[,1]
-    exp[,1] = NULL
-    exp = exp[rownames(exp) %in% state.specific.signatures$feature,]
-    
-    merged.expr[[diffstate]][[assay]] = ddply(covar %>% droplevels, .(C4_Cell_Line_ID), .fun = function(x, exp){
-      rowMeans(exp[,x$UID,drop=F], na.rm=T)
-    }, exp)
-  }
-}
-
-merged.expr$MESO15$methyl = NULL
-merged.expr$MESO30$methyl = NULL
-intersect.ids = lapply(merged.expr, function(exp){
-  lapply(exp, function(x){x$C4_Cell_Line_ID }) %>%
-    Reduce(intersect,.)
-})
-
-merged.expr = lapply(merged.expr, function(x){
-  join_all(x, type='inner')
-})
-
-merged.expr = mapply(function(x,y){
-  y$C4_Cell_Line_ID = paste(y$C4_Cell_Line_ID, x, sep = '.')
-  return(y)
-}, names(merged.expr), merged.expr, SIMPLIFY = F) %>%
-  rbindlist(idcol = 'Diffname_short', use.names = T, fill = T)
-```
-
 ### Characterise EBs using pluripotency and germline signatures
-Since, EBs are derivatives of pluripotent and/or germlayer states, we characterised our EBs as a mixture model of the above identified signatures
+Since, EBs are derivatives of pluripotent and/or germlayer states, we characterised our EBs as a mixture model of the above identified signatures but with only genes expressed atleast in 10% of EB samples
 
-```{r pca.ebs}
-tmp = merged.expr %>%
-  dplyr::select(-Diffname_short, -C4_Cell_Line_ID) %>%
-  t
-colnames(tmp) = merged.expr$C4_Cell_Line_ID
+```{r pca.ebs.mrna}
+# Get mrna expression
+tmp = expr$mrna %>%
+  filter() %>%
+  dplyr::select(-GeneName) %>%
+  as.matrix()
+rownames(tmp) = expr$mrna$GeneName
 tmp = na.omit(tmp)
 
-tmp.EB = tmp[,grep('.EB',colnames(tmp))]
-tmp.notEB = tmp[,setdiff(1:dim(tmp)[2], grep('.EB',colnames(tmp)))]
+# Find signature genes that are atleast expressed in 10% of EB samples
+ind.10percent = which(rowSums(tmp[,covariates$mrna$UID[covariates$mrna$Diffname_short == 'EB']] <= 0) > 5)
+ind.signatures = which(rownames(tmp) %in% state.specific.signatures$feature)
+ind = intersect(ind.10percent, ind.signatures)
+
+# Subset mrna expression
+tmp.EB = tmp[ind, covariates$mrna$UID[covariates$mrna$Diffname_short == 'EB']]
+tmp.notEB = tmp[ind, covariates$mrna$UID[covariates$mrna$Diffname_short %in% c('DE','MESO15','MESO30','ECTO')]]
 
 # Reproject all eb samples in to the above PC space
 PC.gene.space = prcomp(t(tmp.notEB), scale. = T, center = T)
-eb.pc = sapply(1:dim(tmp)[2], function(i, expr.eb, pc.rotation){
-  lm(expr ~ 0 + ., cbind(data.frame(expr = scale(expr.eb[rownames(pc.rotation),i])), pc.rotation))$coefficients
-}, tmp, PC.gene.space$rotation) %>% t
-rownames(eb.pc) = colnames(tmp)
-eb.pc = rownameToFirstColumn(eb.pc, 'C4_Cell_Line_ID') %>%
-  left_join(merged.expr %>%
-              dplyr::select(Diffname_short, C4_Cell_Line_ID)) 
+expr.all = cbind(tmp.EB, tmp.notEB)
+eb.pc = sapply(1:dim(expr.all)[2], function(i, expr.all, pc.rotation){
+  lm(expr ~ 0 + ., cbind(data.frame(expr = scale(expr.all[rownames(pc.rotation),i])), pc.rotation))$coefficients
+}, expr.all, PC.gene.space$rotation) %>% t
+rownames(eb.pc) = colnames(expr.all)
+
+eb.pc = rownameToFirstColumn(eb.pc, 'UID') %>%
+  left_join(covariates$mrna %>%
+              dplyr::select(UID, Diffname_short, C4_Cell_Line_ID)) 
 
 p = ggplot(eb.pc, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname_short)) + geom_point()
+p = p + scale_shape_manual(values = 1:7)
 p
 ```
-From the above PC plot we can conclude that most of our EBs are close to late mesoderm states at day 15 and 30. However, as we can see, they are stratified in the axis of mesoderm and ectoderm signatures. Therefore it is to say that some of our EBs show more mesoderm like and the others are less mesoderm/ more ectoderm like signatures. Inorder to quantify this degree of seperation we used cibersort analysis to stratify EBs based on ecto and mesoderm signatures.
+From the above PC plot we can see that EBs are stratified in the axis of mesoderm and ectoderm signatures. Therefore it is to say that some of our EBs show more mesoderm like and the others are less mesoderm/ more ectoderm like signatures. Inorder to quantify this degree of seperation we used cibersort analysis to stratify EBs based on ecto and mesoderm signatures.
 
 Normalise and prepare data for CIBERSORT
 ```{r cibersort.prep, include=FALSE}
 # Standard normalisation of signatures
-ind.expr = c(grep('.ECTO', colnames(tmp.notEB)), grep('.MESO', colnames(tmp.notEB)))
+ind.expr = covariates$mrna$UID[covariates$mrna$Diffname_short %in% c('ECTO', 'MESO15', 'MESO30', 'DE')]
 signature.expr = tmp.notEB[,ind.expr] %>%
   rownameToFirstColumn('hgnc_symbol')
 
-mixture.expr = join_all(list(tmp.notEB[,ind.expr] %>%
-                               rownameToFirstColumn('hgnc_symbol'),
-                             tmp.EB %>%
-                               rownameToFirstColumn('hgnc_symbol')), type = 'full')
+# mixture.expr = join_all(list(tmp.notEB[,ind.expr] %>%
+#                                rownameToFirstColumn('hgnc_symbol'),
+#                              tmp.EB %>%
+#                                rownameToFirstColumn('hgnc_symbol')), type = 'full')
+mixture.expr = tmp.EB %>% rownameToFirstColumn('hgnc_symbol')
 
-phenotype = matrix(2, 2, dim(signature.expr)[2])
-rownames(phenotype) = c('MESO', 'ECTO')
-ind = c(grep('MESO15', colnames(signature.expr)),
-        grep('MESO30', colnames(signature.expr)))
-phenotype['MESO',ind] = 1
+phenotype = matrix(2, 3, dim(signature.expr)[2])
+rownames(phenotype) = c('MESO', 'ECTO','DE')
+ind.expr = covariates$mrna$UID[covariates$mrna$Diffname_short %in% c('MESO15', 'MESO30')]
+phenotype['MESO',colnames(signature.expr) %in% ind.expr] = 1
 
-ind = grep('ECTO', colnames(signature.expr))
-phenotype['ECTO',ind] = 1
+ind.expr = covariates$mrna$UID[covariates$mrna$Diffname_short %in% c('ECTO')]
+phenotype['ECTO',colnames(signature.expr) %in% ind.expr] = 1
+
+ind.expr = covariates$mrna$UID[covariates$mrna$Diffname_short %in% c('DE')]
+phenotype['DE',colnames(signature.expr) %in% ind.expr] = 1
 
 phenotype[,1] = rownames(phenotype)
 
@@ -234,27 +207,29 @@ obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = A
 
 ```{r cibersort.output, fig.height=8, fig.width=8}
 cibersort.results = downloadFile('syn7187931') %>%
-  plyr::rename(c('Input Sample' = 'Input_Sample')) %>%
-  dplyr::select(Input_Sample, MESO, ECTO) %>%
-  gather(DiffState, Value, -Input_Sample) %>%
-  dplyr::rename(Fraction = Value, ReferenceState = DiffState) %>%
-  tidyr::separate(Input_Sample, c('C4_Cell_Line_ID','DifferentiationStage'), sep = '\\.')
+  plyr::rename(c('Input Sample' = 'UID')) %>%
+  dplyr::select(UID, MESO, ECTO, DE) 
+cibersort.results$UID = factor(cibersort.results$UID, 
+                               levels = cibersort.results$UID[order(cibersort.results$MESO)])
+cibersort.results = cibersort.results %>%
+  gather(DiffState, Value, -UID) %>%
+  dplyr::rename(Fraction = Value, ReferenceState = DiffState)
 
-p = ggplot(cibersort.results %>% 
-             filter(DifferentiationStage == 'EB'), aes(x = C4_Cell_Line_ID, y = Fraction, fill = ReferenceState)) + geom_bar(stat = 'identity')
+p = ggplot(cibersort.results, aes(x = UID, y = Fraction, fill = ReferenceState)) + geom_bar(stat = 'identity')
 p = p + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-p = p + facet_grid(DifferentiationStage~.)
 p
 
 tmp = eb.pc %>%
-  tidyr::separate(C4_Cell_Line_ID, c("C4_Cell_Line_ID", "DifferentiationStage"),sep = '\\.') %>%
-  dplyr::select(C4_Cell_Line_ID, DifferentiationStage, PC2) %>%
   inner_join(cibersort.results) %>%
-  spread(ReferenceState, Fraction) %>%
-  filter(DifferentiationStage == 'EB')
+  spread(ReferenceState, Fraction) 
 
 writeLines('Relationship between ecto scores from cibersort and pc2 from the decomposition of signatures')
 p = ggplot(tmp, aes(y = PC2, x = ECTO)) + geom_point() + geom_smooth(method = lm)
+p = p + geom_text(aes(label=C4_Cell_Line_ID),hjust=0, vjust=0)
+p
+
+writeLines('Relationship between meso scores from cibersort and pc1 from the decomposition of signatures')
+p = ggplot(tmp, aes(y = PC1, x = MESO)) + geom_point() + geom_smooth(method = lm)
 p = p + geom_text(aes(label=C4_Cell_Line_ID),hjust=0, vjust=0)
 p
 ```
@@ -263,25 +238,26 @@ Association test between different covariates and stratified diff state scores o
 ```{r associate.with.covars, fig.height=10, fig.width=10}
 covars = covariates$mrna %>%
   filter(Diffname_short == 'EB') %>%
-  dplyr::select(C4_Cell_Line_ID, Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin, 
+  dplyr::select(UID, C4_Cell_Line_ID, Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin, 
                 Reprogramming_Gene_Combination, Culture_Conditions, Donor_Life_Stage,
                 Gender, Cell_Type_of_Origin_Level2, Reprogramming_Vector_Type) %>%
   unique() %>%
   right_join( cibersort.results ) %>%
   as.data.frame() %>%
-  filter(DifferentiationStage == 'EB') %>%
   spread(ReferenceState, Fraction)
 
 factor_covars = c("Cell_Line_Type", "Cell_Line_of_Origin", "Tissue_of_Origin", "Reprogramming_Gene_Combination", 
                   "Culture_Conditions", "Donor_Life_Stage", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Vector_Type")
-cont_covars = c("ECTO", "MESO")
+cont_covars = c("ECTO", "MESO","DE")
 
 covars1 = covars[,c(factor_covars, cont_covars)]
 covars1[,factor_covars] = lapply(covars[,factor_covars], as.factor)
 covars1[,cont_covars] = lapply(covars[,cont_covars], as.numeric)
-rownames(covars1) = covars$C4_Cell_Line_ID
+rownames(covars1) = covars$UID
 
 COVARIATES.CORRELATION = getAssociationStatistics(covars1, PVAL = 0.1)
 ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.5, row.width=0.1)
+
+plot(covars1$Cell_Line_Type, covars1$DE, ylab = 'Fraction of DE')
 ```
-No Association between any covariates is observed
+Association between cell line type is observed
