@@ -107,7 +107,12 @@ covariates = mapply(function(x,y){
 ```{r TFs}
 TFs = downloadFile('syn6040938')$feature
 ALL_USED_IDs = c(ALL_USED_IDs, 'syn6040938')
+```
 
+#### Get pluripotency and germline specific markers from synapse
+```{r get.markers}
+state.specific.signatures = downloadFile('syn7187534')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
 ```
 
 #### Get differential expression results from synapse
@@ -263,7 +268,9 @@ all.int.MESO = all.int.MESO %>%
   })
 all.int.MESO$to.state = 'MESO'
 all.int = rbindlist(list(all.int.notMESO, all.int.MESO), fill = T, use.names = T)
+```
 
+```{r plot1}
 relative.control = all.int %>%
   ddply(.(to.state, target.assay, feature.assay, target.direction), .fun = function(x){
     count = data.frame(count = x %>%
@@ -277,20 +284,152 @@ total.diffexp = group_by(all.int, to.state, target.assay) %>%
 tmp = full_join(relative.control, total.diffexp) %>%
   dplyr::mutate(percent = 100*(count/count.all))
 
+sample.scaling.factor = covariates$mrna$Diffname_short %>%
+  factor
+levels(sample.scaling.factor) = c('DE', 'EB', 'ECTO', 'MESO', 'MESO', 'MESO5', 'SC')
+sample.scaling.factor = sample.scaling.factor %>%
+  summary %>%
+  rownameToFirstColumn('to.state') %>%
+  dplyr::rename(fraction = DF)
+sample.scaling.factor$fraction = sample.scaling.factor$fraction/sum(sample.scaling.factor$fraction)
+
 p = tmp %>% 
+  left_join(sample.scaling.factor) %>% 
+  dplyr::mutate(percent = percent * fraction) %>% 
   filter(target.assay == 'mrna') %>%
-  ggplot(aes(x = feature.assay, y = percent, fill = to.state))
-p = p + geom_bar(stat = 'identity', position = 'dodge') + ggtitle('Relative regulation of mrna')
+  ggplot(aes(x = to.state, y = percent, fill = to.state))
+p = p + geom_bar(stat = 'identity', position = 'dodge') + ggtitle('Relative regulation of mrna in SC differentiation')
+p = p + facet_grid(feature.assay~.+target.direction, scales = 'free_y') + ylab('Weighted percentage of genes differentially expressed') 
+p = p + xlab('Differentiation State') + theme(legend.position = 'NONE')
 p
 
 p = tmp %>% 
-  filter(target.assay == 'mrna', to.state %in% c('DE','ECTO','MESO')) %>%
-  ggplot(aes(x = feature.assay, y = percent, fill = to.state))
-p = p + geom_bar(stat = 'identity', position = 'dodge') + ggtitle('Relative regulation of mrna')
+  left_join(sample.scaling.factor) %>% 
+  dplyr::mutate(percent = percent * fraction) %>% 
+  filter(target.assay == 'mrna', ! (to.state %in% c('EB', 'MESO5'))) %>%
+  ggplot(aes(x = to.state, y = percent, fill = to.state))
+p = p + geom_bar(stat = 'identity', position = 'dodge') + ggtitle('Relative regulation of mrna in SC differentiation')
+p = p + facet_grid(feature.assay~.+target.direction, scales = 'free_y') + ylab('Weighted percentage of genes differentially expressed') 
+p = p + xlab('Differentiation State') + theme(legend.position = 'NONE')
 p
+```
 
-p = p + facet_grid(.~target.direction)
-p
+### Enrichment Analysis
+```{r enrichment}
+## Function to compute Fishers enrichment analysis
+fisherEnrichment <- function(genesInSignificantSet, # A character vector of differentially expressed or some significant genes to test
+                             genesInGeneSet, # A character vector of genes in gene set like GO annotations, pathways etc...
+                             genesInBackground # Background genes that are 
+                             ){
+  genesInSignificantSet = intersect(genesInSignificantSet, genesInBackground) # back ground filtering
+  genesInNonSignificantSet = base::setdiff(genesInBackground, genesInSignificantSet)
+  genesInGeneSet = intersect(genesInGeneSet, genesInBackground) # back ground filtering
+  genesOutGeneSet = base::setdiff(genesInBackground,genesInGeneSet)
+
+  pval = fisher.test(
+    matrix(c(length(intersect(genesInGeneSet, genesInSignificantSet)),             
+             length(intersect(genesInGeneSet, genesInNonSignificantSet)),
+             length(intersect(genesOutGeneSet, genesInSignificantSet)),
+             length(intersect(genesOutGeneSet, genesInNonSignificantSet))), 
+           nrow=2, ncol=2),
+    alternative="greater")
+
+  OR = (length(intersect(genesInGeneSet, genesInSignificantSet)) * length(intersect(genesOutGeneSet, genesInNonSignificantSet))) / (length(intersect(genesInGeneSet, genesInNonSignificantSet)) * length(intersect(genesOutGeneSet, genesInSignificantSet)))
+  return(data.frame(pval = as.numeric(pval$p.value),
+                    ngenes = as.numeric(length(genesInGeneSet)),
+                    noverlap = as.numeric(length(intersect(genesInGeneSet, genesInSignificantSet))),
+                    OR = as.numeric(OR)))
+  }
+
+## Get gene sets for enrichment from synapse
+geneset.id = 'syn4867851'
+ALL_USED_IDs = c(ALL_USED_IDs, geneset.id)
+load(synGet(geneset.id)@filePath)
+
+# Choose gene set category for testing
+gsets = c("GO_Biological_Process", "KEGG_2015", "Reactome", "WikiPathways_2015")
+GeneSets = GeneSets[gsets]
+
+## Get background genesets
+genesInBackground = expr$mrna$GeneName
+GeneSets = filterGeneSets(GeneSets, genesInBackground)
+
+## Get gene sets to test
+geneSetsToTest = all.int %>%
+  dplyr::mutate(to.state = gsub('MESO15','MESO',to.state),
+                to.state = gsub('MESO30','MESO',to.state),
+                target.direction = factor(target.direction, labels = c('DOWN','UP'))) %>%
+  dplyr::select(to.state, feature.assay, target.direction, target) %>%
+  unique %>%
+  dlply(.(to.state, feature.assay, target.direction), .fun = function(x){
+    unique(x$target)
+  })
+
+# Perform enrichment analysis
+enrichResults = lapply(geneSetsToTest, function(x, genesInBackground){
+  tmp = lapply(GeneSets, function(y, comp, genesInBackground){
+    tmp = t(sapply(y, fisherEnrichment, comp, genesInBackground))
+    tmp = rownameToFirstColumn(tmp,'GeneSetName')
+    return(tmp)
+  }, x, genesInBackground) %>%
+    rbindlist(use.names=T, fill = T, idcol = 'CategoryName')
+  tmp$fdr = p.adjust(tmp$pval, method = 'fdr')
+  tmp$pval = as.numeric(tmp$pval)
+  tmp$ngenes = as.numeric(tmp$ngenes)
+  tmp$noverlap = as.numeric(tmp$noverlap)
+  tmp$OR = as.numeric(tmp$OR)
+  
+  return(tmp)
+}, genesInBackground) %>%
+  rbindlist(use.names=T, fill = T, idcol = 'MarkerSetName')
+```
+
+### Network analysis
+```{r networks}
+# Create state transition networks from edgelist
+all.graphs = all.int %>%
+  dlply(.(to.state), .fun = function(x){
+  g = dplyr::select(x, feature, target) %>%
+    filter(!is.na(feature), feature != target) %>%
+    as.matrix() %>%
+    igraph::graph_from_edgelist()
+})
+names(all.graphs)
+
+td = igraph::degree(all.graphs$DE, mode = 'all')
+id = igraph::degree(all.graphs$DE, mode = 'in')
+od = igraph::degree(all.graphs$DE, mode = 'out')
+
+# common.to.all = graph.intersection(all.graphs$DE, all.graphs$ECTO, keep.all.vertices = FALSE) %>%
+#   graph.intersection(all.graphs$MESO, keep.all.vertices = FALSE) 
+# 
+# specific.to.DE = graph.difference(all.graphs$DE, all.graphs$ECTO, keep.all.vertices = FALSE) %>%
+#   graph.difference(all.graphs$MESO, keep.all.vertices = FALSE)
+
+g = all.graphs$DE
+  
+scc = components(g)
+scc.df = rownameToFirstColumn(scc[[1]], 'feature') %>% 
+  dplyr::rename(Module = DF)
+
+glist = state.specific.signatures %>%
+  filter(from.state %in% c('SC','DE')) %>%
+  dplyr::select(feature, feature.assay, from.state) %>%
+  left_join(scc.df) %>%
+  filter(!is.na(Module))
+  
+int.list = all.int %>%
+  filter(to.state == 'DE', !is.na(feature.lfc)) %>%
+  dplyr::select(feature, target) %>%
+  unique
+
+results = keyDriverAnalysis(int.list %>% as.matrix(),
+                            glist %>% dplyr::select(feature, Module) %>% as.matrix(),
+                            directed = T,
+                            nlayer_expansion = 1,
+                            nlayer_search = 3,
+                            outputfile = 'output.txt',
+                            enrichedNodes_percent_cut = 0.4)
 ```
 
 ### Store intermediate results in synapse
@@ -309,4 +448,16 @@ obj = synStore(obj,
                activityName = 'Network Identification', 
                executed = thisFile, 
                used = as.character(ALL_USED_IDs))
+
+# Store enrichment results to synapse
+enrichResults %>%
+  write.table(file = 'NetworkEnrichmentResults.tsv', sep = '\t', quote=F, row.names = F)
+obj = File('NetworkEnrichmentResults.tsv', 
+           name = 'Network Enrichment Results',
+           parentId = CODE$properties$id)
+obj = synStore(obj, 
+               activityName = 'Network Identification', 
+               executed = thisFile, 
+               used = as.character(ALL_USED_IDs))
+
 ```
