@@ -125,7 +125,7 @@ ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
 ```
 
 ### Characterise EBs using pluripotency and germline signatures
-Since, EBs are derivatives of pluripotent and/or germlayer states, we characterised our EBs as a mixture model of the above identified signatures but with only genes expressed atleast in 10% of EB samples
+Since, EBs are derivatives of pluripotent and/or germlayer states, we characterised our EBs as a mixture model of the above identified signatures
 
 ```{r pca.ebs.mrna}
 # Get mrna expression
@@ -136,10 +136,8 @@ tmp = expr$mrna %>%
 rownames(tmp) = expr$mrna$GeneName
 tmp = na.omit(tmp)
 
-# Find signature genes that are atleast expressed in 10% of EB samples
-ind.10percent = which(rowSums(tmp[,covariates$mrna$UID[covariates$mrna$Diffname_short == 'EB']] <= 0) > 5)
-ind.signatures = which(rownames(tmp) %in% state.specific.signatures$feature)
-ind = intersect(ind.10percent, ind.signatures)
+# Find signature genes
+ind = which(rownames(tmp) %in% state.specific.signatures$feature)
 
 # Subset mrna expression
 tmp.EB = tmp[ind, covariates$mrna$UID[covariates$mrna$Diffname_short == 'EB']]
@@ -206,7 +204,7 @@ obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = A
 ```
 
 ```{r cibersort.output, fig.height=8, fig.width=8}
-cibersort.results = downloadFile('syn7187931') %>%
+cibersort.results = downloadFile('syn7254021') %>%
   plyr::rename(c('Input Sample' = 'UID')) %>%
   dplyr::select(UID, MESO, ECTO, DE) 
 cibersort.results$UID = factor(cibersort.results$UID, 
