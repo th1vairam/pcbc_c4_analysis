@@ -538,7 +538,7 @@ storeFilesInSynapse <- function(covariates, processedCounts,
            WEIGHTS = paste(weights.obj@properties$id, weights.obj@properties$versionNumber, sep = '.')))
 }
 
-STORED.FILES = sapply(COVARIATES[! names(COVARIATES) %in% c('MESO15','MESO30')], 
+STORED.FILES = sapply(COVARIATES[! names(COVARIATES) %in% c('DE', 'MESO15', 'MESO30')], 
                       storeFilesInSynapse, PROCESSED_COUNTS, 
                       VOOM.GENE.EXPRESSION.POSTADJUSTED, CODE)
 ```
