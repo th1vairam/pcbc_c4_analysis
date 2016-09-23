@@ -118,7 +118,6 @@ METADATA = inner_join(METADATA, cibersort.scores) %>%
   group_by(C4_Cell_Line_ID) %>%
   summarise(ecto.scores = mean(ecto.scores, na.rm=T)) %>%
   right_join(METADATA)
-METADATA$ecto.scores[is.na(METADATA$ecto.scores)] = 0.5
 ```
 ### Filter data
 * Keep only public samples
@@ -456,7 +455,8 @@ storeFilesInSynapse <- function(covariates, processedCounts,
     
   # Drop unilevel covariates
   covariates = droplevels(covariates)
-  covariates = covariates[,sapply(covariates, function(x) length(levels(x))) > 1]    
+  covariates = covariates[,c(which(sapply(covariates, function(x) length(levels(x))) > 1),
+                             which(colnames(covariates) %in% ContCovariates))]
   
   # Store Covariates Matrix
   covariates <- rownameToFirstColumn(covariates, 'UID')
