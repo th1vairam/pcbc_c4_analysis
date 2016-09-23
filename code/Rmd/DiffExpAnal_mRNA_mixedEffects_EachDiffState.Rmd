@@ -1,5 +1,5 @@
 ---
-title: "Differential expression analysis for eXpress aligned mRNA data with mixed effects modeling at each differentiation stages"
+title: "Differential expression analysis for eXpress aligned mRNA data with mixed effects modeling at each differentiation stages with EB derived ecto scores"
 author: "Thanneer Perumal"
 date: "`r date()`"
 ---
@@ -26,6 +26,8 @@ library('knitr')
 library('stringr')
 library('synapseClient')
 library('rGithubClient') ## Needs the dev branch
+
+library(CovariateAnalysis)
 
 synapseLogin()
 
