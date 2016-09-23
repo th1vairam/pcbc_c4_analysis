@@ -1,5 +1,5 @@
 ---
-title: "Differential expression analysis for methylation data with mixed effects modeling at SC state with EB derived ecto scores"
+title: "Differential expression analysis for methylation data with mixed effects modeling at SC state with EB polarisation scores"
 author: "Thanneer Perumal"
 date: "`r date()`"
 ---
@@ -63,7 +63,7 @@ FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_T
                      "Originating_Lab", "Donor_ID", "Cell_Type_of_Origin_Level2",
                      "Reprogramming_Vector_Type" )
 
-ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest", "ecto.scores")
+ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest", "eb.pol.scores")
 ```
 Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
 
@@ -86,16 +86,16 @@ ContCovariates = intersect(colnames(COV), ContCovariates)
 COV[,ContCovariates] = lapply(COV[,ContCovariates], as.numeric)
 
 # Get covariates to adjust from synapse
-postAdjustedCovars = c('ecto.scores', 'Reprogramming_Vector_Type', 'Gender')
+postAdjustedCovars = c('eb.pol.scores', 'Reprogramming_Vector_Type', 'Gender')
 
 # Get cell line specific meso-ecto scores and add 1to metadata
 cibersort.scores = read.csv(synGet('syn7254021')@filePath, header = T) %>%
-  dplyr::mutate(ecto.scores = ECTO)  %>%
+  dplyr::mutate(eb.pol.scores = ECTO)  %>%
   dplyr::rename(UID = Input.Sample) %>%
   tidyr::separate(UID, c('C4_Cell_Line_ID','a','b','c'), sep = '\\.') %>%
   dplyr::mutate(C4_Cell_Line_ID = gsub('EB','',C4_Cell_Line_ID)) %>%
   group_by(C4_Cell_Line_ID) %>%
-  summarise(ecto.scores = mean(ecto.scores, na.rm=T))
+  summarise(eb.pol.scores = mean(eb.pol.scores, na.rm=T))
 ALL.USED.IDs <- c(ALL.USED.IDs, 'syn7254021')
 
 # Remove few SC and EB samples form this analysis for validation purpose
@@ -112,8 +112,8 @@ rownames(COV) = COV$UID
 EXPR = EXPR[,rownames(COV)]
 ```
 
-### Differential expression analysis (wrt ecto.scores)
-In each diffState, for each covariate, we fit a linear model using `limma` with only the variables obtained from the covariate analysis. Here primary variable of interest is ecto.scores
+### Differential expression analysis (wrt eb.pol.scores)
+In each diffState, for each covariate, we fit a linear model using `limma` with only the variables obtained from the covariate analysis. Here primary variable of interest is eb.pol.scores
 
 Differential expression with all cell lines
 ```{r diff.exp2, fig.height=20, fig.width=15}
@@ -134,7 +134,7 @@ CORRELATION <- duplicateCorrelation(EXPR, block = COV[, 'Donor_ID'])
 FIT = lmFit(EXPR, design = DESIGN.MAT, correlation = CORRELATION$cor)
 
 # Make contrast  
-CONT <- makeContrasts(contrasts = 'ecto.scores', levels=colnames(DESIGN.MAT))
+CONT <- makeContrasts(contrasts = 'eb.pol.scores', levels=colnames(DESIGN.MAT))
 
 # Refit contrasts
 FIT.CONT <- contrasts.fit(FIT, CONT)
@@ -147,7 +147,7 @@ DEXP <- topTable(FIT.CONT, coef = 1, number = dim(EXPR)[1]) %>%
   rownameToFirstColumn('probeIDs')
 
 DEXP %>%
-  dplyr::mutate(Comparison = 'ecto.scores') %>%
+  dplyr::mutate(Comparison = 'eb.pol.scores') %>%
   filter(adj.P.Val <= 0.05) %>%
   summarise(count = n(), Genes = paste(unique(probeIDs), collapse = ',')) %>%
   kable

@@ -76,7 +76,7 @@ FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_T
                      "Other_Conditions_During_Reprogramming", "Donor_Life_Stage", "Gender", 
                      "Originating_Lab", "Donor_ID", "Cell_Type_of_Origin_Level2",
                      "Reprogramming_Vector_Type" )
-ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest", "ecto.scores")
+ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest", "eb.pol.scores")
 ```
 Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
 
@@ -96,12 +96,12 @@ METADATA = METADATA_OBJ@values
 
 # Get cell line specific meso-ecto scores and add 1to metadata
 cibersort.scores = read.csv(synGet('syn7254021')@filePath, header = T) %>%
-  dplyr::mutate(ecto.scores = ECTO)  %>%
+  dplyr::mutate(eb.pol.scores = ECTO)  %>%
   dplyr::rename(UID = Input.Sample) %>%
   tidyr::separate(UID, c('C4_Cell_Line_ID','a','b','c'), sep = '\\.') %>%
   dplyr::mutate(C4_Cell_Line_ID = gsub('EB','',C4_Cell_Line_ID)) %>%
   group_by(C4_Cell_Line_ID) %>%
-  summarise(ecto.scores = mean(ecto.scores, na.rm=T))
+  summarise(eb.pol.scores = mean(eb.pol.scores, na.rm=T))
 ALL_USED_IDs <- c(ALL_USED_IDs, 'syn7254021')
 
 METADATA = left_join(METADATA, cibersort.scores)
@@ -116,7 +116,7 @@ METADATA[METADATA == 'N/A'] = NA
 # Replace all special characters with blank
 myFix <- function(x) str_replace_all(x, '[^[:alnum:]]', '')
 METADATA <- METADATA %>%
-  dplyr::mutate_each(funs(myFix), -UID, -C4_Cell_Line_ID, -biologicalSampleName, -ecto.scores) # fix them but don't touch some columns
+  dplyr::mutate_each(funs(myFix), -UID, -C4_Cell_Line_ID, -biologicalSampleName, -eb.pol.scores) # fix them but don't touch some columns
 
 # Set rownames
 rownames(METADATA) = METADATA$UID
@@ -134,7 +134,7 @@ metadata_filtered <-
   filter(UID %in% colnames(EXP)) %>%
   filter(Cell_Type == "PSC") %>%
   filter(C4_Karyotype_Result != "abnormal" | !is.na(C4_Karyotype_Result)) %>%
-  filter(!is.na(ecto.scores))
+  filter(!is.na(eb.pol.scores))
 
 REMOVED_UID <- setdiff(colnames(EXP), metadata_filtered$UID)
 METADATA <- METADATA[metadata_filtered$UID,]
