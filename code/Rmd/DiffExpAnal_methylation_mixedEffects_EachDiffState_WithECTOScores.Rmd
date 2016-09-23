@@ -1,0 +1,182 @@
+---
+title: "Differential expression analysis for methylation data with mixed effects modeling at SC state with EB derived ecto scores"
+author: "Thanneer Perumal"
+date: "`r date()`"
+---
+```{r knit2syn, eval = F, echo = T}
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = "./DiffExpAnal_methylation_mixedEffects_EachDiffState_WithECTOScores.Rmd",
+                                 entityName = 'Differential Expression Analysis methylation Mixed Effects SC WithECTOScores',
+                                 parentId = 'syn4231339')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE, cache=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")  
+
+# Load required libraries
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(glmnet)
+
+synapseLogin()
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+### Download data
+```{r setup, include=FALSE, cache=FALSE}
+# Input Parameters
+SOURCE.FOLDER_ID = 'syn7282849'
+ALL.FILES = synQuery(paste0('select Diffname_short,id,fileType,name from file where parentId == "',SOURCE.FOLDER_ID,'"'))
+
+SYNAPSE_STORE = T
+parentId = 'syn4231339'
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c("Diffname_short", "BeadChip", "Row", "Column", "Cell_Line_Type", 
+                     "Tissue_of_Origin", "Reprogramming_Gene_Combination", "Culture_Conditions",  
+                     "Other_Conditions_During_Reprogramming", "Donor_Life_Stage", "Gender", 
+                     "Originating_Lab", "Donor_ID", "Cell_Type_of_Origin_Level2",
+                     "Reprogramming_Vector_Type" )
+
+ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest", "ecto.scores")
+```
+Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
+
+Obtain processed expression, design, weights and covariates matrix from Synapse
+```{r getdata, cache=TRUE, include=FALSE}
+# Get processed counts matrix
+EXPR.ID = ALL.FILES$file.id[intersect(grep('SC', ALL.FILES$file.name), grep('Beta', ALL.FILES$file.name))] 
+ALL.USED.IDs = EXPR.ID
+EXPR = read.table(synGet(EXPR.ID)@filePath, sep = '\t', header = T, row.names = 1, quote='', check.names = F)
+
+# Get sample covariates
+COV.ID = ALL.FILES$file.id[intersect(grep('SC', ALL.FILES$file.name), grep('Covariates', ALL.FILES$file.name))]
+ALL.USED.IDs = c(ALL.USED.IDs, COV.ID)
+COV = read.table(synGet(COV.ID)@filePath, sep = '\t', row.names=1, header=T)
+
+# Convert factor covariates to factors
+FactorCovariates = intersect(colnames(COV), FactorCovariates)
+COV[,FactorCovariates] = lapply(COV[,FactorCovariates], factor)
+ContCovariates = intersect(colnames(COV), ContCovariates)
+COV[,ContCovariates] = lapply(COV[,ContCovariates], as.numeric)
+
+# Get covariates to adjust from synapse
+postAdjustedCovars = c('ecto.scores', 'Reprogramming_Vector_Type', 'Gender')
+
+# Get cell line specific meso-ecto scores and add 1to metadata
+cibersort.scores = read.csv(synGet('syn7254021')@filePath, header = T) %>%
+  dplyr::mutate(ecto.scores = ECTO)  %>%
+  dplyr::rename(UID = Input.Sample) %>%
+  tidyr::separate(UID, c('C4_Cell_Line_ID','a','b','c'), sep = '\\.') %>%
+  dplyr::mutate(C4_Cell_Line_ID = gsub('EB','',C4_Cell_Line_ID)) %>%
+  group_by(C4_Cell_Line_ID) %>%
+  summarise(ecto.scores = mean(ecto.scores, na.rm=T))
+ALL.USED.IDs <- c(ALL.USED.IDs, 'syn7254021')
+
+# Remove few SC and EB samples form this analysis for validation purpose
+METADATA_OBJ = synTableQuery(paste('SELECT * FROM','syn3156828',sep=' '))
+ALL.USED.IDs <- c(ALL.USED.IDs, METADATA_OBJ@schema)
+METADATA = METADATA_OBJ@values %>%
+  dplyr::select(C4_Cell_Line_ID, UID)
+
+COV = rownameToFirstColumn(COV, 'UID') %>%
+  left_join(METADATA) %>%
+  left_join(cibersort.scores)
+rownames(COV) = COV$UID
+
+EXPR = EXPR[,rownames(COV)]
+```
+
+### Differential expression analysis (wrt ecto.scores)
+In each diffState, for each covariate, we fit a linear model using `limma` with only the variables obtained from the covariate analysis. Here primary variable of interest is ecto.scores
+
+Differential expression with all cell lines
+```{r diff.exp2, fig.height=20, fig.width=15}
+cat("Get differentially expressed genes using limma package with following coefficients in the linear model:\n")
+cat("----\n",
+    "Get differentially expressed genes using limma package with following coefficients in the linear model:\n",
+    paste0('Fixed Effects:',paste(postAdjustedCovars, collapse = ','), "\n"),
+    "Random Effects: Donor_ID\n")
+
+# Get desing matrix
+DESIGN.MAT <- getDesignMatrix(COV[, postAdjustedCovars, drop = F], Intercept = F)
+DESIGN.MAT = DESIGN.MAT$design[,linColumnFinder(DESIGN.MAT$design)$indepCols,drop=F]
+
+# Calculate correlated effects of donors
+CORRELATION <- duplicateCorrelation(EXPR, block = COV[, 'Donor_ID'])
+
+# Fit linear model using mixed effects design
+FIT = lmFit(EXPR, design = DESIGN.MAT, correlation = CORRELATION$cor)
+
+# Make contrast  
+CONT <- makeContrasts(contrasts = 'ecto.scores', levels=colnames(DESIGN.MAT))
+
+# Refit contrasts
+FIT.CONT <- contrasts.fit(FIT, CONT)
+
+# Estimate moderated t-statistics
+FIT.CONT <- eBayes(FIT.CONT)
+
+# Get differentially expressed genes
+DEXP <- topTable(FIT.CONT, coef = 1, number = dim(EXPR)[1]) %>%
+  rownameToFirstColumn('probeIDs')
+
+DEXP %>%
+  dplyr::mutate(Comparison = 'ecto.scores') %>%
+  filter(adj.P.Val <= 0.05) %>%
+  summarise(count = n(), Genes = paste(unique(probeIDs), collapse = ',')) %>%
+  kable
+```
+
+### Store files in Synapse
+Store logFC, adjusted p-values and differentially expressed genes.
+```{r synapse.store, include = FALSE, eval=TRUE, cache=FALSE}
+activityName='Differential expression analysis of minfi processed methylation with mixed effects model at SC state'
+
+thisFileName <- 'DiffExpAnal_methylation_mixedEffects_SC_withECTOScores.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName="methyl")
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Create folder to store the results and populate analysis wiki
+CODE <- Folder(name = 'Differential Expression Analysis methylation Mixed Effects SC WithECTOScores', parentId = parentId)
+CODE <- synStore(CODE)
+
+save(list=ls(), file = 'Results.RData')
+obj = File('Results.RData', name = 'Results', parentId = CODE$properties$id)
+obj = synStore(obj, used = ALL.USED.IDs, executed = thisFile, activityName = activityName)
+
+write.table(DEXP, file = 'DifferentialExpression.tsv', sep = '\t', row.names = F, quote=T)
+obj = File('DifferentialExpression.tsv', name = 'Differential Expression', parentId = CODE$properties$id)
+obj = synStore(obj, used = ALL.USED.IDs, executed = thisFile, activityName = activityName)
+```

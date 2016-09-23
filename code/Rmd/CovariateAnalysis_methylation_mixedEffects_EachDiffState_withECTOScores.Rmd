@@ -46,7 +46,6 @@ library('vcd')
 library('erer')
 library('fpc')
 library('stringr')
-library('minfi')
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
