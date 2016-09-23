@@ -47,116 +47,6 @@ knitr::opts_chunk$set(
   tidy = FALSE,
   cache = TRUE)
 ```
-
-```{r fxns, include=FALSE}
-# Function to rotate variables
-rotateVars <- function(x, first) {
-  others <- setdiff(x, first)
-  c(first, others)
-}
-
-# Function to make design matrix
-makeDesignMatrix <- function(covariates, comparison, covariateColOrder=NA) {
-  # Make a design matrix by reordering the column covariates
-  # and column-binding each separate matrix for each column together
-  # with complete listing of dummy variables (no reference levels)
-  # and also remove any linearly dependent columns
-  
-  vars <- ifelse(is.na(covariateColOrder), 
-                 colnames(covariates),
-                 covariateColOrder)
-  
-  newVars <- rotateVars(vars, comparison)
-  
-  DESIGN = getDesignMatrix(covariates[, newVars], Intercept = F)
-  DESIGN = DESIGN$design[, linColumnFinder(DESIGN$design)$indepCols]
-  
-  return(DESIGN)
-}
-
-# Perform differential expression analysis
-doDiffExpr <- function(countMat, designMat, weights, block, comparison, diffState) {
-  # Helper function to do all pairwise differential expression on a single covariate
-  # from the whole covariate matrix
-  
-  # Make contrast  
-  contrastNames <- colnames(designMat)[grep(comparison, colnames(designMat))]
-  # contrastNames <- combn(contrastNames, 2)
-  # contrastNames <- apply(contrastNames, 2, paste, collapse='-')
-  # 
-  cont <- makeContrasts(contrasts=contrastNames, 
-                        levels=colnames(designMat))
-  
-  # Voom normalisations
-  expr <- voom(countMat, design = designMat)
-  
-  # Calculate correlation between donors
-  correlation <- duplicateCorrelation(expr,
-                                      block=block)
-  
-  if(abs(correlation$cor) == 1 || abs(correlation$cor) == 0){
-    cat('Random effects correlation cannot be estimated\n')
-    # Assign NA values to all results
-    foo1 = list()
-    
-    foo1$logFC = matrix(NA,1,dim(cont)[2]); 
-    colnames(foo1$logFC) = colnames(cont)
-    rownames(foo1$logFC) = rownames(countMat)[1]
-    
-    foo1$adj.P.Val = foo1$logFC
-    
-    foo1$SIG.SETS <- matrix(NA, 1, 4);
-    colnames(foo1$SIG.SETS) = c("GeneSymbol", "logFC", "adj.P.value", "Comparison")
-    
-    foo1$SIG.EXP.POS <- foo1$logFC
-    foo1$NUM.SIG.EXP.POS <- foo1$logFC; rownames(foo1$NUM.SIG.EXP.POS) = c()
-    foo1$SIG.EXP.NEG <- foo1$logFC
-    foo1$NUM.SIG.EXP.NEG <- foo1$logFC; rownames(foo1$NUM.SIG.EXP.NEG) = c()
-    
-    return(foo1)
-  }
-  
-  expr = voom(countMat, design = designMat, correlation = correlation$cor)
-    
-  # Fit linear model using mixed effects design
-  fit = lmFit(expr, 
-              block=block, 
-              correlation = correlation$cor)
-  
-  # Refit contrasts
-  fitContrast <- contrasts.fit(fit, cont)
-  
-  # Estimate moderated t-statistics
-  fitContrast <- eBayes(fitContrast)
-  
-  # Obtain all the differential expession combinations
-  foo <- list()
-  foo$logFC <- data.frame(row.names = rownames(countMat))
-  foo$adj.P.Val <- data.frame(row.names = rownames(countMat))
-  foo$SIG.SETS <- data.frame()
-  
-  for (i in colnames(cont)){
-    tmp <- topTable(fitContrast, coef=i, number=dim(countMat)[1])    
-    foo$logFC[,i] <- tmp[rownames(foo$logFC),'logFC']
-    foo$adj.P.Val[,i] <- tmp[rownames(foo$adj.P.Val),'adj.P.Val'] 
-    
-    foo$SIG.SETS <- rbind(foo$SIG.SETS,
-                          getUpDownGenes(foo$adj.P.Val[,i], foo$logFC[,i], 
-                                         rownames(foo$logFC), i, FC_CUTOFF = 0))
-  }
-  
-  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC >= 0
-  foo$SIG.EXP.POS <- foo$adj.P.Val<=0.05 & foo$logFC >= 0
-  foo$NUM.SIG.EXP.POS <- colSums(foo$SIG.EXP.POS, na.rm = T)
-  
-  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= 0
-  foo$SIG.EXP.NEG <- foo$adj.P.Val<=0.05 & foo$logFC <= 0
-  foo$NUM.SIG.EXP.NEG <- colSums(foo$SIG.EXP.NEG, na.rm = T)
-  
-  return(foo)
-}
-```
-
 ### Download data
 ```{r setup, include=FALSE, cache=FALSE}
 # Input Parameters
@@ -210,10 +100,12 @@ CELL.LINE.MAPPING = data.frame(UID = rownames(COV),
 
 ### Differential expression analysis (wrt ecto.scores)
 In each diffState, for each covariate, we fit a linear model using `limma` with only the variables obtained from the covariate analysis. Here primary variable of interest is ecto.scores
-```{r diff.exp}
+
+Differential expression with only 30 cell lines
+```{r diff.exp, include = FALSE}
 ALL.DEXP = list()
 ALL.AUC = c()
-for(ncount in 1:5){
+for(ncount in 1:100){
   
   train.id = sample(unique(CELL.LINE.MAPPING$C4_Cell_Line_ID), 30)
   test.id = setdiff(unique(CELL.LINE.MAPPING$C4_Cell_Line_ID), train.id)
@@ -256,47 +148,111 @@ for(ncount in 1:5){
   DEXP <- topTable(FIT.CONT, coef = 1, number = dim(PROC.COUNTS)[1]) %>%
     rownameToFirstColumn('hgnc_symbol')
 
-  DEXP %>%
-    dplyr::mutate(Comparison = 'ecto.scores') %>%
-    filter(adj.P.Val <= 0.05) %>%
-    summarise(count = n(), Genes = paste(unique(hgnc_symbol), collapse = ',')) %>%
-    kable
-  
-  ALL.DEXP[[ncount]] = DEXP
+  # DEXP %>%
+  #   dplyr::mutate(Comparison = 'ecto.scores') %>%
+  #   filter(adj.P.Val <= 0.05) %>%
+  #   summarise(count = n(), Genes = paste(unique(hgnc_symbol), collapse = ',')) %>%
+  #   kable
 
-  # Predict ecto.scores using genomic features
-  x.data = EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],rownames(DESIGN.MAT)] %>% t %>% scale
-  y.data = DESIGN.MAT[,'ecto.scores']
-
-  fit.cv = cv.glmnet(x.data, y.data, type.measure = 'class')
-  
   # Voom normalisations
   ALL.EXPR <- voom(PROC.COUNTS, design = NULL)
-  x.test = ALL.EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],test.UID] %>% t %>% scale
-  y.test = COV[test.UID,'ecto.scores']
-  y.test[y.test<0.5] = 0;y.test[y.test>=0.5] = 1
   
-  fit.test = predict.cv.glmnet(fit.cv, newx = x.test, s = "lambda.min", type = 'response')
+  # Logistic regression prediction
+  if (sum(DEXP$adj.P.Val <= 0.05) >= 100){
+    # Predict ecto.scores using genomic features
+    x.data = EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],rownames(DESIGN.MAT)] %>% t %>% scale
+    y.data = DESIGN.MAT[,'ecto.scores']
+
+    fit.cv = cv.glmnet(x.data, y.data, type.measure = 'class')
   
-  ALL.AUC[ncount] = glmnet::auc(y.test, fit.test)
+    x.test = ALL.EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],test.UID] %>% t %>% scale
+    y.test = COV[test.UID,'ecto.scores']
+    y.test[y.test<0.5] = 0;y.test[y.test>=0.5] = 1
+    
+    fit.test = predict.cv.glmnet(fit.cv, newx = x.test, s = "lambda.min", type = 'response')
+    
+    ALL.AUC = c(ALL.AUC, glmnet::auc(y.test, fit.test))
+    ALL.DEXP = c(ALL.DEXP, list(DEXP))
+  }
+  print(ncount)
 }
+```
+
+```{r bp}
 boxplot(ALL.AUC, main = 'AUC')
+```
 
-genes = lapply(ALL.DEXP, function(x){
-  x$hgnc_symbol[x$adj.P.Val <= 0.05]
-}) %>%
-  Reduce(intersect,.)
-# coeff = as.matrix(coef.glmnet(fit.cv, s = 'lambda.min'))   
-# 
-#   DESIGN.MAT = DESIGN.MAT[order(DESIGN.MAT[,'ecto.scores']),]
-#   ha = HeatmapAnnotation(DESIGN.MAT[,'ecto.scores', drop = F])
-#   Heatmap(EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],rownames(DESIGN.MAT)] %>% t %>% scale %>% t,
-#           top_annotation = ha,
-#           cluster_columns = F,
-#           col = colorRamp2(c(2,0,-2), c('blue','white','red')),
-#           name = 'Scaled logCPM')
-# 
+Differential expression with all cell lines
+```{r diff.exp2, fig.height=20, fig.width=15}
+cat("Get differentially expressed genes using limma package with following coefficients in the linear model:\n")
+cat("----\n",
+    "Get differentially expressed genes using limma package with following coefficients in the linear model:\n",
+    paste0('Fixed Effects:',paste(postAdjustedCovars, collapse = ','), "\n"),
+    "Random Effects: Donor_ID\n")
+  
+# Get desing matrix
+DESIGN.MAT <- getDesignMatrix(COV[, postAdjustedCovars, drop = F], Intercept = F)
+DESIGN.MAT = DESIGN.MAT$design[,linColumnFinder(DESIGN.MAT$design)$indepCols,drop=F]
 
+# Voom normalisations
+EXPR <- voom(PROC.COUNTS, design = DESIGN.MAT)
+  
+# Calculate correlated effects of donors
+CORRELATION <- duplicateCorrelation(EXPR, block = COV[, 'Donor_ID'])
+
+# Re-estimate voom normalisations
+EXPR <- voom(PROC.COUNTS, design = DESIGN.MAT, correlation = CORRELATION$cor)
+  
+# Fit linear model using mixed effects design
+FIT = lmFit(EXPR)
+
+# Make contrast  
+CONT <- makeContrasts(contrasts = 'ecto.scores', levels=colnames(DESIGN.MAT))
+
+# Refit contrasts
+FIT.CONT <- contrasts.fit(FIT, CONT)
+
+# Estimate moderated t-statistics
+FIT.CONT <- eBayes(FIT.CONT)
+  
+# Get differentially expressed genes
+DEXP <- topTable(FIT.CONT, coef = 1, number = dim(PROC.COUNTS)[1]) %>%
+  rownameToFirstColumn('hgnc_symbol')
+
+DEXP %>%
+  dplyr::mutate(Comparison = 'ecto.scores') %>%
+  filter(adj.P.Val <= 0.05) %>%
+  summarise(count = n(), Genes = paste(unique(hgnc_symbol), collapse = ',')) %>%
+  kable
+
+# Predict ecto.scores using genomic features
+x.data = EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],rownames(DESIGN.MAT)] %>% t %>% scale
+y.data = DESIGN.MAT[,'ecto.scores']
+
+fit.cv = cv.glmnet(x.data, y.data, type.measure = 'class')
+fit.test = predict.cv.glmnet(fit.cv, newx = x.data, s = "lambda.min")
+p = ggplot(data.frame(y.train = y.data, pred.prob = fit.test) %>%
+             dplyr::rename(pred.prob = X1), aes(x = y.train, y = pred.prob)) + geom_point()
+p = p + geom_smooth(method = 'lm')
+p
+
+DESIGN.MAT = DESIGN.MAT[order(DESIGN.MAT[,'ecto.scores']),]
+ha = HeatmapAnnotation(DESIGN.MAT[,'ecto.scores',drop=F])
+Heatmap(t(x.data[rownames(DESIGN.MAT), ]),
+        col = colorRamp2(c(-2,0,2), c('blue','white','red')),
+        top_annotation = ha,
+        cluster_columns = F,
+        name = 'Scaled logCPM')
+```
+
+With predictors of penalised logistic regression model
+```{r heatmap, fig.height=10}
+coef = as.matrix(coef.cv.glmnet(fit.cv))
+Heatmap(t(x.data[rownames(DESIGN.MAT), colnames(x.data) %in% rownames(coef)[coef != 0]]),
+        col = colorRamp2(c(-2,0,2), c('blue','white','red')),
+        top_annotation = ha,
+        cluster_columns = F,
+        name = 'Scaled logCPM')
 ```
 
 ### Store files in Synapse
@@ -318,7 +274,11 @@ thisFile <- getPermlink(repository = thisRepo,
 CODE <- Folder(name = 'Differential Expression Analysis mRNA Mixed Effects SC WithECTOScores', parentId = parentId)
 CODE <- synStore(CODE)
 
-save(list=ls, file = 'Results.RData')
-obj = File(file = 'Results.RData', name = 'Results', parnentId = CODE$properties$id)
+save(list=ls(), file = 'Results.RData')
+obj = File('Results.RData', name = 'Results', parentId = CODE$properties$id)
+obj = synStore(obj, used = ALL.USED.IDs, executed = thisFile, activityName = activityName)
+
+write.table(DEXP, file = 'DifferentialExpression.tsv', sep = '\t', row.names = F, quote=T)
+obj = File('DifferentialExpression.tsv', name = 'Differential Expression', parentId = CODE$properties$id)
 obj = synStore(obj, used = ALL.USED.IDs, executed = thisFile, activityName = activityName)
 ```
