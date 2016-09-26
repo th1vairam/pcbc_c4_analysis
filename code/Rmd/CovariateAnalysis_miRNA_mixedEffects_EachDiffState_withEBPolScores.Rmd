@@ -13,7 +13,7 @@ synapseLogin()
 
 knit2synapse::knitToFolderEntity(file = './CovariateAnalysis_miRNA_mixedEffects_EachDiffState_withEBPolScores.Rmd',
                                  parentId = 'syn5008934',
-                                 name = 'Covariate Analysis miRNA Mixed Effects EachDiffState WithEBPolScores')
+                                 entityName = 'Covariate Analysis miRNA Mixed Effects EachDiffState WithEBPolScores')
 ```
   
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE, cache=FALSE}
