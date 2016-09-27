@@ -34,6 +34,8 @@ library(dplyr)
 library(stringr)
 
 library(glmnet)
+library(ComplexHeatmap)
+library(circlize)
 
 synapseLogin()
 
@@ -236,8 +238,8 @@ p = ggplot(data.frame(y.train = y.data, pred.prob = fit.test) %>%
 p = p + geom_smooth(method = 'lm')
 p
 
-DESIGN.MAT = DESIGN.MAT[order(DESIGN.MAT[,'eb.pol.scores']),]
-ha = HeatmapAnnotation(DESIGN.MAT[,'eb.pol.scores',drop=F])
+DESIGN.MAT = DESIGN.MAT[order(DESIGN.MAT[,c('eb.pol.scores')]),]
+ha = HeatmapAnnotation(DESIGN.MAT[,c('eb.pol.scores','Genderfemale'),drop=F])
 Heatmap(t(x.data[rownames(DESIGN.MAT), ]),
         col = colorRamp2(c(-2,0,2), c('blue','white','red')),
         top_annotation = ha,
@@ -253,6 +255,18 @@ Heatmap(t(x.data[rownames(DESIGN.MAT), colnames(x.data) %in% rownames(coef)[coef
         top_annotation = ha,
         cluster_columns = F,
         name = 'Scaled logCPM')
+```
+
+Investigate gender relationship with eb.pol.scores
+```{r explore}
+covariates = COVARIATES$SC %>%
+  rownameToFirstColumn('UID')
+
+assoc.stat = getAssociationStatistics(covariates[,c('Gender','eb.pol.scores')])
+
+p = ggplot(covariates, aes(x = Gender, y = eb.pol.scores)) + geom_violin()
+p = p + ggtitle(paste('Estimate:', round(assoc.stat$ESTIMATE[1,2], 3), ', Pval:', round(assoc.stat$PVAL[1,2],2)))
+p
 ```
 
 ### Store files in Synapse
