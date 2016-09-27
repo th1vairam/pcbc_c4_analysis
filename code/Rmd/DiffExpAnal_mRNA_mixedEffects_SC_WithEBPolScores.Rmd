@@ -288,9 +288,9 @@ thisFile <- getPermlink(repository = thisRepo,
 CODE <- Folder(name = 'Differential Expression Analysis mRNA Mixed Effects SC WithEBPolScores', parentId = parentId)
 CODE <- synStore(CODE)
 
-save(list=ls(), file = 'Results.RData')
-obj = File('Results.RData', name = 'Results', parentId = CODE$properties$id)
-obj = synStore(obj, used = ALL.USED.IDs, executed = thisFile, activityName = activityName)
+# save(list=ls(), file = 'Results.RData')
+# obj = File('./Results.RData', name = 'Results', parentId = CODE$properties$id)
+# obj = synStore(obj, used = ALL.USED.IDs, executed = thisFile, activityName = activityName)
 
 write.table(DEXP, file = 'DifferentialExpression.tsv', sep = '\t', row.names = F, quote=T)
 obj = File('DifferentialExpression.tsv', name = 'Differential Expression', parentId = CODE$properties$id)
