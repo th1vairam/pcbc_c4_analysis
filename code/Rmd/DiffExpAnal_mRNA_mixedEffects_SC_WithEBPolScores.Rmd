@@ -1,5 +1,5 @@
 ---
-title: "Differential expression analysis for eXpress aligned mRNA data with mixed effects modeling at SC state with EB derived ecto scores"
+title: "Differential expression analysis for eXpress aligned mRNA data with mixed effects modeling at SC state with EB polarisation scores"
 author: "Thanneer Perumal"
 date: "`r date()`"
 ---
@@ -10,8 +10,8 @@ library(githubr)
 
 synapseLogin()
 
-knit2synapse::knitToFolderEntity(file = "./DiffExpAnal_mRNA_mixedEffects_SC_withECTOScores.Rmd",
-                                 entityName = 'Differential Expression Analysis mRNA Mixed Effects SC WithECTOScores',
+knit2synapse::knitToFolderEntity(file = "./DiffExpAnal_mRNA_mixedEffects_SC_WithEBPolScores.Rmd",
+                                 entityName = 'Differential Expression Analysis mRNA Mixed Effects SC WithEBPolScores',
                                  parentId = 'syn5008933')
 ```
 
@@ -50,7 +50,7 @@ knitr::opts_chunk$set(
 ### Download data
 ```{r setup, include=FALSE, cache=FALSE}
 # Input Parameters
-SOURCE.FOLDER_ID = 'syn7268440'
+SOURCE.FOLDER_ID = 'syn7291553'
 ALL.FILES = synQuery(paste0('select Diffname_short,id,fileType from file where parentId == "',SOURCE.FOLDER_ID,'"'))
 
 SYNAPSE_STORE = T
@@ -59,7 +59,7 @@ parentId = 'syn5008933'
 # Specify factor and continuous covariates pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Race', 'Ethnicity' , 'Gender', 'Disease', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
 
-ContCovariates = c('PassageAtThaw', 'PassageAtHarvest', 'ecto.scores')
+ContCovariates = c('PassageAtThaw', 'PassageAtHarvest', 'eb.pol.scores')
 ```
 Obtain processed counts, design, weights and covariates matrix from Synapse
 ```{r getdata, cache=TRUE, include=FALSE}
@@ -83,7 +83,7 @@ ContCovariates = intersect(colnames(COV), ContCovariates)
 COV[,ContCovariates] = lapply(COV[,ContCovariates], as.numeric)
   
 # Get covariates to adjust from synapse
-postAdjustedCovars = c('ecto.scores',
+postAdjustedCovars = c('eb.pol.scores',
                        str_split(annotations(synGet(COV.ID$file.id))$postAdjustCovars, ',')[[1]]) %>%
   unique
 
@@ -93,13 +93,13 @@ ALL.USED.IDs <- c(ALL.USED.IDs, METADATA_OBJ@schema)
 METADATA = METADATA_OBJ@values
 
 CELL.LINE.MAPPING = data.frame(UID = rownames(COV),
-                               ecto.scores = COV$ecto.scores) %>%
+                               eb.pol.scores = COV$eb.pol.scores) %>%
   left_join(METADATA %>%
               dplyr::select(UID, Diffname_short, C4_Cell_Line_ID))
 ```
 
-### Differential expression analysis (wrt ecto.scores)
-In each diffState, for each covariate, we fit a linear model using `limma` with only the variables obtained from the covariate analysis. Here primary variable of interest is ecto.scores
+### Differential expression analysis (wrt eb.pol.scores)
+In each diffState, for each covariate, we fit a linear model using `limma` with only the variables obtained from the covariate analysis. Here primary variable of interest is eb.pol.scores
 
 Differential expression with only 30 cell lines
 ```{r diff.exp, include = FALSE}
@@ -136,7 +136,7 @@ for(ncount in 1:100){
   FIT = lmFit(EXPR)
 
   # Make contrast  
-  CONT <- makeContrasts(contrasts = 'ecto.scores', levels=colnames(DESIGN.MAT))
+  CONT <- makeContrasts(contrasts = 'eb.pol.scores', levels=colnames(DESIGN.MAT))
 
   # Refit contrasts
   FIT.CONT <- contrasts.fit(FIT, CONT)
@@ -149,7 +149,7 @@ for(ncount in 1:100){
     rownameToFirstColumn('hgnc_symbol')
 
   # DEXP %>%
-  #   dplyr::mutate(Comparison = 'ecto.scores') %>%
+  #   dplyr::mutate(Comparison = 'eb.pol.scores') %>%
   #   filter(adj.P.Val <= 0.05) %>%
   #   summarise(count = n(), Genes = paste(unique(hgnc_symbol), collapse = ',')) %>%
   #   kable
@@ -159,14 +159,14 @@ for(ncount in 1:100){
   
   # Logistic regression prediction
   if (sum(DEXP$adj.P.Val <= 0.05) >= 100){
-    # Predict ecto.scores using genomic features
+    # Predict eb.pol.scores using genomic features
     x.data = EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],rownames(DESIGN.MAT)] %>% t %>% scale
-    y.data = DESIGN.MAT[,'ecto.scores']
+    y.data = DESIGN.MAT[,'eb.pol.scores']
 
     fit.cv = cv.glmnet(x.data, y.data, type.measure = 'class')
   
     x.test = ALL.EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],test.UID] %>% t %>% scale
-    y.test = COV[test.UID,'ecto.scores']
+    y.test = COV[test.UID,'eb.pol.scores']
     y.test[y.test<0.5] = 0;y.test[y.test>=0.5] = 1
     
     fit.test = predict.cv.glmnet(fit.cv, newx = x.test, s = "lambda.min", type = 'response')
@@ -207,7 +207,7 @@ EXPR <- voom(PROC.COUNTS, design = DESIGN.MAT, correlation = CORRELATION$cor)
 FIT = lmFit(EXPR)
 
 # Make contrast  
-CONT <- makeContrasts(contrasts = 'ecto.scores', levels=colnames(DESIGN.MAT))
+CONT <- makeContrasts(contrasts = 'eb.pol.scores', levels=colnames(DESIGN.MAT))
 
 # Refit contrasts
 FIT.CONT <- contrasts.fit(FIT, CONT)
@@ -220,14 +220,14 @@ DEXP <- topTable(FIT.CONT, coef = 1, number = dim(PROC.COUNTS)[1]) %>%
   rownameToFirstColumn('hgnc_symbol')
 
 DEXP %>%
-  dplyr::mutate(Comparison = 'ecto.scores') %>%
+  dplyr::mutate(Comparison = 'eb.pol.scores') %>%
   filter(adj.P.Val <= 0.05) %>%
   summarise(count = n(), Genes = paste(unique(hgnc_symbol), collapse = ',')) %>%
   kable
 
-# Predict ecto.scores using genomic features
+# Predict eb.pol.scores using genomic features
 x.data = EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],rownames(DESIGN.MAT)] %>% t %>% scale
-y.data = DESIGN.MAT[,'ecto.scores']
+y.data = DESIGN.MAT[,'eb.pol.scores']
 
 fit.cv = cv.glmnet(x.data, y.data, type.measure = 'class')
 fit.test = predict.cv.glmnet(fit.cv, newx = x.data, s = "lambda.min")
@@ -236,8 +236,8 @@ p = ggplot(data.frame(y.train = y.data, pred.prob = fit.test) %>%
 p = p + geom_smooth(method = 'lm')
 p
 
-DESIGN.MAT = DESIGN.MAT[order(DESIGN.MAT[,'ecto.scores']),]
-ha = HeatmapAnnotation(DESIGN.MAT[,'ecto.scores',drop=F])
+DESIGN.MAT = DESIGN.MAT[order(DESIGN.MAT[,'eb.pol.scores']),]
+ha = HeatmapAnnotation(DESIGN.MAT[,'eb.pol.scores',drop=F])
 Heatmap(t(x.data[rownames(DESIGN.MAT), ]),
         col = colorRamp2(c(-2,0,2), c('blue','white','red')),
         top_annotation = ha,
@@ -260,7 +260,7 @@ Store logFC, adjusted p-values and differentially expressed genes.
 ```{r synapse.store, include = FALSE, eval=TRUE, cache=FALSE}
 activityName='Differential expression analysis of eXpress aligned mRNA with mixed effects model at each differentiation states'
 
-thisFileName <- 'DiffExpAnal_mRNA_mixedEffects_SC_withECTOScores.Rmd'
+thisFileName <- 'DiffExpAnal_mRNA_mixedEffects_SC_WithEBPolScores.Rmd'
 
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
@@ -271,7 +271,7 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
 
 # Create folder to store the results and populate analysis wiki
-CODE <- Folder(name = 'Differential Expression Analysis mRNA Mixed Effects SC WithECTOScores', parentId = parentId)
+CODE <- Folder(name = 'Differential Expression Analysis mRNA Mixed Effects SC WithEBPolScores', parentId = parentId)
 CODE <- synStore(CODE)
 
 save(list=ls(), file = 'Results.RData')
