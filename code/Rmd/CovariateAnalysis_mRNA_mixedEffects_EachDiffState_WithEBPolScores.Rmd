@@ -1,9 +1,21 @@
 ---
-title: "Covariate Analysis for eXpress aligned mRNA data with mixed effect modeling performed at indivudal differentiation stages (with ECTO-MESO scores of EB)"
+title: "Covariate Analysis for eXpress aligned mRNA data with mixed effect modeling performed at indivudal differentiation stages (with EB polarisation scores)"
 author: "Thanneer Perumal"
 date: "`r date()`"
 output: html_document
 ---
+```{r knit2syn, eval=FALSE, echo=TRUE}
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = "./CovariateAnalysis_mRNA_mixedEffects_EachDiffState_WithEBPolScores.Rmd",
+                                 entityName = 'Covariate Analysis mRNA Mixed Effects EachDiffState WithEBPolScore',
+                                 parentId = 'syn5008933')
+```
+
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE, cache=FALSE}
 ## It is assumed your working directory is where this file is
 
@@ -11,7 +23,17 @@ output: html_document
 cat("\014")  
 
 # Load required libraries
-library('synapseClient')
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
 library('RColorBrewer')
 library('ggplot2')
 library('gplots')
@@ -23,21 +45,9 @@ library('reshape2')
 library('vcd')
 library('erer')
 library('fpc')
-library('data.table')
-library('dplyr')
-library('knitr')
-library('stringr')
-library(CovariateAnalysis)
-
-## Needs the dev branch
-library('rGithubClient')
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
-
-# knit2synapse::knitToFolderEntity(file = "./CovariateAnalysis_mRNA_mixedEffects_EachDiffState_WithECTOScore.Rmd",
-#                                  entityName = 'Covariate Analysis mRNA Mixed Effects EachDiffState WithECTOScore',
-#                                  parentId = 'syn5008933', overwrite=F, knitmd = TRUE)
 
 synapseLogin()
 
@@ -62,7 +72,7 @@ parentId = 'syn5008933'
 
 # Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
 FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
-ContCovariates = c('PassageAtThaw', 'PassageAtHarvest','ecto.scores')
+ContCovariates = c('PassageAtThaw', 'PassageAtHarvest','eb.pol.scores')
 ```
 
 The eXpress-generated effective count matrix that has been collapsed from transcripts to genes is used (`r COUNT_ID`). 
@@ -109,14 +119,14 @@ rownames(METADATA) = METADATA$UID
 
 # Get cell line specific meso-ecto scores and add 1to metadata
 cibersort.scores = read.csv(synGet('syn7254021')@filePath, header = T) %>%
-  dplyr::mutate(ecto.scores = ECTO)  %>%
+  dplyr::mutate(eb.pol.scores = ECTO)  %>%
   dplyr::rename(UID = Input.Sample )
 ALL_USED_IDs <- c(ALL_USED_IDs, 'syn7254021')
 
 METADATA = inner_join(METADATA, cibersort.scores) %>%
-  dplyr::select(C4_Cell_Line_ID, ecto.scores) %>%
+  dplyr::select(C4_Cell_Line_ID, eb.pol.scores) %>%
   group_by(C4_Cell_Line_ID) %>%
-  summarise(ecto.scores = mean(ecto.scores, na.rm=T)) %>%
+  summarise(eb.pol.scores = mean(eb.pol.scores, na.rm=T)) %>%
   right_join(METADATA)
 ```
 ### Filter data
@@ -124,6 +134,7 @@ METADATA = inner_join(METADATA, cibersort.scores) %>%
 * Remove somatic samples and samples with not type.
 * Remove samples that failed QC and samples classified as exclude.
 * Remove samples with abnormal karyotypes.
+* Remove samples with no eb.pol.scores
 ```{r filtering, echo=TRUE, include=TRUE}
 #### Pre processing mRNA expression counts and metadata ####
 metadata_keep <- METADATA %>% 
@@ -134,7 +145,7 @@ metadata_filtered <- metadata_keep %>%
          Diffname_short != "",
          Cell_Type == "PSC",
          C4_Karyotype_Result != "abnormal",
-         !is.na(ecto.scores))
+         !is.na(eb.pol.scores))
 
 REMOVED_UID <- setdiff(metadata_keep$UID, metadata_filtered$UID)
 METADATA <- metadata_filtered
@@ -435,7 +446,7 @@ Store processed cpm counts, covariates, design matrix, and voom adjusted gene ex
 ```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cahce=FALSE}
 ActivityName <- 'Covariate Analysis of eXpress aligned mRNA data at each diff state with mixed effects'
   
-thisFileName <- 'CovariateAnalysis_mRNA_mixedEffects_EachDiffState_WithECTOScore.Rmd'
+thisFileName <- 'CovariateAnalysis_mRNA_mixedEffects_EachDiffState_WithEBPolScores.Rmd'
   
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
@@ -445,7 +456,7 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Populate wiki with results
-CODE <- Folder(name = 'Covariate Analysis mRNA Mixed Effects EachDiffState WithECTOScore', 
+CODE <- Folder(name = 'Covariate Analysis mRNA Mixed Effects EachDiffState WithEBPolScore', 
                parentId = parentId)
 CODE <- synStore(CODE)
 
