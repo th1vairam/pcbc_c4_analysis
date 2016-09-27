@@ -1,0 +1,210 @@
+---
+title: "EB polarisation analysis: Investigating the upstream methyl regulators of 195 differentially expressed genes in SC"
+author: "Thanneer Perumal"
+date: "`r date()`"
+output: html_document
+---
+```{r knit2syn, eval=FALSE, include=TRUE}
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = './EB_Polarisation_Analysis_UpStream_methyl.Rmd',
+                                 parentId = 'syn4231339',
+                                 entityName = 'EB Polarisation Analysis UpStream methyl')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE, cache=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")  
+
+# Load required libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+library(ComplexHeatmap)
+library(circlize)
+
+library(RColorBrewer)
+library(ggplot2)
+library(gplots)
+library(limma)
+library(edgeR)
+library(ctv)
+library(psych)
+library(reshape2)
+library(vcd)
+library(erer)
+library(fpc)
+
+## Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+synapseLogin()
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+### Download data
+```{r setup, include=TRUE}
+# Input Parameters
+EXP_ID = 'syn2233188'
+METADATA_ID = 'syn3156828'
+
+parentId = 'syn4231339'
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c("Row", "Column", "Cell_Line_Type", 
+                     "Tissue_of_Origin", "Reprogramming_Gene_Combination", "Culture_Conditions",  
+                     "Other_Conditions_During_Reprogramming", "Donor_Life_Stage", "Gender", 
+                     "Originating_Lab", "Donor_ID", "Cell_Type_of_Origin_Level2",
+                     "Reprogramming_Vector_Type" )
+ContCovariates = c("PassageAtThaw", "PassageAtDNAHarvest", "eb.pol.scores")
+```
+Factor covariates considered for analysis are `r paste(gsub('_','\\\\_',FactorCovariates),collapse=',')`, and continuous covariates considered for the analysis are `r paste(gsub('_','\\\\_',ContCovariates),collapse=',')`
+
+Obtain beta matrix and metadata from synapse
+```{r getdata, cache=FALSE, include=FALSE}
+# Get beta matrix
+EXP = fread(synGet(EXP_ID)@filePath, data.table = F)
+row.names(EXP) = EXP[,1]
+EXP = dplyr::select(EXP,-(ProbeID))
+ALL_USED_IDs = EXP_ID
+
+# Get metadata
+METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
+ALL_USED_IDs[length(ALL_USED_IDs)+1] = METADATA_OBJ@schema
+METADATA = METADATA_OBJ@values
+
+# Get cell line specific meso-ecto scores and add 1to metadata
+cibersort.scores = read.csv(synGet('syn7254021')@filePath, header = T) %>%
+  dplyr::mutate(eb.pol.scores = ECTO)  %>%
+  dplyr::rename(UID = Input.Sample) %>%
+  tidyr::separate(UID, c('C4_Cell_Line_ID','a','b','c'), sep = '\\.') %>%
+  dplyr::mutate(C4_Cell_Line_ID = gsub('EB','',C4_Cell_Line_ID)) %>%
+  group_by(C4_Cell_Line_ID) %>%
+  summarise(eb.pol.scores = mean(eb.pol.scores, na.rm=T))
+ALL_USED_IDs <- c(ALL_USED_IDs, 'syn7254021')
+
+METADATA = left_join(METADATA, cibersort.scores)
+```
+Preprocess counts matrix and metadata
+```{r preprocessing, include=FALSE, cache = FALSE}
+# Preprocess metadata
+METADATA[METADATA == 'N/A'] = NA
+
+# Replace all special characters with blank
+myFix <- function(x) str_replace_all(x, '[^[:alnum:]]', '')
+METADATA <- METADATA %>%
+  dplyr::mutate_each(funs(myFix), -UID, -C4_Cell_Line_ID, -biologicalSampleName, -eb.pol.scores) # fix them but don't touch some columns
+
+# Set rownames
+rownames(METADATA) = METADATA$UID
+```
+### Preprocess data
+* Remove samples with no Diffname short
+* Remove somatic samples and samples with no Cell Type
+* Remove samples with abnornal or no C4 Karyotype Result
+* Filter samples in SC state alone
+* Remove samples with no eb.pol.scores
+```{r filtering, echo=TRUE, cache = FALSE}
+metadata_filtered <- 
+  METADATA %>%
+  filter(Diffname_short == "SC") %>%
+  filter(UID != "H9P50") %>%
+  filter(UID %in% colnames(EXP)) %>%
+  filter(Cell_Type == "PSC") %>%
+  filter(C4_Karyotype_Result != "abnormal" | !is.na(C4_Karyotype_Result)) %>%
+  filter(!is.na(eb.pol.scores))
+
+REMOVED_UID <- setdiff(colnames(EXP), metadata_filtered$UID)
+METADATA <- METADATA[metadata_filtered$UID,]
+EXP <- EXP[, METADATA$UID]
+```
+### Covariate clustering
+Determine relationship between covariates
+```{r covariates.clustering,cache=FALSE}
+# Find inter relation between factor covariates
+COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)]
+
+# Convert factor covariates to factors
+COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
+COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
+```
+Determine relationship between covariates using correlation/association statistics.
+```{r covariates.correlation, fig.width=10, fig.height=10}
+COVARIATES.CORRELATION = CovariateAnalysis::getAssociationStatistics(COVARIATES, PVAL = 0.1)
+ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
+```
+
+### Filter DNA methylation probes
+Perform analysis with probes that are upstream of 195 differentially expressed genes between high and low eb.pol.scores
+```{r filter.methyl}
+# Get differentially expressed genes
+DEXP = downloadFile('syn7296891') %>%
+  filter(adj.P.Val <= 0.05) %>%
+  dplyr::select(hgnc_symbol) %>%
+  unlist %>% unique
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7296891')
+
+# Get methyl-mRNA interactions from synapse and filter upstream mirnas
+upstream.probes = downloadFile('syn5643683') %>%
+  filter(feature.assay == 'methyl', target.assay == 'mrna') %>%
+  filter(target %in% DEXP) %>%
+  dplyr::select(feature) %>%
+  unlist %>% unique %>%
+  intersect(rownames(EXP))
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn5643683')
+
+EXP = EXP[upstream.probes,]
+```
+
+### Significant Covariates
+Correlation between pca of unadjusted DNA methylation probe expression and covariates is used to find significant covariates
+```{r preAdjusted.covariates}
+# Find correlation between PC's of gene expression with covariates
+preAdjustedSigCovars = runPCAandPlotCorrelations(EXP, COVARIATES,
+                                                 'NULL design(voom-normalized)',
+                                                 isKeyPlot=TRUE)
+
+# Find significant covariates
+adjustCovars = preAdjustedSigCovars$significantCovars
+```
+Significant covariates to adjust at FDR 0.1 are `r paste(gsub('_','\\\\_',adjustCovars), collapse= ',')`
+```{r preAdjustedSigCovars.NULL.ALL, fig.width=25, fig.height=12}
+preAdjustedSigCovars[["PC_res"]][[2]]$plotData
+```
+No association between eb.pol.scores and methylation expression is observed 
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+thisFileName <- 'EB_Polarisation_Analysis_UpStream_methyl.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='methyl')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+```
+
+### Executed: Source code
+`r paste0('[Source R Markdown](',print(thisFile),')')`
