@@ -1,0 +1,318 @@
+---
+title: "EB polarisation analysis: Investigating the upstream miRNA regulators of 195 differentially expressed genes in SC"
+author: "Thanneer Perumal"
+date: "`r date()`"
+output: html_document
+---
+```{r knit2syn, eval=FALSE, include=TRUE}
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = './EB_Polarisation_Analysis_UpStream_miRNAs.Rmd',
+                                 parentId = 'syn5008934',
+                                 entityName = 'EB Polarisation Analysis UpStream miRNAs')
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE, cache=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")  
+
+# Load required libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+library(ComplexHeatmap)
+library(circlize)
+
+library(RColorBrewer)
+library(ggplot2)
+library(gplots)
+library(limma)
+library(edgeR)
+library(ctv)
+library(psych)
+library(reshape2)
+library(vcd)
+library(erer)
+library(fpc)
+
+## Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+synapseLogin()
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+### Download data
+```{r setup, include=TRUE}
+# Input Parameters
+COUNT_ID = 'syn5014443';
+METADATA_ID = 'syn3219876';
+
+SYNAPSE_STORE = T
+parentId = 'syn5008934'
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c('run', 'lane', 'Cell_Line_Type', 
+                     'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 
+                     'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 
+                     'Reprogramming_Vector_Type')
+ContCovariates = c('PassageAtHarvest','eb.pol.scores','Fraction_Mapped_Reads', 'Fraction_Mapped_Reads2')
+```
+
+```{r getdata, cache=FALSE, include=TRUE}
+# Get count matrix
+COUNT_OBJ = synGet(COUNT_ID);
+ALL_USED_OBJ = list(COUNT_OBJ);
+COUNT = read.table(getFileLocation(COUNT_OBJ),header=T,row.names=1, check.names=FALSE)
+```
+
+```{r getmetadata, cache=FALSE, include=TRUE}
+# Get metadata
+METADATA_OBJ = synTableQuery(paste('SELECT * FROM',METADATA_ID,sep=' '))
+ALL_USED_IDs <- c(ALL_USED_IDs, METADATA_OBJ@schema)
+METADATA = METADATA_OBJ@values
+
+METADATA[METADATA == 'N/A'] = NA
+
+# Replace all special characters with blank
+myFix <- function(x) str_replace_all(x, '[^[:alnum:]]', '')
+METADATA <- METADATA %>%
+  dplyr::mutate_each(funs(myFix), -UID, -C4_Cell_Line_ID, -biologicalSampleName,
+                     -public, -pass_qc, -exclude) # fix them but don't touch some columns
+
+# Set rownames
+rownames(METADATA) = METADATA$UID
+
+# Get technical (mirna-seq related) covariates
+METADATA_TECHNICAL_ID = 'syn5014445'
+ALL_USED_IDs <- c(ALL_USED_IDs, METADATA_TECHNICAL_ID)
+METADATA_TECHNICAL = read.table(synGet(METADATA_TECHNICAL_ID)@filePath) %>%
+  rownameToFirstColumn('UID') %>%
+  dplyr::rename(Fraction_Mapped_Reads = norm) %>%
+  dplyr::mutate(Fraction_Mapped_Reads2 = Fraction_Mapped_Reads^2) %>%
+  dplyr::select(UID, Fraction_Mapped_Reads, Fraction_Mapped_Reads2)
+
+# Get cell line specific eb polarisation scores and add to metadata
+eb.pol.scores = read.csv(synGet('syn7254021')@filePath, header = T) %>%
+  dplyr::mutate(eb.pol.scores = ECTO)  %>%
+  dplyr::rename(UID = Input.Sample)
+ALL_USED_IDs <- c(ALL_USED_IDs, 'syn7254021')
+
+METADATA_RNA = synTableQuery('select UID,C4_Cell_Line_ID from syn3156503')@values
+
+# Combine all metadata
+METADATA = inner_join(METADATA_RNA, eb.pol.scores) %>%
+  dplyr::select(C4_Cell_Line_ID, eb.pol.scores) %>%
+  group_by(C4_Cell_Line_ID) %>%
+  summarise(eb.pol.scores = mean(eb.pol.scores, na.rm=T)) %>%
+  right_join(METADATA) %>%
+  left_join(METADATA_TECHNICAL)
+```
+### Filter data
+* Keep only public samples
+* Remove somatic samples and samples with not type
+* Remove samples that failed QC and samples classified as exclude
+* Remove samples with abnormal karyotypes
+* Remove samples with no EB polarisation scores
+* Filter SC samples alone
+```{r filtering, echo=TRUE, include=TRUE}
+#### Pre processing mRNA expression counts and metadata ####
+metadata_keep <- METADATA %>% 
+  filter(UID %in% colnames(COUNT))
+
+metadata_filtered <- metadata_keep %>%
+  filter(public, pass_qc, !exclude,
+         Diffname_short != "",
+         Cell_Type == "PSC",
+         C4_Karyotype_Result != "abnormal",
+         !is.na(eb.pol.scores),
+         Diffname_short == 'SC')
+
+REMOVED_UID <- setdiff(metadata_keep$UID, metadata_filtered$UID)
+METADATA <- metadata_filtered
+rownames(METADATA) <- metadata_filtered$UID
+COUNT <- COUNT[, METADATA$UID]
+```
+### Covariates correlation
+```{r get.covariates}
+# Find inter relation between factor covariates
+COVARIATES = METADATA[,c(FactorCovariates,ContCovariates)] %>% as.data.frame()
+rownames(COVARIATES) = METADATA$UID
+
+# Convert factor covariates to factors
+COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
+COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
+```
+Determine relationship between covariates using correlation/association statistics.
+```{r covariates.correlation, fig.width=10, fig.height=10}
+COVARIATES.CORRELATION = CovariateAnalysis::getAssociationStatistics(COVARIATES, PVAL = 0.1)
+ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
+```
+### CPM Normalisation
+Remove genes that have less than 1 cpm counts in at least 50% of each of the individual differentiation stages and calculate library size
+```{r cpmnormalisation}
+PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(COUNT,
+                                                 MIN_GENE_CPM=1,
+                                                 MIN_SAMPLE_PERCENT_WITH_MIN_GENE_CPM=0.5)
+
+NORM_FACTORS = calcNormFactors(PROCESSED_COUNTS$filteredExprMatrix)
+```
+
+### Filter miRNAs 
+Perform analysis with miRNAs that are upstream of 195 differentially expressed genes between high and low eb.pol.scores
+```{r filter.mirna}
+# Get differentially expressed genes
+DEXP = downloadFile('syn7296891') %>%
+  filter(adj.P.Val <= 0.05) %>%
+  dplyr::select(hgnc_symbol) %>%
+  unlist %>% unique
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7296891')
+
+# Get miRNA-mRNA interactions from synapse and filter upstream mirnas
+upstream.mirnas = downloadFile('syn5643683') %>%
+  filter(feature.assay == 'mirna', target.assay == 'mrna') %>%
+  filter(target %in% DEXP) %>%
+  dplyr::select(feature) %>%
+  unlist %>% unique %>%
+  intersect(PROCESSED_COUNTS$filteredExprMatrix$genes$genes)
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn5643683')
+
+PROCESSED_COUNTS = PROCESSED_COUNTS$filteredExprMatrix$counts[upstream.mirnas,]
+NORM_FACTORS$genes = NORM_FACTORS$genes %>%
+  filter(genes %in% upstream.mirnas)
+NORM_FACTORS$counts = NORM_FACTORS$counts[upstream.mirnas,]
+```
+
+### Normalisation (with NULL)
+Initial normalisation usign voom (with NULL design)
+```{r initial.voom.normalisation}
+# Initial normalisation of gene expression
+VOOM.GENE_EXPRESSION = voom(NORM_FACTORS, design=NULL, plot=T)
+```
+### Significant Covariates
+Correlation between pca of unadjusted miRNA expression and covariates is used to find significant covariates
+```{r preAdjusted.covariates}
+# Find correlation between PC's of gene expression with covariates
+preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, COVARIATES,
+                                                 'NULL design(voom-normalized)',
+                                                 isKeyPlot=TRUE)
+
+# Find significant covariates
+adjustCovars = preAdjustedSigCovars$significantCovars
+```
+Significant covariates to adjust at FDR 0.1 are `r paste(gsub('_','\\\\_',adjustCovars), collapse= ',')`
+```{r preAdjustedSigCovars.NULL.ALL, fig.width=25, fig.height=12}
+preAdjustedSigCovars[["PC_res"]][[2]]$plotData
+```
+### Normalisation (iterative)
+Since many covariates are correlated, re-normalising COVARIATES with an iterative design matrix. Here Donor_ID is chosen as random effect
+```{r iterative.adjusted.voom.normalisation, cache=TRUE}
+postAdjustCovars = list()
+postAdjustCovars$fixed = ''
+postAdjustCovars$random = 'Donor_ID'
+ 
+# Assign residual covariates
+residualSigCovars = preAdjustedSigCovars
+
+significantCovars = residualSigCovars$significantCovars
+
+covariatesEffects = residualSigCovars$Effects.significantCovars
+
+covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars$fixed, postAdjustCovars$random))]
+
+postAdjustCovars$fixed = names(which.max(covariatesEffects))
+
+loopCount = 0 
+while(length(covariatesEffects)!=0 && loopCount <= 100){
+  print(paste('Using following covariates in the model',
+              paste(paste(postAdjustCovars$fixed, collapse=', '),
+                    'as fixed effects and', 
+                    paste(postAdjustCovars$random, collapse=', '),
+                    'as random effects'),
+              sep=':'))
+  
+  # Post adjusted design matrix
+  DM1 = getDesignMatrix(COVARIATES[,postAdjustCovars$fixed,drop=F],Intercept = F)
+  DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols, drop=F]
+    
+  # Estimate correlation of random effects
+  VOOM.ADJUSTED.GENE_EXPRESSION = voom(NORM_FACTORS, design=DM1$design, plot=F)
+  correlation <- duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION$E, design=DM1$design, block=COVARIATES$Donor_ID)
+  
+  # Re-calculate voom weights with correlation of random effects
+  VOOM.ADJUSTED.GENE_EXPRESSION = voom(NORM_FACTORS, design=DM1$design, plot=F,
+                                       block=COVARIATES$Donor_ID, correlation = correlation$cor)
+  
+  FIT = lmFit(VOOM.ADJUSTED.GENE_EXPRESSION)
+  
+  # Residuals after normalisation
+  RESIDUAL.GENE_EXPRESSION = residuals.MArrayLM(FIT,VOOM.ADJUSTED.GENE_EXPRESSION$E)
+  
+  # Residual covariates to choose from
+  residCovars <- setdiff(c(FactorCovariates,ContCovariates), postAdjustCovars$fixed)
+  
+  # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
+  residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION, 
+                                                COVARIATES,
+                                                'all adjusted design(voom-normalized)',
+                                                isKeyPlot=TRUE)
+  
+  # Add postadjusted covariates (if any)
+  significantCovars = residualSigCovars$significantCovars
+  covariatesEffects = residualSigCovars$Effects.significantCovars
+  covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars$fixed,postAdjustCovars$random))]
+  
+  postAdjustCovars$fixed = c(postAdjustCovars$fixed, names(which.max(covariatesEffects)))
+  loopCount = loopCount + 1
+}
+modelStr <- paste(paste(gsub('_','\\\\_',postAdjustCovars$fixed),
+                              collapse=', '),
+                        'as fixed effects and', 
+                        paste(gsub('_','\\\\_',postAdjustCovars$random),
+                              collapse=', '),
+                        'as random effects')
+
+tmp <- paste('Using following covariates in the final model:', modelStr)
+```
+`r tmp`
+### Sanity Check
+```{r residualSigCovars.ALL, fig.width=25, fig.height=12}
+residualSigCovars[["PC_res"]][[2]]$plotData
+```
+No association between eb.pol.scores and miRNA expression is observed 
+```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+thisFileName <- 'EB_Polarisation_Analysis_UpStream_miRNAs.Rmd'
+  
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='mirna')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+```
+
+### Executed: Source code
+`r paste0('[Source R Markdown](',print(thisFile),')')`
