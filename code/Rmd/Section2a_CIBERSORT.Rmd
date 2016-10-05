@@ -1,5 +1,5 @@
 ---
-title: Stratify EBs using markers of pluripotency and germline stages
+title: Stratify EBs using markers of germline stages
 author: "Thanneer Perumal"
 date: '`r date()`'
 output: pdf_document
@@ -13,7 +13,7 @@ synapseLogin()
 
 knit2synapse::knitToFolderEntity(file = 'Section2a_CIBERSORT.Rmd',
                                  parentId = "syn7162983",
-                                 entityName = "2a Stratify EBs using germline and pluripotency markers")
+                                 entityName = "2a Stratify EBs using germline markers")
 ```
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
@@ -39,30 +39,11 @@ library(fpc)
 library(WGCNA)
 library(flashClust)
 
-library('RColorBrewer')
-library('ggplot2')
-library('gplots')
-library('limma')
-library('edgeR')
-library('ctv')
-library('psych')
-library('reshape2')
-library('vcd')
-library('erer')
-library('fpc')
-
 library(synapseClient)
 library(knitr)
 library(githubr)
 
-library(SNFtool)
-library(igraph)
-library(Vennerable)
-
 synapseLogin()
-
-library(circlize)
-colfunc <- colorRampPalette(c("white", "red"))
 
 # Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
@@ -75,13 +56,10 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE,
-  fig.align = 'left',
-  results = 'asis',
-  out.width = '8in')
+  cache = FALSE)
 ```
 
-```{r synapseStore.params, include=FALSE}
+```{r synapseStore.params, include=FALSE, cache=FALSE}
 parentId = "syn7162983"
 ALL_USED_IDs = c()
 
@@ -94,6 +72,9 @@ thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis",
 
 thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
+
+CODE <- Folder(name = '2a Stratify EBs using germline markers',parentId = 'syn7162983')
+CODE <- synStore(CODE)
 ```
 ### Data download from synapse
 #### Get raw logCPM counts from synapse
@@ -125,8 +106,8 @@ ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
 ```
 
 ### Characterise EBs using pluripotency and germline signatures
-Since, EBs are derivatives of pluripotent and/or germlayer states, we characterised our EBs as a mixture model of the above identified signatures but with only genes expressed atleast in 10% of EB samples
-
+Since, EBs are derivatives of pluripotent states, we characterised our EBs as a mixture model of the above identified signatures
+#### mRNA
 ```{r pca.ebs.mrna}
 # Get mrna expression
 tmp = expr$mrna %>%
@@ -137,13 +118,11 @@ rownames(tmp) = expr$mrna$GeneName
 tmp = na.omit(tmp)
 
 # Find signature genes that are atleast expressed in 10% of EB samples
-ind.10percent = which(rowSums(tmp[,covariates$mrna$UID[covariates$mrna$Diffname_short == 'EB']] <= 0) > 5)
 ind.signatures = which(rownames(tmp) %in% state.specific.signatures$feature)
-ind = intersect(ind.10percent, ind.signatures)
 
 # Subset mrna expression
-tmp.EB = tmp[ind, covariates$mrna$UID[covariates$mrna$Diffname_short == 'EB']]
-tmp.notEB = tmp[ind, covariates$mrna$UID[covariates$mrna$Diffname_short %in% c('DE','MESO15','MESO30','ECTO')]]
+tmp.EB = tmp[ind.signatures, covariates$mrna$UID[covariates$mrna$Diffname_short == 'EB']]
+tmp.notEB = tmp[ind.signatures, covariates$mrna$UID[covariates$mrna$Diffname_short %in% c('DE','MESO15','MESO30','ECTO')]]
 
 # Reproject all eb samples in to the above PC space
 PC.gene.space = prcomp(t(tmp.notEB), scale. = T, center = T)
@@ -161,19 +140,14 @@ p = ggplot(eb.pc, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname
 p = p + scale_shape_manual(values = 1:7)
 p
 ```
-From the above PC plot we can see that EBs are stratified in the axis of mesoderm and ectoderm signatures. Therefore it is to say that some of our EBs show more mesoderm like and the others are less mesoderm/ more ectoderm like signatures. Inorder to quantify this degree of seperation we used cibersort analysis to stratify EBs based on ecto and mesoderm signatures.
+From the above PC plot we can see that mRNA expression of EBs are stratified in the axis of mesoderm and ectoderm signatures. Therefore it is to say that some of our EBs show more mesoderm like and the others are less mesoderm/ more ectoderm like signatures. Inorder to quantify this degree of seperation we used cibersort analysis to stratify EBs based on ecto and mesoderm signatures.
 
-Normalise and prepare data for CIBERSORT
-```{r cibersort.prep, include=FALSE}
-# Standard normalisation of signatures
+Normalise and prepare mRNA data for CIBERSORT
+```{r cibersort.prep.mrna, include=FALSE}
 ind.expr = covariates$mrna$UID[covariates$mrna$Diffname_short %in% c('ECTO', 'MESO15', 'MESO30', 'DE')]
 signature.expr = tmp.notEB[,ind.expr] %>%
   rownameToFirstColumn('hgnc_symbol')
 
-# mixture.expr = join_all(list(tmp.notEB[,ind.expr] %>%
-#                                rownameToFirstColumn('hgnc_symbol'),
-#                              tmp.EB %>%
-#                                rownameToFirstColumn('hgnc_symbol')), type = 'full')
 mixture.expr = tmp.EB %>% rownameToFirstColumn('hgnc_symbol')
 
 phenotype = matrix(2, 3, dim(signature.expr)[2])
@@ -189,24 +163,21 @@ phenotype['DE',colnames(signature.expr) %in% ind.expr] = 1
 
 phenotype[,1] = rownames(phenotype)
 
-CODE <- Folder(name = '2a Stratify EBs using germline and pluripotency markers',parentId = 'syn7162983')
-CODE <- synStore(CODE)
-
-write.table(signature.expr, file = 'SignatureExpr.txt',sep = '\t', row.names=F, quote=F)
-obj = File('SignatureExpr.txt', name = 'Signature Matrix', parentId = CODE$properties$id)
+write.table(signature.expr, file = 'mRNA_SignatureExpr.txt',sep = '\t', row.names=F, quote=F)
+obj = File('mRNA_SignatureExpr.txt', name = 'mRNA Signature Matrix', parentId = CODE$properties$id)
 obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
 
-write.table(phenotype, file = 'Phenotype.txt',sep = '\t', row.names=F, quote=F, col.names=F)
-obj = File('Phenotype.txt', name = 'Phenotype Matrix', parentId = CODE$properties$id)
+write.table(phenotype, file = 'mRNA_Phenotype.txt',sep = '\t', row.names=F, quote=F, col.names=F)
+obj = File('mRNA_Phenotype.txt', name = 'mRNA Phenotype Matrix', parentId = CODE$properties$id)
 obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
 
-write.table(mixture.expr, file = 'MixtureExpr.txt',sep = '\t', row.names=F, quote=F)
-obj = File('MixtureExpr.txt', name = 'Mixture Matrix', parentId = CODE$properties$id)
+write.table(mixture.expr, file = 'mRNA_MixtureExpr.txt',sep = '\t', row.names=F, quote=F)
+obj = File('mRNA_MixtureExpr.txt', name = 'mRNA Mixture Matrix', parentId = CODE$properties$id)
 obj = synStore(obj, activityName = 'Stratify EBs', executed = thisFile, used = ALL_USED_IDs)
 ```
 
 ```{r cibersort.output, fig.height=8, fig.width=8}
-cibersort.results = downloadFile('syn7187931') %>%
+cibersort.results = downloadFile('syn7346154') %>%
   plyr::rename(c('Input Sample' = 'UID')) %>%
   dplyr::select(UID, MESO, ECTO, DE) 
 cibersort.results$UID = factor(cibersort.results$UID, 
@@ -223,41 +194,112 @@ tmp = eb.pc %>%
   inner_join(cibersort.results) %>%
   spread(ReferenceState, Fraction) 
 
-writeLines('Relationship between ecto scores from cibersort and pc2 from the decomposition of signatures')
-p = ggplot(tmp, aes(y = PC2, x = ECTO)) + geom_point() + geom_smooth(method = lm)
+writeLines('Relationship between ecto-meso scores from cibersort and pc2 from the decomposition of signatures')
+p = ggplot(tmp, aes(y = PC2, x = (ECTO-MESO))) + geom_point() + geom_smooth(method = lm)
 p = p + geom_text(aes(label=C4_Cell_Line_ID),hjust=0, vjust=0)
 p
 
-writeLines('Relationship between meso scores from cibersort and pc1 from the decomposition of signatures')
-p = ggplot(tmp, aes(y = PC1, x = MESO)) + geom_point() + geom_smooth(method = lm)
+writeLines('Relationship between ecto-meso scores from cibersort and pc1 from the decomposition of signatures')
+p = ggplot(tmp, aes(y = PC1, x = (ECTO-MESO))) + geom_point() + geom_smooth(method = lm)
 p = p + geom_text(aes(label=C4_Cell_Line_ID),hjust=0, vjust=0)
 p
 ```
 
-Association test between different covariates and stratified diff state scores of EBs
+Association test between different covariates and polarisation scores of EBs
 ```{r associate.with.covars, fig.height=10, fig.width=10}
+cibersort.results = cibersort.results %>% 
+  left_join(covariates$mrna %>% dplyr::select(UID, C4_Cell_Line_ID)) %>%
+  group_by(C4_Cell_Line_ID, ReferenceState) %>%
+  summarise(Fraction = mean(Fraction, na.rm=T)) %>%
+  spread(ReferenceState, Fraction) %>%
+  dplyr::mutate(eb.pol.scores = ECTO - MESO) %>%
+  dplyr::select(C4_Cell_Line_ID, eb.pol.scores)
+  
 covars = covariates$mrna %>%
-  filter(Diffname_short == 'EB') %>%
-  dplyr::select(UID, C4_Cell_Line_ID, Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin, 
+  dplyr::select(C4_Cell_Line_ID, Cell_Line_Type, Cell_Line_of_Origin, Tissue_of_Origin, 
                 Reprogramming_Gene_Combination, Culture_Conditions, Donor_Life_Stage,
                 Gender, Cell_Type_of_Origin_Level2, Reprogramming_Vector_Type) %>%
   unique() %>%
-  right_join( cibersort.results ) %>%
-  as.data.frame() %>%
-  spread(ReferenceState, Fraction)
+  right_join(cibersort.results)
 
 factor_covars = c("Cell_Line_Type", "Cell_Line_of_Origin", "Tissue_of_Origin", "Reprogramming_Gene_Combination", 
                   "Culture_Conditions", "Donor_Life_Stage", "Gender", "Cell_Type_of_Origin_Level2", "Reprogramming_Vector_Type")
-cont_covars = c("ECTO", "MESO","DE")
+cont_covars = c("eb.pol.scores")
 
 covars1 = covars[,c(factor_covars, cont_covars)]
 covars1[,factor_covars] = lapply(covars[,factor_covars], as.factor)
-covars1[,cont_covars] = lapply(covars[,cont_covars], as.numeric)
-rownames(covars1) = covars$UID
+covars1[,cont_covars,drop=F] = lapply(covars[,cont_covars,drop=F], as.numeric)
+rownames(covars1) = covars$C4_Cell_Line_ID
 
 COVARIATES.CORRELATION = getAssociationStatistics(covars1, PVAL = 0.1)
 ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.5, row.width=0.1)
-
-plot(covars1$Cell_Line_Type, covars1$DE, ylab = 'Fraction of DE')
 ```
-Association between cell line type is observed
+No significant association is observed
+
+#### miRNA
+```{r pca.ebs.mirna}
+# Get mirna expression
+tmp = expr$mirna %>%
+  dplyr::select(-GeneName) %>%
+  as.matrix()
+rownames(tmp) = expr$mirna$GeneName
+tmp = na.omit(tmp)
+
+# Find signature genes
+ind.signatures = which(rownames(tmp) %in% state.specific.signatures$feature)
+
+# Subset mirna expression
+tmp.EB = tmp[ind.signatures, covariates$mirna$UID[covariates$mirna$Diffname_short == 'EB']]
+tmp.notEB = tmp[ind.signatures, covariates$mirna$UID[covariates$mirna$Diffname_short %in% c('DE','MESO15','MESO30','ECTO')]]
+
+# Reproject all eb samples in to the above PC space
+PC.mirna.space = prcomp(t(tmp.notEB), scale. = T, center = T)
+expr.all = cbind(tmp.EB, tmp.notEB)
+eb.pc = sapply(1:dim(expr.all)[2], function(i, expr.all, pc.rotation){
+  lm(expr ~ 0 + ., cbind(data.frame(expr = scale(expr.all[rownames(pc.rotation),i])), pc.rotation))$coefficients
+}, expr.all, PC.mirna.space$rotation) %>% t
+rownames(eb.pc) = colnames(expr.all)
+
+eb.pc = rownameToFirstColumn(eb.pc, 'UID') %>%
+  left_join(covariates$mirna %>%
+              dplyr::select(UID, Diffname_short, C4_Cell_Line_ID)) 
+
+p = ggplot(eb.pc, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname_short)) + geom_point()
+p = p + scale_shape_manual(values = 1:7)
+p
+```
+From the above PC plot we can see that mirna expression of EBs are more close to mesoderm signatures than ectoderm signatures. Hence no stratification is observed
+
+#### DNA Methylation
+```{r pca.ebs.methyl}
+# Get methyl expression
+tmp = expr$methyl %>%
+  dplyr::select(-methProbeID) %>%
+  as.matrix()
+rownames(tmp) = expr$methyl$methProbeID
+tmp = na.omit(tmp)
+
+# Find signature probes
+ind.signatures = which(rownames(tmp) %in% state.specific.signatures$feature)
+
+# Subset methyl expression
+tmp.EB = tmp[ind.signatures, covariates$methyl$UID[covariates$methyl$Diffname_short == 'EB']]
+tmp.notEB = tmp[ind.signatures, covariates$methyl$UID[covariates$methyl$Diffname_short %in% c('DE','ECTO')]]
+
+# Reproject all eb samples in to the above PC space
+PC.methyl.space = prcomp(t(tmp.notEB), scale. = T, center = T)
+expr.all = cbind(tmp.EB, tmp.notEB)
+eb.pc = sapply(1:dim(expr.all)[2], function(i, expr.all, pc.rotation){
+  lm(expr ~ 0 + ., cbind(data.frame(expr = scale(expr.all[rownames(pc.rotation),i])), pc.rotation))$coefficients
+}, expr.all, PC.methyl.space$rotation) %>% t
+rownames(eb.pc) = colnames(expr.all)
+
+eb.pc = rownameToFirstColumn(eb.pc, 'UID') %>%
+  left_join(covariates$methyl %>%
+              dplyr::select(UID, Diffname_short, C4_Cell_Line_ID)) 
+
+p = ggplot(eb.pc, aes(x = PC1, y = PC2, color = Diffname_short, shape = Diffname_short)) + geom_point()
+p = p + scale_shape_manual(values = 1:7)
+p
+```
+From the above PC plot we can see that methylation expression of EBs are neither close to endoderm nor to ectoderm signatures. Hence no stratification is observed
