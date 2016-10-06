@@ -206,7 +206,7 @@ p
 ```
 
 Association test between different covariates and polarisation scores of EBs
-```{r associate.with.covars, fig.height=10, fig.width=10}
+```{r associate.with.covars, fig.height=10, fig.width=10, cache = FALSE}
 cibersort.results = cibersort.results %>% 
   left_join(covariates$mrna %>% dplyr::select(UID, C4_Cell_Line_ID)) %>%
   group_by(C4_Cell_Line_ID, ReferenceState) %>%
@@ -228,7 +228,7 @@ cont_covars = c("eb.pol.scores")
 
 covars1 = covars[,c(factor_covars, cont_covars)]
 covars1[,factor_covars] = lapply(covars[,factor_covars], as.factor)
-covars1[,cont_covars,drop=F] = lapply(covars[,cont_covars,drop=F], as.numeric)
+covars1[,cont_covars] = as.numeric(covars[,cont_covars])
 rownames(covars1) = covars$C4_Cell_Line_ID
 
 COVARIATES.CORRELATION = getAssociationStatistics(covars1, PVAL = 0.1)

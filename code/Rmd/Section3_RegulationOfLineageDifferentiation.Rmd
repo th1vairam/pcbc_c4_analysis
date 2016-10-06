@@ -1,5 +1,5 @@
 ---
-title: Regulation of lineage differentiation
+title: Regulatory Networks of Lineage Differentiation 
 author: "Thanneer Perumal"
 date: '`r date()`'
 output: pdf_document
@@ -13,7 +13,7 @@ synapseLogin()
 
 knit2synapse::knitToFolderEntity(file = 'Section3_RegulationOfLineageDifferentiation.Rmd',
                                  parentId = "syn7162983",
-                                 entityName = "3 Regulation of Lineage Differentiation")
+                                 entityName = "3 Regulatory Networks of Lineage Differentiation")
 ```
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
@@ -35,22 +35,18 @@ library(RColorBrewer)
 library(ComplexHeatmap)
 library(matrixStats)
 
-library(fpc)
-library(WGCNA)
-library(flashClust)
-
 library(synapseClient)
 library(knitr)
 library(githubr)
 
-library(SNFtool)
-library(igraph)
-library(Vennerable)
-
 synapseLogin()
 
-library(circlize)
-colfunc <- colorRampPalette(c("white", "red"))
+library(parallel)
+library(doParallel)
+library(foreach)
+
+cl = makeCluster(12)
+registerDoParallel(cl)
 
 options(xtable.type="html")
 
@@ -60,10 +56,7 @@ knitr::opts_chunk$set(
   message=FALSE,
   error = FALSE,
   tidy = FALSE,
-  cache = TRUE,
-  fig.align = 'left',
-  results = 'asis',
-  out.width = '8in')
+  cache = TRUE)
 ```
 
 ```{r synapseStore.params, include=FALSE}
@@ -79,7 +72,12 @@ thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis",
 
 thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Populate wiki with results
+CODE <- Folder(name = '3 Regulatory Networks of Lineage Differentiation', parentId = 'syn7162983')
+CODE <- synStore(CODE)
 ```
+
 ### Data download from synapse
 #### Get raw logCPM counts from synapse
 ```{r getRawCount, include=FALSE}
@@ -109,7 +107,7 @@ TFs = downloadFile('syn6040938')$feature
 ALL_USED_IDs = c(ALL_USED_IDs, 'syn6040938')
 ```
 
-#### Get pluripotency and germline specific markers from synapse
+#### Get pluripotency and germline specific signatures from synapse
 ```{r get.markers}
 state.specific.signatures = downloadFile('syn7187534')
 ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
@@ -234,9 +232,8 @@ coexpression = rbindlist(list(coexpression,
   filter(from.state == 'SC')
 ```
 
-### Regulatory network of lineage differentiation
-Relative control of TFs vs mirna vs mrna regulations in SC differentiation
-```{r relative.control}
+### Regulatory networks of lineage differentiation
+```{r reg.net}
 all.int = diffexp %>%
   dplyr::rename(target = feature, target.assay = Assay, target.lfc = logFC, target.fdr = adj.P.value,
                 target.beta = changeBETA, target.direction = Direction) %>%
@@ -268,179 +265,9 @@ all.int.MESO = all.int.MESO %>%
   })
 all.int.MESO$to.state = 'MESO'
 all.int = rbindlist(list(all.int.notMESO, all.int.MESO), fill = T, use.names = T)
-```
-
-```{r plot1}
-relative.control = all.int %>%
-  ddply(.(to.state, target.assay, feature.assay, target.direction), .fun = function(x){
-    count = data.frame(count = x %>%
-                         dplyr::select(target) %>%
-                         unlist %>% unique %>% length)
-    })
-
-total.diffexp = group_by(all.int, to.state, target.assay) %>%
-  summarise(count.all = length(unique(target)))
-
-tmp = full_join(relative.control, total.diffexp) %>%
-  dplyr::mutate(percent = 100*(count/count.all))
-
-sample.scaling.factor = covariates$mrna$Diffname_short %>%
-  factor
-levels(sample.scaling.factor) = c('DE', 'EB', 'ECTO', 'MESO', 'MESO', 'MESO5', 'SC')
-sample.scaling.factor = sample.scaling.factor %>%
-  summary %>%
-  rownameToFirstColumn('to.state') %>%
-  dplyr::rename(fraction = DF)
-sample.scaling.factor$fraction = sample.scaling.factor$fraction/sum(sample.scaling.factor$fraction)
-
-p = tmp %>% 
-  left_join(sample.scaling.factor) %>% 
-  dplyr::mutate(percent = percent * fraction) %>% 
-  filter(target.assay == 'mrna') %>%
-  ggplot(aes(x = to.state, y = percent, fill = to.state))
-p = p + geom_bar(stat = 'identity', position = 'dodge') + ggtitle('Relative regulation of mrna in SC differentiation')
-p = p + facet_grid(feature.assay~.+target.direction, scales = 'free_y') + ylab('Weighted percentage of genes differentially expressed') 
-p = p + xlab('Differentiation State') + theme(legend.position = 'NONE')
-p
-
-p = tmp %>% 
-  left_join(sample.scaling.factor) %>% 
-  dplyr::mutate(percent = percent * fraction) %>% 
-  filter(target.assay == 'mrna', ! (to.state %in% c('EB', 'MESO5'))) %>%
-  ggplot(aes(x = to.state, y = percent, fill = to.state))
-p = p + geom_bar(stat = 'identity', position = 'dodge') + ggtitle('Relative regulation of mrna in SC differentiation')
-p = p + facet_grid(feature.assay~.+target.direction, scales = 'free_y') + ylab('Weighted percentage of genes differentially expressed') 
-p = p + xlab('Differentiation State') + theme(legend.position = 'NONE')
-p
-```
-
-### Enrichment Analysis
-```{r enrichment}
-## Function to compute Fishers enrichment analysis
-fisherEnrichment <- function(genesInSignificantSet, # A character vector of differentially expressed or some significant genes to test
-                             genesInGeneSet, # A character vector of genes in gene set like GO annotations, pathways etc...
-                             genesInBackground # Background genes that are 
-                             ){
-  genesInSignificantSet = intersect(genesInSignificantSet, genesInBackground) # back ground filtering
-  genesInNonSignificantSet = base::setdiff(genesInBackground, genesInSignificantSet)
-  genesInGeneSet = intersect(genesInGeneSet, genesInBackground) # back ground filtering
-  genesOutGeneSet = base::setdiff(genesInBackground,genesInGeneSet)
-
-  pval = fisher.test(
-    matrix(c(length(intersect(genesInGeneSet, genesInSignificantSet)),             
-             length(intersect(genesInGeneSet, genesInNonSignificantSet)),
-             length(intersect(genesOutGeneSet, genesInSignificantSet)),
-             length(intersect(genesOutGeneSet, genesInNonSignificantSet))), 
-           nrow=2, ncol=2),
-    alternative="greater")
-
-  OR = (length(intersect(genesInGeneSet, genesInSignificantSet)) * length(intersect(genesOutGeneSet, genesInNonSignificantSet))) / (length(intersect(genesInGeneSet, genesInNonSignificantSet)) * length(intersect(genesOutGeneSet, genesInSignificantSet)))
-  return(data.frame(pval = as.numeric(pval$p.value),
-                    ngenes = as.numeric(length(genesInGeneSet)),
-                    noverlap = as.numeric(length(intersect(genesInGeneSet, genesInSignificantSet))),
-                    OR = as.numeric(OR)))
-  }
-
-## Get gene sets for enrichment from synapse
-geneset.id = 'syn4867851'
-ALL_USED_IDs = c(ALL_USED_IDs, geneset.id)
-load(synGet(geneset.id)@filePath)
-
-# Choose gene set category for testing
-gsets = c("GO_Biological_Process", "KEGG_2015", "Reactome", "WikiPathways_2015")
-GeneSets = GeneSets[gsets]
-
-## Get background genesets
-genesInBackground = expr$mrna$GeneName
-GeneSets = filterGeneSets(GeneSets, genesInBackground)
-
-## Get gene sets to test
-geneSetsToTest = all.int %>%
-  dplyr::mutate(to.state = gsub('MESO15','MESO',to.state),
-                to.state = gsub('MESO30','MESO',to.state),
-                target.direction = factor(target.direction, labels = c('DOWN','UP'))) %>%
-  dplyr::select(to.state, feature.assay, target.direction, target) %>%
-  unique %>%
-  dlply(.(to.state, feature.assay, target.direction), .fun = function(x){
-    unique(x$target)
-  })
-
-# Perform enrichment analysis
-enrichResults = lapply(geneSetsToTest, function(x, genesInBackground){
-  tmp = lapply(GeneSets, function(y, comp, genesInBackground){
-    tmp = t(sapply(y, fisherEnrichment, comp, genesInBackground))
-    tmp = rownameToFirstColumn(tmp,'GeneSetName')
-    return(tmp)
-  }, x, genesInBackground) %>%
-    rbindlist(use.names=T, fill = T, idcol = 'CategoryName')
-  tmp$fdr = p.adjust(tmp$pval, method = 'fdr')
-  tmp$pval = as.numeric(tmp$pval)
-  tmp$ngenes = as.numeric(tmp$ngenes)
-  tmp$noverlap = as.numeric(tmp$noverlap)
-  tmp$OR = as.numeric(tmp$OR)
-  
-  return(tmp)
-}, genesInBackground) %>%
-  rbindlist(use.names=T, fill = T, idcol = 'MarkerSetName')
-```
-
-### Network analysis
-```{r networks}
-# Create state transition networks from edgelist
-all.graphs = all.int %>%
-  dlply(.(to.state), .fun = function(x){
-  g = dplyr::select(x, feature, target) %>%
-    filter(!is.na(feature), feature != target) %>%
-    as.matrix() %>%
-    igraph::graph_from_edgelist()
-})
-names(all.graphs)
-
-td = igraph::degree(all.graphs$DE, mode = 'all')
-id = igraph::degree(all.graphs$DE, mode = 'in')
-od = igraph::degree(all.graphs$DE, mode = 'out')
-
-# common.to.all = graph.intersection(all.graphs$DE, all.graphs$ECTO, keep.all.vertices = FALSE) %>%
-#   graph.intersection(all.graphs$MESO, keep.all.vertices = FALSE) 
-# 
-# specific.to.DE = graph.difference(all.graphs$DE, all.graphs$ECTO, keep.all.vertices = FALSE) %>%
-#   graph.difference(all.graphs$MESO, keep.all.vertices = FALSE)
-
-g = all.graphs$DE
-  
-scc = components(g)
-scc.df = rownameToFirstColumn(scc[[1]], 'feature') %>% 
-  dplyr::rename(Module = DF)
-
-glist = state.specific.signatures %>%
-  filter(from.state %in% c('SC','DE')) %>%
-  dplyr::select(feature, feature.assay, from.state) %>%
-  left_join(scc.df) %>%
-  filter(!is.na(Module))
-  
-int.list = all.int %>%
-  filter(to.state == 'DE', !is.na(feature.lfc)) %>%
-  dplyr::select(feature, target) %>%
-  unique
-
-results = keyDriverAnalysis(int.list %>% as.matrix(),
-                            glist %>% dplyr::select(feature, Module) %>% as.matrix(),
-                            directed = T,
-                            nlayer_expansion = 1,
-                            nlayer_search = 3,
-                            outputfile = 'output.txt',
-                            enrichedNodes_percent_cut = 0.4)
-```
-
-### Store intermediate results in synapse
-```{r synapse.store}
-# Populate wiki with results
-CODE <- Folder(name = '3 Regulation of Lineage Differentiation',parentId = 'syn7162983')
-CODE <- synStore(CODE)
 
 # Store active interactions to synapse
-all.int %>%
-  write.table(file = 'ActiveInteractions.tsv', sep = '\t', quote=F, row.names = F)
+all.int %>% write.table(file = 'ActiveInteractions.tsv', sep = '\t', quote=F, row.names = F)
 obj = File('ActiveInteractions.tsv', 
            name = 'Active Interactions',
            parentId = CODE$properties$id)
@@ -448,16 +275,187 @@ obj = synStore(obj,
                activityName = 'Network Identification', 
                executed = thisFile, 
                used = as.character(ALL_USED_IDs))
+```
 
-# Store enrichment results to synapse
-enrichResults %>%
-  write.table(file = 'NetworkEnrichmentResults.tsv', sep = '\t', quote=F, row.names = F)
-obj = File('NetworkEnrichmentResults.tsv', 
-           name = 'Network Enrichment Results',
-           parentId = CODE$properties$id)
-obj = synStore(obj, 
-               activityName = 'Network Identification', 
+### Network analysis
+Functions for driver analysis
+```{r fxn}
+# Function to perform Fishers enrichment analysis
+fisherEnrichment <- function(genes.in.significant.set, # A character vector of differentially expressed or some significant genes to test
+                             genes.in.gene.set, # A character vector of genes in gene set like GO annotations, pathways etc...
+                             genes.in.background # Background genes 
+){
+  genes.in.significant.set = intersect(genes.in.significant.set, genes.in.background) # back ground filtering
+  genes.in.nonsignificant.set = base::setdiff(genes.in.background, genes.in.significant.set)
+  genes.in.gene.set = intersect(genes.in.gene.set, genes.in.background) # back ground filtering
+  genes.our.gene.set = base::setdiff(genes.in.background,genes.in.gene.set)
+  
+  tp = length(intersect(genes.in.gene.set, genes.in.significant.set))             
+  fp = length(intersect(genes.in.gene.set, genes.in.nonsignificant.set))
+  fn = length(intersect(genes.our.gene.set, genes.in.significant.set))
+  tn = length(intersect(genes.our.gene.set, genes.in.nonsignificant.set))
+  
+  pval = fisher.test(matrix(c(tp, fp, fn, tn),nrow=2, ncol=2), alternative="greater")
+  odds = (tp*tn)/(fp*fn)
+  
+  return(data.frame(pval = pval$p.value,
+                    ngenes = length(genes.in.gene.set),
+                    noverlap = tp,
+                    odds = odds,
+                    Genes = paste(intersect(genes.in.gene.set, genes.in.significant.set), collapse = '|')
+  )
+  )
+}
+
+# Function to perform un-weighted key regulator analysis for directed networks
+regulatorAnalysis.directed <- function(g, G, h=3, FDR = 0.05){
+  
+  # Convert adjacency to igraph object
+  background.genes = igraph::V(g)$name
+  
+  # Find H-Layer neighborhood
+  neighbor.nodes = lapply(1:h, function(hi,sg){
+    igraph::ego(sg, order = hi, nodes = igraph::V(sg), mode = 'out')
+  }, g)
+  
+  # Perform enrichment analysis for every gene in every layer and pick the minimum p-value
+  fdr = sapply(1:length(neighbor.nodes), function(x, neighborNodes, G, backgroundGenes){
+    foreach::foreach(i = 1:length(neighborNodes[[x]]), 
+                     .combine = c, 
+                     .export =c('neighborNodes', 'G', 'backgroundGenes', 'fisherEnrichment')) %dopar% {
+      fisherEnrichment(names(neighborNodes[[x]][i][[1]]), G, backgroundGenes)$pval
+    }
+  }, neighbor.nodes, G, background.genes) %>%
+    apply(1, min, na.rm = T) %>%
+    stats::p.adjust(method = 'fdr')
+  names(fdr) = background.genes
+  
+  # Calculate node degree for identifying global regulators
+  node.degree = igraph::degree(g)
+  mean.node.degree = mean(node.degree, na.rm = T)
+  stddev.node.degree = sd(node.degree, na.rm = T)
+  
+  # Find leaf nodes to identify global regulators
+  node.in.degree = degree(g, mode = 'in')
+  
+  key.regulators = list()
+  key.regulators$fdr = fdr
+  key.regulators$regulators = background.genes[(fdr <= FDR)]
+  key.regulators$global.regulators = background.genes[((node.degree > (mean.node.degree + 2*stddev.node.degree)) | (node.in.degree == 0)) & (fdr <= FDR)]
+  key.regulators$local.regulators = setdiff(key.regulators$regulators, key.regulators$global.regulators)
+  
+  return(key.regulators)
+}
+
+# Function to calculate node scores
+score.nodes <- function(g, G, h=3, mode = 'all'){
+  
+  # Get background genes from graph
+  background.genes = igraph::V(g)$name
+  G = G[intersect(background.genes, names(G))]
+  G.not = rep(0, length(setdiff(background.genes, names(G))))
+  names(G.not) = setdiff(background.genes, names(G))
+  G = c(G, G.not)
+  
+  # Calculate node degree for identifying global drivers
+  node.degree = igraph::degree(g)
+  mean.node.degree = mean(node.degree, na.rm = T)
+  stddev.node.degree = sd(node.degree, na.rm = T)
+  
+  # Find H-Layer neighborhood
+  neighbor.nodes = lapply(1:h, function(hi,sg){
+    igraph::ego(sg, order = hi, nodes = igraph::V(sg), mode = mode, mindist = hi)
+  }, g)
+  
+  # Find summed weight of current node based on h-layer neighbors
+  node.scores = foreach::foreach (x = 1:length(neighbor.nodes), .combine = cbind) %dopar% {
+    score = sapply(neighbor.nodes[[x]], function(y, G){
+      sum(G[names(y)] * (1/node.degree[names(y)]))
+    }, G)
+  } 
+  node.scores = rowSums(node.scores * t(matrix(rep(1/c(1:h), length(G)), h, length(G))), na.rm = T)
+  node.scores = node.scores + G
+  names(node.scores) = background.genes
+  
+  return(node.scores)
+}
+
+# Function to find weighted regulators on directed networks
+regulatorAnalysis.directed_weighted <- function(g, G, h = 3, n = 100, FDR = 0.05){
+  
+  # Convert adjacency to igraph object
+  background.genes = igraph::V(g)$name
+  
+  # Compute node scores based on neighborhood scores
+  node.scores = score.nodes(g, G, h, mode = 'out')
+  
+  # Permute node labels and calculate null scores
+  perm.node.scores = foreach::foreach(i = 1:n, 
+                                      .combine = cbind, 
+                                      .packages = c('igraph', 'dplyr', 'parallel', 'doParallel', 'foreach'),
+                                      .verbose = TRUE) %dopar% {
+    pg = igraph::permute(g, sample(1:length(background.genes), length(background.genes)))
+    perm.node.scores = score.nodes(pg, G, h, mode = 'out')
+  } 
+  
+  # Perform one sample t-test to estimate significance
+  pval = foreach::foreach(i = 1:length(background.genes), .combine = rbind) %dopar% {
+    tmp = t.test(perm.node.scores[i,], mu = node.scores[i], alternative = 'less')
+    data.frame(pval = tmp$p.value, t = tmp$statistic, t.low = tmp$conf.int[1], t.high = tmp$conf.int[2])
+  }
+  fdr = p.adjust(pval$pval, method = 'fdr')
+  names(fdr) = background.genes
+  
+  # Calculate node degree for identifying global regulators
+  node.degree = igraph::degree(g)
+  mean.node.degree = mean(node.degree, na.rm = T)
+  stddev.node.degree = sd(node.degree, na.rm = T)
+  
+  # Find leaf nodes to identify global regulators
+  node.in.degree = degree(g, mode = 'in')
+  
+  # Promote high degree nodes as global regulators 
+  key.regulators = list()
+  key.regulators$scores = node.scores
+  key.regulators$fdr = fdr
+  key.regulators$regulators = background.genes[(fdr <= FDR)]
+  key.regulators$global.regulators = background.genes[((node.degree > (mean.node.degree + 2*stddev.node.degree)) | (node.in.degree == 0)) & (fdr <= FDR)]
+  key.regulators$local.regulators = setdiff(key.regulators$regulators, key.regulators$global.regulators)
+  
+  return(key.regulators)
+}
+```
+
+```{r score.nodes}
+# Create state transition networks from edgelist
+all.graphs = all.int %>%
+  dlply(.(to.state), .fun = function(x){
+  g <- x %>%
+    dplyr::select(feature, target) %>%
+    filter(feature != 'NONE', feature != target) %>%
+    as.data.frame() %>%
+    igraph::graph_from_data_frame()
+})
+
+# Extract signatures
+signatures = dlply(state.specific.signatures, .(from.state), .fun = function(x){unique(x$feature)})
+signatures$DE = unique(c(signatures$DE, signatures$SC))
+signatures$ECTO = unique(c(signatures$ECTO, signatures$SC))
+signatures$MESO = unique(c(signatures$MESO, signatures$SC))
+signatures$SC = NULL
+
+# Perform key driver analysis (unweighted)
+key.regulators.unw = mapply(function(g, G){
+  driverAnalysis.directed(g, G, h=4, FDR = 0.05)
+}, all.graphs[c('DE','ECTO','MESO')], signatures[c('DE','ECTO','MESO')], SIMPLIFY = F)
+names(key.regulators.unw) = c('DE','ECTO','MESO')
+
+# Store results to synapse
+save(list = 'key.regulators.unw', file = 'kye.regulators.unw.RData')
+obj = File('kye.regulators.unw.RData', name = 'Key Regulators UnWeighted', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Scoring network nodes', 
                executed = thisFile, 
                used = as.character(ALL_USED_IDs))
 
+stopCluster(cl)
 ```
