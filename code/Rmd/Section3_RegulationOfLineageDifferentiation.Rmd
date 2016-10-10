@@ -456,6 +456,43 @@ obj = File('kye.regulators.unw.RData', name = 'Key Regulators UnWeighted', paren
 obj = synStore(obj, activityName = 'Scoring network nodes', 
                executed = thisFile, 
                used = as.character(ALL_USED_IDs))
+```
+
+Weighted scoring of network nodes (based on pvalue)
+```{r score.nodes2}
+# Extract signatures
+weighted.signatures = lapply(names(signatures), function(x, Signatures, DiffExp){
+  dplyr::filter(DiffExp, from.state == 'SC', to.state == x, feature %in% Signatures[[x]]) %>%
+    dplyr::select(feature, adj.P.value) %>%
+    daply(.(feature), .fun = function(y){-log10(y$adj.P.value)})
+}, signatures, diffexp)
+
+dplyr::filter(diffexp, from.state == 'SC', to.state %in% c('MESO15', 'MESO30'), feature %in% signatures[['MESO']]) %>%
+  dplyr::select(feature, adj.P.value) %>%
+  dplyr::group_by(feature) %>%
+  summarise(adj.P.)
+  
+  
+    daply(.(feature), .fun = function(y){-log10(y$adj.P.value)})
+
+signatures = dlply(state.specific.signatures, .(from.state), .fun = function(x){unique(x$feature)})
+signatures$DE = unique(c(signatures$DE, signatures$SC))
+signatures$ECTO = unique(c(signatures$ECTO, signatures$SC))
+signatures$MESO = unique(c(signatures$MESO, signatures$SC))
+signatures$SC = NULL
+
+# Perform key driver analysis (unweighted)
+key.regulators.unw = mapply(function(g, G){
+  driverAnalysis.directed(g, G, h=4, FDR = 0.05)
+}, all.graphs[c('DE','ECTO','MESO')], signatures[c('DE','ECTO','MESO')], SIMPLIFY = F)
+names(key.regulators.unw) = c('DE','ECTO','MESO')
+
+# Store results to synapse
+save(list = 'key.regulators.unw', file = 'kye.regulators.unw.RData')
+obj = File('kye.regulators.unw.RData', name = 'Key Regulators UnWeighted', parentId = CODE$properties$id)
+obj = synStore(obj, activityName = 'Scoring network nodes', 
+               executed = thisFile, 
+               used = as.character(ALL_USED_IDs))
 
 stopCluster(cl)
 ```
