@@ -1,0 +1,384 @@
+---
+title: Predict EB polarisation with SC mRNA expression
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: pdf_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'Section2b_PredictEBPolScores.Rmd',
+                                 parentId = "syn7162983",
+                                 entityName = "2b Predict EB polarisation using SC mRNA expression")
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+
+library(fpc)
+library(WGCNA)
+library(flashClust)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+# Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = FALSE)
+```
+
+```{r synapseStore.params, include=FALSE, cache=FALSE}
+parentId = "syn7162983"
+ALL_USED_IDs = c()
+
+thisFileName = 'Section2b_PredictEBPolScores.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='publication')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+CODE <- Folder(name = '2b Predict EB polarisation using SC mRNA expression',parentId = parentId)
+CODE <- synStore(CODE)
+```
+### Data download from synapse
+#### Get raw logCPM counts from synapse
+```{r getRawCount, include=FALSE}
+expr.id = c(mrna = 'syn5011095')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
+expr = downloadFile(expr.id)
+
+counts.id = 'syn5008587'
+ALL_USED_IDs = c(ALL_USED_IDs, counts.id)
+counts = downloadFile(counts.id) %>%
+  filter(hg19.kgXref.geneSymbol %in% expr$GeneName)
+rownames(counts) = counts$hg19.kgXref.geneSymbol
+counts$hg19.kgXref.geneSymbol = NULL
+```
+
+#### Get covariates from synapse
+```{r covars, include=FALSE}
+covariates.id = c(mrna = 'syn5011149')
+covariates.table.id = c(mrna = 'syn3156503')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
+covariates = downloadFile(covariates.id)
+covariates.table = synTableQuery(paste('select UID,C4_Cell_Line_ID from',covariates.table.id))@values
+
+covariates = left_join(covariates, covariates.table)
+```
+
+#### Get pluripotency and germline specific markers from synapse
+```{r get.markers}
+state.specific.signatures = downloadFile('syn7187534')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
+```
+
+#### Get eb polarisation scores from synapse
+```{r get.pol.scores}
+eb.pol.scores = downloadFile('syn7346154') %>%
+  dplyr::mutate(eb.pol.scores = ECTO-MESO) %>%
+  plyr::rename(c('Input Sample' = 'UID')) %>%
+  left_join(covariates) %>%
+  group_by(C4_Cell_Line_ID) %>%
+  summarise(eb.pol.scores = mean(eb.pol.scores, na.rm = T))
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7346154')
+```
+
+### Covariate adjustments
+Adjust for covariates conditioned on eb.pol.scores in mRNAs of SC state
+```{r cov.adjustments}
+# Get covariates
+covariates.sc = left_join(eb.pol.scores, covariates) %>%
+  filter(!is.na(eb.pol.scores), Diffname_short == 'SC')
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c('run', 'lane', 'Cell_Line_Type', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination',
+                     'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2',
+                     'Reprogramming_Vector_Type')
+ContCovariates = c('PassageAtThaw', 'PassageAtHarvest','eb.pol.scores')
+
+covariates.sc = as.data.frame(covariates.sc[, c(FactorCovariates, ContCovariates,'UID')])
+rownames(covariates.sc) = covariates.sc$UID
+covariates.sc$UID = NULL
+
+# Convert factor covariates to factors and continuous to continuous
+covariates.sc[,FactorCovariates] = lapply(covariates.sc[,FactorCovariates], factor)
+covariates.sc[,ContCovariates] = lapply(covariates.sc[,ContCovariates], as.numeric)
+
+# Correlation between covariates
+covariates.sc.tmp = covariates.sc
+covariates.sc.tmp[is.na(covariates.sc)] = 0
+covariates.correlation = CovariateAnalysis::getAssociationStatistics((covariates.sc.tmp), PVAL = 0.1)  
+ggheatmap.show(covariates.correlation$plot, col.width=0.5, row.width=0.1)
+
+# Initial normalisation of gene expression
+gene.expression = voom(counts[,rownames(covariates.sc)], design=NULL, plot=T)
+    
+# Initial design matrix with covariates under consideration  
+dm = getDesignMatrix(covariates.sc, Intercept = F) 
+
+# Find correlation between PC's of gene expression with covariates
+preAdjustedSigCovars = runPCAandPlotCorrelations(gene.expression$E, 
+                                                 data.matrix(covariates.sc),
+                                                 'NULL design(voom-normalized)', 
+                                                 isKeyPlot=TRUE)
+
+preAdjustedSigCovars[["PC_res"]][[2]]$plotData
+
+## Iterative adjustments of covariates
+postAdjustCovars = 'eb.pol.scores'
+residualSigCovars = preAdjustedSigCovars
+  
+covariatesEffects = residualSigCovars$Effects.significantCovars[setdiff(residualSigCovars$significantCovars, c(postAdjustCovars,'Donor_ID'))]
+    
+postAdjustCovars = c(postAdjustCovars, names(which.max(covariatesEffects)))
+  
+loopCount = 0 
+while(length(covariatesEffects)!=0 && loopCount <= 15){
+  writeLines(paste('Using following covariates in the model:',
+                   paste(paste(gsub('_','\\\\_',postAdjustCovars),collapse=', '),'as fixed effects'),
+                   sep=':'))
+    
+  # Post adjusted design matrix
+  DM1 = getDesignMatrix(covariates.sc[,postAdjustCovars,drop=F],Intercept = F)
+  DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols,drop=F]
+    
+  # Estimate sample weights with null design
+  GENE.EXPRESSION = voom(counts[, rownames(covariates.sc)], 
+                         design = DM1$design, 
+                         plot=F)
+    
+  # Estimate correlation between donor effects
+  CORRELATION = duplicateCorrelation(GENE.EXPRESSION, 
+                                     design = DM1$design,
+                                     block = covariates.sc$Donor_ID)
+    
+  # Estimate sample weights with correlation efects
+  GENE.EXPRESSION = voom(counts[, rownames(covariates.sc)],
+                         design = DM1$design,
+                         block = covariates.sc$Donor_ID,
+                         correlation = CORRELATION$consensus.cor,
+                         plot=F)
+    
+  # Fit linear model with chosen design
+  FIT = lmFit(GENE.EXPRESSION)
+    
+  # Residuals after normalisation
+  RESIDUAL.GENE.EXPRESSION = residuals.MArrayLM(FIT,GENE.EXPRESSION$E)
+    
+  # Residual covariates to choose from
+  residCovars <- setdiff(c(FactorCovariates,ContCovariates), c(postAdjustCovars, 'Donor_ID'))
+    
+  # Find PC of residual gene expression and significant covariates that are highly correlated with PCs    
+  residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE.EXPRESSION, 
+                                                data.matrix(covariates.sc),
+                                                'residuals(voom-normalized)',
+                                                isKeyPlot=TRUE)
+    
+  # Add postadjusted covariates (if any)
+  covariatesEffects = residualSigCovars$Effects.significantCovars[residualSigCovars$significantCovars]
+  covariatesEffects = covariatesEffects[setdiff(names(covariatesEffects), c(postAdjustCovars, 'Donor_ID'))]
+  postAdjustCovars = c(postAdjustCovars, names(which.max(covariatesEffects)))
+    
+  loopCount = loopCount + 1
+}
+```
+
+# Prediction
+Predict eb.pol.scores based on mrna expression in SC for 100 splits of 80%-20% od data
+```{r predict.eb.pol.scores}
+ALL.DEXP = list()
+ALL.AUC = c()
+for(ncount in 1:100){
+  train.id = sample(1:61, 50)
+  test.id = setdiff(1:61, train.id)
+
+  cat("Get differentially expressed genes using limma package with following coefficients in the linear model:\n")
+  cat("----\n",
+      "Get differentially expressed genes using limma package with following coefficients in the linear model:\n",
+      paste0('Fixed Effects:',paste(postAdjustCovars, collapse = ','), "\n"),
+      "Random Effects: Donor_ID\n")
+
+  # Get desing matrix
+  DESIGN.MAT <- getDesignMatrix(covariates.sc[train.id, postAdjustCovars, drop = F], Intercept = F)
+  DESIGN.MAT = DESIGN.MAT$design[,linColumnFinder(DESIGN.MAT$design)$indepCols,drop=F]
+
+  # Voom normalisations
+  EXPR <- voom(counts[,rownames(covariates.sc)[train.id]], design = DESIGN.MAT)
+
+  # Calculate correlated effects of donors
+  CORRELATION <- duplicateCorrelation(EXPR, block = covariates.sc[train.id, 'Donor_ID'])
+
+  # Re-estimate voom normalisations
+  EXPR <- voom(counts[,rownames(covariates.sc)[train.id]], design = DESIGN.MAT, correlation = CORRELATION$cor)
+
+  # Fit linear model using mixed effects design
+  FIT = lmFit(EXPR)
+
+  # Make contrast  
+  CONT <- makeContrasts(contrasts = 'eb.pol.scores', levels=colnames(DESIGN.MAT))
+
+  # Refit contrasts
+  FIT.CONT <- contrasts.fit(FIT, CONT)
+
+  # Estimate moderated t-statistics
+  FIT.CONT <- eBayes(FIT.CONT)
+
+  # Get differentially expressed genes
+  DEXP <- topTable(FIT.CONT, coef = 1, number = dim(EXPR$E)[1]) %>%
+    rownameToFirstColumn('hgnc_symbol')
+
+  # DEXP %>%
+  #   dplyr::mutate(Comparison = 'ecto.scores') %>%
+  #   filter(adj.P.Val <= 0.05) %>%
+  #   summarise(count = n(), Genes = paste(unique(hgnc_symbol), collapse = ',')) %>%
+  #   kable
+
+  # Voom normalisations
+  ALL.EXPR <- voom(counts[,rownames(covariates.sc)], design = NULL)
+
+  # Logistic regression prediction
+  if (sum(DEXP$adj.P.Val <= 0.05) >= 2){
+    # Predict eb.pol.scores using genomic features
+    x.data = ALL.EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],rownames(DESIGN.MAT)] %>% t %>% scale
+    y.data = DESIGN.MAT[,'eb.pol.scores']
+    y.data[y.data>0] = 1;y.data[y.data<0] = 0
+
+    fit.cv = cv.glmnet(x.data, y.data, type.measure = 'class')
+
+    x.test = ALL.EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],test.id] %>% t %>% scale
+    y.test = covariates.sc[test.id,'eb.pol.scores']
+    y.test[y.test>0] = 1;y.test[y.test<0] = 0
+
+    fit.test = predict.cv.glmnet(fit.cv, newx = x.test, s = "lambda.min", type = 'response')
+
+    ALL.AUC = c(ALL.AUC, glmnet::auc(y.test, fit.test))
+    ALL.DEXP = c(ALL.DEXP, list(DEXP))
+  }
+  print(ncount)
+}
+boxplot(ALL.AUC, main = 'AUC')
+```
+
+Differential expression with all cell lines
+
+```{r predict.all, fig.width=15, fig.height=15}
+cat("Get differentially expressed genes using limma package with following coefficients in the linear model:\n")
+cat("----\n",
+    "Get differentially expressed genes using limma package with following coefficients in the linear model:\n",
+    paste0('Fixed Effects:',paste(postAdjustCovars, collapse = ','), "\n"),
+    "Random Effects: Donor_ID\n")
+
+# Get desing matrix
+DESIGN.MAT <- getDesignMatrix(covariates.sc[, postAdjustCovars, drop = F], Intercept = F)
+DESIGN.MAT = DESIGN.MAT$design[,linColumnFinder(DESIGN.MAT$design)$indepCols,drop=F]
+
+# Voom normalisations
+EXPR <- voom(counts[,rownames(covariates.sc)], design = DESIGN.MAT)
+
+# Calculate correlated effects of donors
+CORRELATION <- duplicateCorrelation(EXPR, block = covariates.sc[, 'Donor_ID'])
+
+# Re-estimate voom normalisations
+EXPR <- voom(counts[,rownames(covariates.sc)], design = DESIGN.MAT, correlation = CORRELATION$cor)
+
+# Fit linear model using mixed effects design
+FIT = lmFit(EXPR)
+
+# Make contrast  
+CONT <- makeContrasts(contrasts = 'eb.pol.scores', levels=colnames(DESIGN.MAT))
+
+# Refit contrasts
+FIT.CONT <- contrasts.fit(FIT, CONT)
+
+# Estimate moderated t-statistics
+FIT.CONT <- eBayes(FIT.CONT)
+
+# Get differentially expressed genes
+DEXP <- topTable(FIT.CONT, coef = 1, number = dim(EXPR$E)[1]) %>%
+  rownameToFirstColumn('hgnc_symbol')
+
+DEXP %>%
+  dplyr::mutate(Comparison = 'eb.pol.scores') %>%
+  filter(adj.P.Val <= 0.05) %>%
+  summarise(count = n(), Genes = paste(unique(hgnc_symbol), collapse = ',')) %>%
+  kable
+
+# Voom normalisations
+ALL.EXPR <- voom(counts[,rownames(covariates.sc)], design = NULL)
+
+# Logistic regression prediction
+# Predict eb.pol.scores using genomic features
+x.data = ALL.EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],rownames(DESIGN.MAT)] %>% t %>% scale
+y.data = DESIGN.MAT[,'eb.pol.scores']
+y.data[y.data>0] = 1;y.data[y.data<0] = 0
+
+fit.cv = cv.glmnet(x.data, y.data, type.measure = 'class')
+
+x.test = ALL.EXPR$E[DEXP$hgnc_symbol[DEXP$adj.P.Val <= 0.05],test.id] %>% t %>% scale
+y.test = covariates.sc[test.id,'eb.pol.scores']
+y.test[y.test>0] = 1;y.test[y.test<0] = 0
+
+fit.test = predict.cv.glmnet(fit.cv, newx = x.test, s = "lambda.min", type = 'response')
+
+fit.cv = cv.glmnet(x.data, y.data, type.measure = 'class')
+fit.test = predict.cv.glmnet(fit.cv, newx = x.data, s = "lambda.min")
+p = ggplot(data.frame(y.train = y.data, pred.prob = fit.test) %>%
+             dplyr::rename(pred.prob = X1), aes(x = y.train, y = pred.prob)) + geom_point()
+p = p + geom_smooth(method = 'lm')
+p
+
+DESIGN.MAT = DESIGN.MAT[order(DESIGN.MAT[,'eb.pol.scores']),]
+ha = HeatmapAnnotation(covariates.sc[,c('eb.pol.scores','Gender'),drop=F])
+Heatmap(t(x.data[rownames(DESIGN.MAT), ]),
+        col = colorRamp2(c(-2,0,2), c('blue','white','red')),
+        top_annotation = ha,
+        cluster_columns = F,
+        name = 'Scaled logCPM')
+```
+With predictors of penalised logistic regression model
+
+```{r predictors}
+coef = as.matrix(coef.cv.glmnet(fit.cv))
+Heatmap(t(x.data[rownames(DESIGN.MAT), colnames(x.data) %in% rownames(coef)[coef != 0]]),
+        col = colorRamp2(c(-2,0,2), c('blue','white','red')),
+        top_annotation = ha,
+        cluster_columns = F,
+        name = 'Scaled logCPM')
+```
+
