@@ -34,6 +34,7 @@ library(ggplot2)
 library(RColorBrewer)
 library(ComplexHeatmap)
 library(matrixStats)
+library(igraph)
 
 library(synapseClient)
 library(knitr)
@@ -278,7 +279,7 @@ obj = synStore(obj,
 ```
 
 ### Network analysis
-Functions for driver analysis
+Functions for regulator analysis
 ```{r fxn}
 # Function to perform Fishers enrichment analysis
 fisherEnrichment <- function(genes.in.significant.set, # A character vector of differentially expressed or some significant genes to test
@@ -336,7 +337,7 @@ regulatorAnalysis.directed <- function(g, G, h=3, FDR = 0.05){
   stddev.node.degree = sd(node.degree, na.rm = T)
   
   # Find leaf nodes to identify global regulators
-  node.in.degree = degree(g, mode = 'in')
+  node.in.degree = igraph::degree(g, mode = 'in')
   
   key.regulators = list()
   key.regulators$fdr = fdr
@@ -348,7 +349,7 @@ regulatorAnalysis.directed <- function(g, G, h=3, FDR = 0.05){
 }
 
 # Function to calculate node scores
-score.nodes <- function(g, G, h=3, mode = 'all'){
+score.nodes <- function(g, G, h = 3, mode = 'out'){
   
   # Get background genes from graph
   background.genes = igraph::V(g)$name
@@ -357,7 +358,7 @@ score.nodes <- function(g, G, h=3, mode = 'all'){
   names(G.not) = setdiff(background.genes, names(G))
   G = c(G, G.not)
   
-  # Calculate node degree for identifying global drivers
+  # Calculate node degree for identifying global regulators
   node.degree = igraph::degree(g)
   mean.node.degree = mean(node.degree, na.rm = T)
   stddev.node.degree = sd(node.degree, na.rm = T)
@@ -393,6 +394,7 @@ regulatorAnalysis.directed_weighted <- function(g, G, h = 3, n = 100, FDR = 0.05
   perm.node.scores = foreach::foreach(i = 1:n, 
                                       .combine = cbind, 
                                       .packages = c('igraph', 'dplyr', 'parallel', 'doParallel', 'foreach'),
+                                      .export = c('score.nodes'),
                                       .verbose = TRUE) %dopar% {
     pg = igraph::permute(g, sample(1:length(background.genes), length(background.genes)))
     perm.node.scores = score.nodes(pg, G, h, mode = 'out')
@@ -412,7 +414,7 @@ regulatorAnalysis.directed_weighted <- function(g, G, h = 3, n = 100, FDR = 0.05
   stddev.node.degree = sd(node.degree, na.rm = T)
   
   # Find leaf nodes to identify global regulators
-  node.in.degree = degree(g, mode = 'in')
+  node.in.degree = igraph::degree(g, mode = 'in')
   
   # Promote high degree nodes as global regulators 
   key.regulators = list()
@@ -444,9 +446,9 @@ signatures$ECTO = unique(c(signatures$ECTO, signatures$SC))
 signatures$MESO = unique(c(signatures$MESO, signatures$SC))
 signatures$SC = NULL
 
-# Perform key driver analysis (unweighted)
+# Perform key regulator analysis (unweighted)
 key.regulators.unw = mapply(function(g, G){
-  driverAnalysis.directed(g, G, h=4, FDR = 0.05)
+  regulatorAnalysis.directed(g, G, h=4, FDR = 0.05)
 }, all.graphs[c('DE','ECTO','MESO')], signatures[c('DE','ECTO','MESO')], SIMPLIFY = F)
 names(key.regulators.unw) = c('DE','ECTO','MESO')
 
@@ -463,36 +465,35 @@ Weighted scoring of network nodes (based on pvalue)
 # Extract signatures
 weighted.signatures = lapply(names(signatures), function(x, Signatures, DiffExp){
   dplyr::filter(DiffExp, from.state == 'SC', to.state == x, feature %in% Signatures[[x]]) %>%
-    dplyr::select(feature, adj.P.value) %>%
-    daply(.(feature), .fun = function(y){-log10(y$adj.P.value)})
+    dplyr::select(feature, adj.P.value, logFC) %>%
+    daply(.(feature), .fun = function(y){-log10(y$adj.P.value)*abs(y$logFC)})
 }, signatures, diffexp)
+names(weighted.signatures) = names(signatures)
 
-dplyr::filter(diffexp, from.state == 'SC', to.state %in% c('MESO15', 'MESO30'), feature %in% signatures[['MESO']]) %>%
-  dplyr::select(feature, adj.P.value) %>%
-  dplyr::group_by(feature) %>%
-  summarise(adj.P.)
-  
-  
-    daply(.(feature), .fun = function(y){-log10(y$adj.P.value)})
+weighted.signatures$MESO = dplyr::filter(diffexp, from.state == 'SC', to.state %in% c('MESO15', 'MESO30'), 
+                                         feature %in% signatures[['MESO']]) %>%
+  dplyr::select(feature, to.state, adj.P.value, logFC) %>%
+  ddply(.(feature, to.state), .fun = function(y){-log10(y$adj.P.value)*abs(y$logFC)}) %>%
+  daply(.(feature), .fun = function(y){max(y$V1, na.rm=T)})
 
-signatures = dlply(state.specific.signatures, .(from.state), .fun = function(x){unique(x$feature)})
-signatures$DE = unique(c(signatures$DE, signatures$SC))
-signatures$ECTO = unique(c(signatures$ECTO, signatures$SC))
-signatures$MESO = unique(c(signatures$MESO, signatures$SC))
-signatures$SC = NULL
-
-# Perform key driver analysis (unweighted)
-key.regulators.unw = mapply(function(g, G){
-  driverAnalysis.directed(g, G, h=4, FDR = 0.05)
-}, all.graphs[c('DE','ECTO','MESO')], signatures[c('DE','ECTO','MESO')], SIMPLIFY = F)
-names(key.regulators.unw) = c('DE','ECTO','MESO')
+# Perform key regulator analysis (weighted)
+key.regulators.w = mapply(function(g, G){
+  regulatorAnalysis.directed_weighted(g, G, h = 4, n = 100, FDR = 0.05)
+}, all.graphs[c('DE','ECTO','MESO')], weighted.signatures[c('DE','ECTO','MESO')], SIMPLIFY = F)
+names(key.regulators.w) = c('DE','ECTO','MESO')
 
 # Store results to synapse
-save(list = 'key.regulators.unw', file = 'kye.regulators.unw.RData')
-obj = File('kye.regulators.unw.RData', name = 'Key Regulators UnWeighted', parentId = CODE$properties$id)
+save(list = 'key.regulators.w', file = 'key.regulators.w.RData')
+obj = File('key.regulators.w.RData', name = 'Key Regulators Weighted', parentId = CODE$properties$id)
 obj = synStore(obj, activityName = 'Scoring network nodes', 
                executed = thisFile, 
                used = as.character(ALL_USED_IDs))
+
+intersect(key.regulators.unw$DE$global.regulators,
+          key.regulators.w$DE$global.regulators)
+
+setdiff(key.regulators.w$DE$global.regulators, 
+        key.regulators.unw$DE$global.regulators)
 
 stopCluster(cl)
 ```
