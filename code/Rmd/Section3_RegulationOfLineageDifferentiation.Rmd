@@ -489,5 +489,11 @@ obj = synStore(obj, activityName = 'Scoring network nodes',
                executed = thisFile, 
                used = as.character(ALL_USED_IDs))
 
+intersect(key.regulators.unw$DE$global.regulators,
+          key.regulators.w$DE$global.regulators)
+
+setdiff(key.regulators.w$DE$global.regulators, 
+        key.regulators.unw$DE$global.regulators)
+
 stopCluster(cl)
 ```
