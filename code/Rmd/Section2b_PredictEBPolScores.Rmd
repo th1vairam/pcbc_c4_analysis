@@ -34,6 +34,7 @@ library(ggplot2)
 library(RColorBrewer)
 library(ComplexHeatmap)
 library(matrixStats)
+library(circlize)
 
 library(psych)
 library(fpc)
@@ -112,7 +113,7 @@ ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
 ```
 
 #### Get eb polarisation scores from synapse
-```{r get.pol.scores, include = FASLE}
+```{r get.pol.scores, include = FALSE}
 eb.pol.scores = downloadFile('syn7346154') %>%
   dplyr::mutate(eb.pol.scores = ECTO-MESO) %>%
   plyr::rename(c('Input Sample' = 'UID')) %>%
@@ -229,8 +230,8 @@ Predict eb.pol.scores based on mrna expression in SC for 100 splits of 80%-20% o
 ```{r predict.eb.pol.scores, inclusde = FALSE}
 ALL.DEXP = list()
 ALL.AUC = c()
-ALL.CF =
-for(ncount in 1:10){
+ALL.CF = list()
+for(ncount in 1:100){
   train.id = sample(1:61, 50)
   test.id = setdiff(1:61, train.id)
 
@@ -380,11 +381,25 @@ Heatmap(t(x.data[rownames(DESIGN.MAT), ]),
 ```
 With predictors of penalised logistic regression model
 
-```{r predictors}
+```{r predictors, fig.height=10, fig.width=10}
 coef = as.matrix(coef.cv.glmnet(fit.cv))
 Heatmap(t(x.data[rownames(DESIGN.MAT), colnames(x.data) %in% rownames(coef)[coef != 0]]),
         col = colorRamp2(c(-2,0,2), c('blue','white','red')),
         top_annotation = ha,
         cluster_columns = F,
         name = 'Scaled logCPM')
+```
+
+
+### Store results in synapse
+```{r syn.store, include=FALSE}
+# Store differential expression
+write.table(DEXP, file = 'DEXP_eb.pol.scores.tsv', sep = '\t', row.names = F, quote = F)
+DEXP_OBJ = File('DEXP_eb.pol.scores.tsv', name = 'Differential Expression of SC against EB polarisation scores', parentId = CODE$properties$id)
+DEXP_OBJ = synStore(DEXP_OBJ, used = ALL_USED_IDs, executed = thisFile, activity = 'Predict EB polarisation')
+
+# Store model coefficients
+save(list = c('fit.cv','coef','ALL.AUC','ALL.DEXP','ALL.CF'), file = 'LR_Model.RData')
+MOD_OBJ = File('LR_Model.RData', name = 'Logistic Regression Model for predicting EB polarisation scores', parentId = CODE$properties$id)
+MOD_OBJ = synStore(MOD_OBJ, used = ALL_USED_IDs, executed = thisFile, activity = 'Predict EB polarisation')
 ```
