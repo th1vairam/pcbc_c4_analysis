@@ -227,7 +227,7 @@ while(length(covariatesEffects)!=0 && loopCount <= 15){
 
 # Prediction
 Predict eb.pol.scores based on mrna expression in SC for 100 splits of 80%-20% od data
-```{r predict.eb.pol.scores, inclusde = FALSE}
+```{r predict.eb.pol.scores, include = FALSE}
 ALL.DEXP = list()
 ALL.AUC = c()
 ALL.CF = list()
@@ -304,7 +304,7 @@ for(ncount in 1:100){
 
 Differential expression with all cell lines
 
-```{r predict.all, fig.width=15, fig.height=15}
+```{r predict.all, fig.width=6, fig.height=6}
 boxplot(ALL.AUC, main = 'AUC')
 cat("Get differentially expressed genes using limma package with following coefficients in the linear model:\n")
 cat("----\n",
@@ -373,6 +373,9 @@ p
 
 DESIGN.MAT = DESIGN.MAT[order(DESIGN.MAT[,'eb.pol.scores']),]
 ha = HeatmapAnnotation(covariates.sc[,c('eb.pol.scores','Gender'),drop=F])
+```
+
+```{r temp, fig.height=20, fig.width=15}
 Heatmap(t(x.data[rownames(DESIGN.MAT), ]),
         col = colorRamp2(c(-2,0,2), c('blue','white','red')),
         top_annotation = ha,
@@ -381,7 +384,7 @@ Heatmap(t(x.data[rownames(DESIGN.MAT), ]),
 ```
 With predictors of penalised logistic regression model
 
-```{r predictors, fig.height=10, fig.width=10}
+```{r predictors, fig.height=10, fig.width=15}
 coef = as.matrix(coef.cv.glmnet(fit.cv))
 Heatmap(t(x.data[rownames(DESIGN.MAT), colnames(x.data) %in% rownames(coef)[coef != 0]]),
         col = colorRamp2(c(-2,0,2), c('blue','white','red')),
@@ -396,10 +399,10 @@ Heatmap(t(x.data[rownames(DESIGN.MAT), colnames(x.data) %in% rownames(coef)[coef
 # Store differential expression
 write.table(DEXP, file = 'DEXP_eb.pol.scores.tsv', sep = '\t', row.names = F, quote = F)
 DEXP_OBJ = File('DEXP_eb.pol.scores.tsv', name = 'Differential Expression of SC against EB polarisation scores', parentId = CODE$properties$id)
-DEXP_OBJ = synStore(DEXP_OBJ, used = ALL_USED_IDs, executed = thisFile, activity = 'Predict EB polarisation')
+DEXP_OBJ = synStore(DEXP_OBJ, used = ALL_USED_IDs, executed = thisFile, activityName = 'Predict EB polarisation')
 
 # Store model coefficients
 save(list = c('fit.cv','coef','ALL.AUC','ALL.DEXP','ALL.CF'), file = 'LR_Model.RData')
 MOD_OBJ = File('LR_Model.RData', name = 'Logistic Regression Model for predicting EB polarisation scores', parentId = CODE$properties$id)
-MOD_OBJ = synStore(MOD_OBJ, used = ALL_USED_IDs, executed = thisFile, activity = 'Predict EB polarisation')
+MOD_OBJ = synStore(MOD_OBJ, used = ALL_USED_IDs, executed = thisFile, activityName = 'Predict EB polarisation')
 ```
