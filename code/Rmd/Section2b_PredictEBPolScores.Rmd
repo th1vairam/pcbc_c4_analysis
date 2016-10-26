@@ -381,4 +381,3 @@ Heatmap(t(x.data[rownames(DESIGN.MAT), colnames(x.data) %in% rownames(coef)[coef
         cluster_columns = F,
         name = 'Scaled logCPM')
 ```
-
