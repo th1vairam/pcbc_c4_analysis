@@ -34,10 +34,14 @@ library(ggplot2)
 library(RColorBrewer)
 library(ComplexHeatmap)
 library(matrixStats)
+library(circlize)
 
+library(psych)
 library(fpc)
 library(WGCNA)
 library(flashClust)
+library(limma)
+library(glmnet)
 
 library(synapseClient)
 library(knitr)
@@ -103,13 +107,13 @@ covariates = left_join(covariates, covariates.table)
 ```
 
 #### Get pluripotency and germline specific markers from synapse
-```{r get.markers}
+```{r get.markers, include=FALSE}
 state.specific.signatures = downloadFile('syn7187534')
 ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
 ```
 
 #### Get eb polarisation scores from synapse
-```{r get.pol.scores}
+```{r get.pol.scores, include = FALSE}
 eb.pol.scores = downloadFile('syn7346154') %>%
   dplyr::mutate(eb.pol.scores = ECTO-MESO) %>%
   plyr::rename(c('Input Sample' = 'UID')) %>%
@@ -157,7 +161,9 @@ preAdjustedSigCovars = runPCAandPlotCorrelations(gene.expression$E,
                                                  data.matrix(covariates.sc),
                                                  'NULL design(voom-normalized)', 
                                                  isKeyPlot=TRUE)
+```
 
+```{r cov.adj1, fig.height=12, fig.width=15}
 preAdjustedSigCovars[["PC_res"]][[2]]$plotData
 
 ## Iterative adjustments of covariates
@@ -221,9 +227,10 @@ while(length(covariatesEffects)!=0 && loopCount <= 15){
 
 # Prediction
 Predict eb.pol.scores based on mrna expression in SC for 100 splits of 80%-20% od data
-```{r predict.eb.pol.scores}
+```{r predict.eb.pol.scores, include = FALSE}
 ALL.DEXP = list()
 ALL.AUC = c()
+ALL.CF = list()
 for(ncount in 1:100){
   train.id = sample(1:61, 50)
   test.id = setdiff(1:61, train.id)
@@ -289,15 +296,16 @@ for(ncount in 1:100){
 
     ALL.AUC = c(ALL.AUC, glmnet::auc(y.test, fit.test))
     ALL.DEXP = c(ALL.DEXP, list(DEXP))
+    ALL.CF = c(ALL.CF, list(as.matrix(coef(fit.cv)) %>% rownameToFirstColumn('hgnc_symbol')))
   }
   print(ncount)
 }
-boxplot(ALL.AUC, main = 'AUC')
 ```
 
 Differential expression with all cell lines
 
-```{r predict.all, fig.width=15, fig.height=15}
+```{r predict.all, fig.width=6, fig.height=6}
+boxplot(ALL.AUC, main = 'AUC')
 cat("Get differentially expressed genes using limma package with following coefficients in the linear model:\n")
 cat("----\n",
     "Get differentially expressed genes using limma package with following coefficients in the linear model:\n",
@@ -365,6 +373,9 @@ p
 
 DESIGN.MAT = DESIGN.MAT[order(DESIGN.MAT[,'eb.pol.scores']),]
 ha = HeatmapAnnotation(covariates.sc[,c('eb.pol.scores','Gender'),drop=F])
+```
+
+```{r temp, fig.height=20, fig.width=15}
 Heatmap(t(x.data[rownames(DESIGN.MAT), ]),
         col = colorRamp2(c(-2,0,2), c('blue','white','red')),
         top_annotation = ha,
@@ -373,11 +384,24 @@ Heatmap(t(x.data[rownames(DESIGN.MAT), ]),
 ```
 With predictors of penalised logistic regression model
 
-```{r predictors}
+```{r predictors, fig.height=10, fig.width=15}
 coef = as.matrix(coef.cv.glmnet(fit.cv))
 Heatmap(t(x.data[rownames(DESIGN.MAT), colnames(x.data) %in% rownames(coef)[coef != 0]]),
         col = colorRamp2(c(-2,0,2), c('blue','white','red')),
         top_annotation = ha,
         cluster_columns = F,
         name = 'Scaled logCPM')
+```
+
+### Store results in synapse
+```{r syn.store, include=FALSE}
+# Store differential expression
+write.table(DEXP, file = 'DEXP_eb.pol.scores.tsv', sep = '\t', row.names = F, quote = F)
+DEXP_OBJ = File('DEXP_eb.pol.scores.tsv', name = 'Differential Expression of SC against EB polarisation scores', parentId = CODE$properties$id)
+DEXP_OBJ = synStore(DEXP_OBJ, used = ALL_USED_IDs, executed = thisFile, activityName = 'Predict EB polarisation')
+
+# Store model coefficients
+save(list = c('fit.cv','coef','ALL.AUC','ALL.DEXP','ALL.CF'), file = 'LR_Model.RData')
+MOD_OBJ = File('LR_Model.RData', name = 'Logistic Regression Model for predicting EB polarisation scores', parentId = CODE$properties$id)
+MOD_OBJ = synStore(MOD_OBJ, used = ALL_USED_IDs, executed = thisFile, activityName = 'Predict EB polarisation')
 ```

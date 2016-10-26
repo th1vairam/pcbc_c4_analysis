@@ -1,0 +1,381 @@
+---
+title: Test upstream regulators of mRNAs in SC that are associated with EB polarisation scores 
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: pdf_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'Section2c_PredictEBPolScoresWithUpstream.Rmd',
+                                 parentId = "syn7162983",
+                                 entityName = "2c Upstream regulators of SC mRNAs associated with EB polarisation scores")
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+library(circlize)
+
+library(psych)
+library(fpc)
+library(WGCNA)
+library(flashClust)
+library(limma)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+# Requires ggdendro
+devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = FALSE)
+```
+
+```{r synapseStore.params, include=FALSE, cache=FALSE}
+parentId = "syn7162983"
+ALL_USED_IDs = c()
+
+thisFileName = 'Section2c_PredictEBPolScoresWithUpstream.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='publication')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+CODE <- Folder(name = '2c Upstream regulators of SC mRNAs associated with EB polarisation scores',parentId = parentId)
+CODE <- synStore(CODE)
+```
+### Data download from synapse
+#### Get raw logCPM counts from synapse
+```{r getRawCount, include=FALSE}
+expr.id = c(mirna = 'syn5014454', methyl = 'syn4487642')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
+expr = lapply(expr.id, downloadFile)
+
+counts.id = c(mirna = 'syn5014443')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(counts.id))
+counts = read.table(synGet(counts.id)@filePath, check.names = F)
+counts = counts[expr$mirna$GeneName, intersect(colnames(counts), colnames(expr$mirna))]
+```
+
+#### Get covariates from synapse
+```{r covars, include=FALSE}
+covariates.id = c(mirna = 'syn5014460', methyl = 'syn4487669')
+covariates.table.id = c(mirna = 'syn3219876', methyl = 'syn3156828')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
+covariates = lapply(covariates.id, downloadFile)
+covariates.table = lapply(covariates.table.id, function(x){
+  synTableQuery(paste('select UID,C4_Cell_Line_ID from',x))@values
+})
+
+covariates = mapply(function(x,y){
+  left_join(x,y)
+},covariates, covariates.table)
+```
+
+#### Get pluripotency and germline specific markers from synapse
+```{r get.markers, include=FALSE}
+state.specific.signatures = downloadFile('syn7187534')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
+```
+
+#### Get eb polarisation scores from synapse
+```{r get.pol.scores, include = FALSE}
+eb.pol.scores = downloadFile('syn7346154') %>%
+  dplyr::mutate(eb.pol.scores = ECTO-MESO) %>%
+  plyr::rename(c('Input Sample' = 'UID')) %>%
+  left_join(synTableQuery('select UID,C4_Cell_Line_ID from syn3156503')@values) %>%
+  group_by(C4_Cell_Line_ID) %>%
+  summarise(eb.pol.scores = mean(eb.pol.scores, na.rm = T))
+ALL_USED_IDs = c(ALL_USED_IDs, c('syn7346154', 'syn3156503'))
+```
+
+#### Get differentialy expressed SC mRNAs (wrt eb.pol.scores) from synapse
+```{r get sc.mrna}
+diffexp.sc = downloadFile('syn7417013') %>%
+  dplyr::filter(adj.P.Val <= 0.05) %>%
+  dplyr::select(hgnc_symbol) %>%
+  unlist %>% as.character()
+```
+
+#### Get active interactions in SC state based on coexpression values
+```{r coexp, include = FALSE}
+coexp.id = 'syn5662375'
+ALL_USED_IDs = c(ALL_USED_IDs, coexp.id)
+all.int = downloadFile(coexp.id) %>%
+  dplyr::select(feature, target, feature.assay, target.assay, dataSource,contains('SC')) %>%
+  filter(feature.assay != 'splicing', target.assay != 'splicing') %>%
+  tidyr::gather(comparison, coexpression, -feature, -target, 
+                -feature.assay, -target.assay, -dataSource) %>%
+  tidyr::separate(comparison, c('from.state', 'to.state'), sep = '_vs_') %>%
+  dplyr::mutate(Assay = paste(feature.assay,target.assay, sep = '_')) %>%
+  ddply(.(feature.assay), .fun = function(x){
+    if(any(unique(x$feature.assay) %in% c('methyl','mirna')))
+      return(filter(x, coexpression <= 0))
+    else
+      return(x)
+  }) %>%
+  ddply(.(Assay), .fun = function(x){
+    cut_off = quantile(abs(x$coexpression), 0.9, na.rm = T)
+    filter(x, abs(coexpression) >= cut_off)
+  }) %>%
+  filter(target %in% diffexp.sc)
+```
+### Covariate adjustments (miRNA)
+Adjust for covariates conditioned on eb.pol.scores in miRNAs of SC state
+```{r cov.adjustments.mirna}
+# Get covariates
+covariates.sc.mirna = left_join(eb.pol.scores, covariates$mirna) %>%
+  filter(!is.na(eb.pol.scores), Diffname_short == 'SC')
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c('run', 'lane', 'Cell_Line_Type', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination',
+                     'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2',
+                     'Reprogramming_Vector_Type')
+ContCovariates = c('eb.pol.scores')
+
+covariates.sc.mirna = as.data.frame(covariates.sc.mirna[, c(FactorCovariates, ContCovariates,'UID')])
+rownames(covariates.sc.mirna) = covariates.sc.mirna$UID
+covariates.sc.mirna$UID = NULL
+
+# Convert factor covariates to factors and continuous to continuous
+covariates.sc.mirna[,FactorCovariates] = lapply(covariates.sc.mirna[,FactorCovariates], factor)
+covariates.sc.mirna[,ContCovariates] = lapply(covariates.sc.mirna[,ContCovariates,drop=F], as.numeric)
+
+# Correlation between covariates
+covariates.sc.tmp = covariates.sc.mirna
+covariates.sc.tmp[is.na(covariates.sc.mirna)] = 0
+covariates.correlation = CovariateAnalysis::getAssociationStatistics((covariates.sc.tmp), PVAL = 0.1)  
+ggheatmap.show(covariates.correlation$plot, col.width=0.5, row.width=0.1)
+
+# Initial normalisation of gene expression
+gene.expression = voom(counts[unique(all.int$feature[all.int$feature.assay=='mirna']),rownames(covariates.sc.mirna)], design=NULL, plot=T)
+
+# Find correlation between PC's of gene expression with covariates
+preAdjustedSigCovars = runPCAandPlotCorrelations(gene.expression$E, 
+                                                 data.matrix(covariates.sc.mirna),
+                                                 'NULL design(voom-normalized)', 
+                                                 isKeyPlot=TRUE)
+```
+### Differential expression (miRNA)
+```{r cov.adjustments.mirna1, fig.height=12, fig.width=15}
+preAdjustedSigCovars[["PC_res"]][[2]]$plotData
+
+# Adjustment for covariates
+postAdjustCovars = c('eb.pol.scores')
+writeLines(paste('Using following covariates in the model:',
+                 paste(paste(gsub('_','\\\\_',postAdjustCovars),collapse=', '),'as fixed effects'),
+                 sep=':'))
+
+# Post adjusted design matrix
+DM1 = getDesignMatrix(covariates.sc.mirna[,postAdjustCovars,drop=F],Intercept = F)
+DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols,drop=F]
+  
+# Estimate sample weights with null design
+GENE.EXPRESSION = voom(counts[unique(all.int$feature[all.int$feature.assay=='mirna']), rownames(covariates.sc.mirna)], 
+                       design = DM1$design, 
+                       plot=F)
+
+# Estimate correlation between donor effects
+CORRELATION = duplicateCorrelation(GENE.EXPRESSION, 
+                                   design = DM1$design,
+                                   block = covariates.sc.mirna$Donor_ID)
+
+# Estimate sample weights with correlation efects
+GENE.EXPRESSION = voom(counts[unique(all.int$feature[all.int$feature.assay=='mirna']), rownames(covariates.sc.mirna)],
+                       design = DM1$design,
+                       block = covariates.sc.mirna$Donor_ID,
+                       correlation = CORRELATION$consensus.cor,
+                       plot=F)
+
+# Fit linear model with chosen design
+FIT = lmFit(GENE.EXPRESSION)
+
+# Make contrast  
+CONT <- makeContrasts(contrasts = 'eb.pol.scores', levels=colnames(FIT$coefficients))
+  
+# Refit contrasts
+FIT.CONT <- contrasts.fit(FIT, CONT)
+  
+# Estimate moderated t-statistics
+FIT.CONT <- eBayes(FIT.CONT)
+  
+# Get differentially expressed genes
+DEXP.mirna <- topTable(FIT.CONT, coef = 1, number = dim(GENE.EXPRESSION$E)[1]) %>%
+  rownameToFirstColumn('hgnc_symbol')
+
+writeLines("Differentially expressed mirna's are:")
+DEXP.mirna %>%
+  dplyr::mutate(Comparison = 'eb.pol.scoare') %>%
+  filter(adj.P.Val <= 0.05) %>%
+  summarise(count = n(), Genes = paste(unique(hgnc_symbol), collapse = ',')) %>%
+  kable
+```
+
+### Covariate adjustments (methyl)
+Adjust for covariates conditioned on eb.pol.scores in probes of SC state
+```{r cov.adjustments.methyl}
+# Get covariates
+covariates.sc.methyl = left_join(eb.pol.scores, covariates$methyl) %>%
+  filter(!is.na(eb.pol.scores), Diffname_short == 'SC')
+
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c('Row','Column','Cell_Line_Type', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination',
+                     'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2',
+                     'Reprogramming_Vector_Type')
+ContCovariates = c('eb.pol.scores')
+
+covariates.sc.methyl = as.data.frame(covariates.sc.methyl[, c(FactorCovariates, ContCovariates,'UID')])
+rownames(covariates.sc.methyl) = covariates.sc.methyl$UID
+covariates.sc.methyl$UID = NULL
+
+# Convert factor covariates to factors and continuous to continuous
+covariates.sc.methyl[,FactorCovariates] = lapply(covariates.sc.methyl[,FactorCovariates], factor)
+covariates.sc.methyl[,ContCovariates] = lapply(covariates.sc.methyl[,ContCovariates,drop=F], as.numeric)
+
+# Correlation between covariates
+covariates.sc.tmp = covariates.sc.methyl
+covariates.sc.tmp[is.na(covariates.sc.methyl)] = 0
+covariates.correlation = CovariateAnalysis::getAssociationStatistics((covariates.sc.tmp), PVAL = 0.1)  
+ggheatmap.show(covariates.correlation$plot, col.width=0.5, row.width=0.1)
+
+# Get expression
+expr.methyl = expr$methyl %>%
+  filter(methProbeID %in% all.int$feature[all.int$feature.assay == 'methyl'])
+rownames(expr.methyl) = expr.methyl$methProbeID
+expr.methyl = expr.methyl[, rownames(covariates.sc.methyl)]
+
+# Find correlation between PC's of gene expression with covariates
+preAdjustedSigCovars = runPCAandPlotCorrelations(expr.methyl, 
+                                                 data.matrix(covariates.sc.methyl),
+                                                 'NULL design(voom-normalized)', 
+                                                 isKeyPlot=TRUE)
+```
+### Differential expression (methyl)
+```{r cov.adjustments.methyl1, fig.height=12, fig.width=15}
+preAdjustedSigCovars[["PC_res"]][[2]]$plotData
+
+# Adjustment for covariates
+postAdjustCovars = c('eb.pol.scores')
+
+residualSigCovars = preAdjustedSigCovars
+  
+covariatesEffects = residualSigCovars$Effects.significantCovars[setdiff(residualSigCovars$significantCovars, c(postAdjustCovars,'Donor_ID'))]
+    
+postAdjustCovars = c(postAdjustCovars, names(which.max(covariatesEffects)))
+  
+loopCount = 0 
+while(length(covariatesEffects)!=0 && loopCount <= 15){
+  writeLines(paste('Using following covariates in the model:',
+                   paste(paste(gsub('_','\\\\_',postAdjustCovars),collapse=', '),'as fixed effects'),
+                   sep=':'))
+    
+  # Post adjusted design matrix
+  DM1 = getDesignMatrix(covariates.sc.methyl[,postAdjustCovars,drop=F],Intercept = F)
+  DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols,drop=F]
+  
+  # Estimate correlation between donor effects
+  CORRELATION = duplicateCorrelation(expr.methyl, 
+                                     design = DM1$design,
+                                     block = covariates.sc.methyl$Donor_ID)
+  
+  # Fit linear model with chosen design
+  FIT = lmFit(expr.methyl,
+              design = DM1$desing,
+              block = covariates.sc.methyl$Donor_ID,
+              correlation = CORRELATION$consensus.correlation)
+    
+  # Residuals after normalisation
+  RESIDUAL.GENE.EXPRESSION = residuals.MArrayLM(FIT,expr.methyl)
+    
+  # Residual covariates to choose from
+  residCovars <- setdiff(c(FactorCovariates,ContCovariates), c(postAdjustCovars, 'Donor_ID'))
+    
+  # Find PC of residual gene expression and significant covariates that are highly correlated with PCs    
+  residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE.EXPRESSION, 
+                                                data.matrix(covariates.sc.methyl),
+                                                'residuals(voom-normalized)',
+                                                isKeyPlot=TRUE)
+    
+  # Add postadjusted covariates (if any)
+  covariatesEffects = residualSigCovars$Effects.significantCovars[residualSigCovars$significantCovars]
+  covariatesEffects = covariatesEffects[setdiff(names(covariatesEffects), c(postAdjustCovars, 'Donor_ID'))]
+  postAdjustCovars = c(postAdjustCovars, names(which.max(covariatesEffects)))
+    
+  loopCount = loopCount + 1
+}
+
+# Fit a model with the estimated covariates
+writeLines(paste('Using following covariates in the model:',
+                 paste(paste(gsub('_','\\\\_',postAdjustCovars),collapse=', '),'as fixed effects'),
+                 sep=':'))
+
+# Post adjusted design matrix
+DESIGN.MAT = getDesignMatrix(covariates.sc.methyl[,postAdjustCovars,drop=F],Intercept = F)
+DESIGN.MAT = DESIGN.MAT$design[,linColumnFinder(DESIGN.MAT$design)$indepCols,drop=F]
+  
+# Estimate correlation between donor effects
+CORRELATION = duplicateCorrelation(expr.methyl, 
+                                   design = DESIGN.MAT,
+                                   block = covariates.sc.methyl$Donor_ID)
+
+# Fit linear model with chosen design
+FIT = lmFit(expr.methyl,
+            design = DESIGN.MAT,
+            block = covariates.sc.methyl$Donor_ID,
+            correlation = CORRELATION$consensus.correlation)
+
+# Make contrast  
+CONT <- makeContrasts(contrasts = 'eb.pol.scores', levels=colnames(FIT$coefficients))
+  
+# Refit contrasts
+FIT.CONT <- contrasts.fit(FIT, CONT)
+  
+# Estimate moderated t-statistics
+FIT.CONT <- eBayes(FIT.CONT)
+  
+# Get differentially expressed genes
+DEXP.methyl <- topTable(FIT.CONT, coef = 1, number = dim(GENE.EXPRESSION$E)[1]) %>%
+  rownameToFirstColumn('methProbeID')
+
+writeLines("Differentially expressed DNA methylation probe's are:")
+DEXP.methyl %>%
+  dplyr::mutate(Comparison = 'eb.pol.scoare') %>%
+  filter(adj.P.Val <= 0.05) %>%
+  summarise(count = n(), Genes = paste(unique(methProbeID), collapse = ',')) %>%
+  kable
+```
