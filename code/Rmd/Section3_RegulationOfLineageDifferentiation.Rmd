@@ -235,18 +235,32 @@ coexpression = rbindlist(list(coexpression,
 
 ### Regulatory networks of lineage differentiation
 ```{r reg.net}
-all.int = diffexp %>%
-  dplyr::rename(target = feature, target.assay = Assay, target.lfc = logFC, target.fdr = adj.P.value,
-                target.beta = changeBETA, target.direction = Direction) %>%
-  filter(from.state == 'SC', target.assay != 'splicing') %>%
-  left_join(coexpression) %>%
-  left_join( diffexp %>%
-               dplyr::rename(feature.assay = Assay, feature.lfc = logFC, feature.fdr = adj.P.value, 
-                             feature.beta = changeBETA, feature.direction = Direction) %>%
-               filter(from.state == 'SC', feature.assay != 'splicing')) %>%
-  filter(!(target.assay %in% c('mirna','methyl') & is.na(feature.lfc)))
+all.int = coexpression %>%
+  inner_join(diffexp %>%
+               dplyr::rename(target = feature, target.assay = Assay, target.lfc = logFC, target.fdr = adj.P.value,
+                             target.beta = changeBETA, target.direction = Direction) %>%
+               filter(from.state == 'SC', target.assay != 'splicing')) %>%
+  inner_join( diffexp %>%
+                dplyr::rename(feature.assay = Assay, feature.lfc = logFC, feature.fdr = adj.P.value, 
+                              feature.beta = changeBETA, feature.direction = Direction) %>%
+                filter(from.state == 'SC', feature.assay != 'splicing')) 
 
+# Add features that are differentially expressed but doesn't have any coexpression interactions (singletons)
+singleton.int = diffexp %>% 
+  filter(from.state == 'SC', Assay != 'splicing') %>%
+  ddply(.(from.state, to.state), .fun = function(x, allInt){
+    tmp = filter(allInt, from.state == unique(x$from.state), to.state == unique(x$to.state))
+    filter(x, !(feature %in% tmp$target)) %>%
+      dplyr::rename(target.assay = Assay, target = feature, target.fdr = adj.P.value,
+                    target.lfc = logFC, target.beta = changeBETA, target.direction = Direction)
+  }, allInt)
+
+all.int = rbindlist(list(all.int, singleton.int), 
+                    use.names = T, fill = T)
+
+all.int$feature[is.na(all.int$feature)] = 'NONE'
 all.int$feature.assay[all.int$feature %in% TFs] = 'TF'
+all.int$target.assay[all.int$target %in% TFs] = 'TF'
 all.int$feature.assay[is.na(all.int$feature.assay)] = 'NONE'
 all.int$target.assay[is.na(all.int$target.assay)] = 'NONE'
 # all.int$target.assay[all.int$target %in% TFs] = 'TF'
@@ -488,12 +502,6 @@ obj = File('key.regulators.w.RData', name = 'Key Regulators Weighted', parentId 
 obj = synStore(obj, activityName = 'Scoring network nodes', 
                executed = thisFile, 
                used = as.character(ALL_USED_IDs))
-
-intersect(key.regulators.unw$DE$global.regulators,
-          key.regulators.w$DE$global.regulators)
-
-setdiff(key.regulators.w$DE$global.regulators, 
-        key.regulators.unw$DE$global.regulators)
 
 stopCluster(cl)
 ```
