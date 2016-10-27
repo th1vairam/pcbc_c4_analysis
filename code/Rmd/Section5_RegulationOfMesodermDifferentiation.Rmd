@@ -174,7 +174,9 @@ diffexp = rbindlist(list(diffexp,
                              logFC = -logFC, changeBETA = -changeBETA, changePSI = -changePSI)),
                     use.names = T, fill =T) %>%
   dplyr::mutate(Direction = logFC/abs(logFC)) %>%
-  dplyr::select(-changePSI)
+  dplyr::select(-changePSI) %>%
+  dplyr::mutate(from.to.state = paste(from.state, to.state, sep = '_')) %>%
+  dplyr::filter(from.to.state %in% c('SC_MESO5', 'MESO5_MESO15', 'MESO15_MESO30'))
 ```
 
 #### Get co-expression results from synapse
@@ -193,7 +195,9 @@ coexpression = downloadFile(coexp.id) %>%
       return(filter(x, coexpression <= 0))
     else
       return(x)
-  })
+  }) %>%
+  dplyr::mutate(from.to.state = paste(from.state, to.state, sep = '_')) %>%
+  dplyr::filter(from.to.state %in% c('MESO5_SC', 'MESO15_MESO5', 'MESO30_MESO15'))
 
 writeLines('Total number of possible interactions between assays are')
 coexpression %>%
