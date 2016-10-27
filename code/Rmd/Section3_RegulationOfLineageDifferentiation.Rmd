@@ -253,7 +253,7 @@ singleton.int = diffexp %>%
     filter(x, !(feature %in% tmp$target)) %>%
       dplyr::rename(target.assay = Assay, target = feature, target.fdr = adj.P.value,
                     target.lfc = logFC, target.beta = changeBETA, target.direction = Direction)
-  }, allInt)
+  }, all.int)
 
 all.int = rbindlist(list(all.int, singleton.int), 
                     use.names = T, fill = T)

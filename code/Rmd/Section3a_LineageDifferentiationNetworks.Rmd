@@ -121,7 +121,7 @@ all.networks = lapply(names(key.regulators.w), function(x, Signatures, keyRegula
   vertex$signature[vertex$feature %in% Signatures$feature] = 1
   
   # Store in edges in synapse
-  write.table(edges, file = paste0('Edge_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
+  write.table(edge, file = paste0('Edge_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
   obj = File(paste0('Edge_',x,'.tsv'), name = paste(x, 'Edges'), parentId = CODE$properties$id)
   obj = synStore(obj, used = all.used.ids, executed = thisFile)
   
@@ -130,7 +130,7 @@ all.networks = lapply(names(key.regulators.w), function(x, Signatures, keyRegula
   obj = File(paste0('Node_',x,'.tsv'), name = paste(x, 'Nodes'), parentId = CODE$properties$id)
   obj = synStore(obj, used = all.used.ids, executed = thisFile)
   
-  return(list(edge = edges, node = vertex))
+  return(list(edge = edge, node = vertex))
 }, gx.signatures, key.regulators.w, active.int)
 names(all.networks) = names(key.regulators.w)
 ```
