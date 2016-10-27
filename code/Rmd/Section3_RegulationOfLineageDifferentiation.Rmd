@@ -475,7 +475,7 @@ obj = synStore(obj, activityName = 'Scoring network nodes',
 ```
 
 Weighted scoring of network nodes (based on pvalue)
-```{r score.nodes2}
+```{r score.nodes2, cache=TRUE}
 # Extract signatures
 weighted.signatures = lapply(names(signatures), function(x, Signatures, DiffExp){
   dplyr::filter(DiffExp, from.state == 'SC', to.state == x, feature %in% Signatures[[x]]) %>%

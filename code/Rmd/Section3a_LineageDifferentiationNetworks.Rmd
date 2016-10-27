@@ -1,0 +1,136 @@
+---
+title: Regulatory Networks of Lineage Differentiation 
+author: "Thanneer Perumal"
+date: '`r date()`'
+output: pdf_document
+---
+```{r knit2synapse, eval = FALSE, include=FALSE}
+library(synapseClient)
+library(knitr)
+library(knit2synapse)
+
+synapseLogin()
+
+knit2synapse::knitToFolderEntity(file = 'Section3a_LineageDifferentiationNetworks.Rmd',
+                                 parentId = "syn7162983",
+                                 entityName = "3a Networks of Lineage Differentiation")
+```
+
+```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+## It is assumed your working directory is where this file is
+
+# Clear R console screen output
+cat("\014")
+
+# Load libraries
+library(CovariateAnalysis)
+library(data.table)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(stringr)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(matrixStats)
+library(igraph)
+
+library(synapseClient)
+library(knitr)
+library(githubr)
+
+synapseLogin()
+
+options(xtable.type="html")
+
+knitr::opts_chunk$set(
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  error = FALSE,
+  tidy = FALSE,
+  cache = TRUE)
+```
+
+```{r synapseStore.params, include=FALSE}
+parentId = "syn7162983"
+ALL_USED_IDs = c()
+
+thisFileName = 'Section3a_LineageDifferentiationNetworks.Rmd'
+
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='publication')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Populate wiki with results
+CODE <- Folder(name = '3a Networks of Lineage Differentiation', parentId = 'syn7162983')
+CODE <- synStore(CODE)
+```
+
+### Data download from synapse
+#### Get gene signatures
+```{r get.signatures}
+gx.signatures = downloadFile('syn7187534')
+all.used.ids = 'syn7187534'
+```
+
+#### Get active interactions
+```{r get.active.int}
+active.int = downloadFile('syn7346460')
+all.used.ids = c(all.used.ids, 'syn7346460')
+```
+
+#### Get regulators
+```{r get.reg}
+load(synGet('syn7357665')@filePath)
+all.used.ids = c(all.used.ids, 'syn7357665')
+```
+
+```{r get.nets}
+all.networks = lapply(names(key.regulators.w), function(x, Signatures, keyRegulators, activeInt){
+  edge = activeInt %>%
+    filter(from.state == 'SC', to.state == x) %>%
+    dplyr::select(feature, target, Assay, coexpression, dataSource)
+  vertex = rbindlist(list( activeInt %>%
+                             filter(from.state == 'SC', to.state == x) %>%
+                             dplyr::select(feature, feature.assay, feature.lfc, feature.beta, feature.fdr) %>%
+                             dplyr::rename(assay = feature.assay, lfc = feature.lfc, beta = feature.beta, fdr = feature.fdr),
+                           activeInt %>%
+                             filter(from.state == 'SC', to.state == x) %>%
+                             dplyr::select(target, target.assay, target.lfc, target.beta, target.fdr) %>%
+                             dplyr::rename(feature = target, assay = target.assay, 
+                                           lfc = target.lfc, beta = target.beta, fdr = target.fdr)),
+                     use.names = T, fill = T) %>%
+    unique %>%
+    left_join(keyRegulators[[x]]$score %>%
+                rownameToFirstColumn('feature') %>%
+                dplyr::rename(enrich.score = DF)) %>%
+    left_join(keyRegulators[[x]]$fdr %>%
+                rownameToFirstColumn('feature') %>%
+                dplyr::rename(enrich.fdr = DF))
+  
+  vertex$global.reg[vertex$feature %in% keyRegulators[[x]]$global.regulators] = 1
+  vertex$local.reg[vertex$feature %in% keyRegulators[[x]]$local.regulators] = 1
+  
+  Signatures = filter(Signatures, from.state == 'SC' || from.state == x)
+  vertex$signature[vertex$feature %in% Signatures$feature] = 1
+  
+  # Store in edges in synapse
+  write.table(edges, file = paste0('Edge_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
+  obj = File(paste0('Edge_',x,'.tsv'), name = paste(x, 'Edges'), parentId = CODE$properties$id)
+  obj = synStore(obj, used = all.used.ids, executed = thisFile)
+  
+  # Store in nodes in synapse
+  write.table(vertex, file = paste0('Node_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
+  obj = File(paste0('Node_',x,'.tsv'), name = paste(x, 'Nodes'), parentId = CODE$properties$id)
+  obj = synStore(obj, used = all.used.ids, executed = thisFile)
+  
+  return(list(edge = edges, node = vertex))
+}, gx.signatures, key.regulators.w, active.int)
+names(all.networks) = names(key.regulators.w)
+```
