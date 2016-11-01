@@ -247,7 +247,7 @@ all.int = diffexp %>%
   filter(!(target.assay %in% c('mirna','methyl') & is.na(feature.lfc)))
 
 all.int$feature.assay[all.int$feature %in% TFs] = 'TF'
-all.int$feature.assay[is.na(all.int$feature.assay)] = 'NONE'
+all.int$feature.assay[is.na(all.int$feature.assay)] = 'NONE'syn7346460
 all.int$target.assay[is.na(all.int$target.assay)] = 'NONE'
 # all.int$target.assay[all.int$target %in% TFs] = 'TF'
 all.int$Assay = paste(all.int$feature.assay, all.int$target.assay, sep = '_')
