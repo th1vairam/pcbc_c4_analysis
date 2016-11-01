@@ -393,7 +393,6 @@ Heatmap(t(x.data[rownames(DESIGN.MAT), colnames(x.data) %in% rownames(coef)[coef
         name = 'Scaled logCPM')
 ```
 
-
 ### Store results in synapse
 ```{r syn.store, include=FALSE}
 # Store differential expression

@@ -1,5 +1,5 @@
 ---
-title: Regulatory Networks of Lineage Differentiation 
+title: Regulatory Network of Mesoderm Differentiation 
 author: "Thanneer Perumal"
 date: '`r date()`'
 output: pdf_document
@@ -11,9 +11,9 @@ library(knit2synapse)
 
 synapseLogin()
 
-knit2synapse::knitToFolderEntity(file = 'Section3_RegulationOfLineageDifferentiation.Rmd',
+knit2synapse::knitToFolderEntity(file = 'Section5_RegulationOfMesodermDifferentiation.Rmd',
                                  parentId = "syn7162983",
-                                 entityName = "3 Regulatory Networks of Lineage Differentiation")
+                                 entityName = "5 Regulatory Networks of Mesoderm Differentiation")
 ```
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
@@ -46,7 +46,7 @@ library(parallel)
 library(doParallel)
 library(foreach)
 
-cl = makeCluster(12)
+cl = makeCluster(6)
 registerDoParallel(cl)
 
 options(xtable.type="html")
@@ -64,7 +64,7 @@ knitr::opts_chunk$set(
 parentId = "syn7162983"
 ALL_USED_IDs = c()
 
-thisFileName = 'Section3_RegulationOfLineageDifferentiation.Rmd'
+thisFileName = 'Section5_RegulationOfMesodermDifferentiation.Rmd'
 
 # Github link
 thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
@@ -75,7 +75,7 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
 
 # Populate wiki with results
-CODE <- Folder(name = '3 Regulatory Networks of Lineage Differentiation', parentId = 'syn7162983')
+CODE <- Folder(name = '5 Regulatory Networks of Mesoderm Differentiation', parentId = 'syn7162983')
 CODE <- synStore(CODE)
 ```
 
@@ -110,8 +110,8 @@ ALL_USED_IDs = c(ALL_USED_IDs, 'syn6040938')
 
 #### Get pluripotency and germline specific signatures from synapse
 ```{r get.markers}
-state.specific.signatures = downloadFile('syn7187534')
-ALL_USED_IDs = c(ALL_USED_IDs, 'syn7187534')
+state.specific.signatures = downloadFile('syn7450284')
+ALL_USED_IDs = c(ALL_USED_IDs, 'syn7450284')
 ```
 
 #### Get differential expression results from synapse
@@ -174,9 +174,10 @@ diffexp = rbindlist(list(diffexp,
                              logFC = -logFC, changeBETA = -changeBETA, changePSI = -changePSI)),
                     use.names = T, fill =T) %>%
   dplyr::mutate(Direction = logFC/abs(logFC)) %>%
-  dplyr::select(-changePSI)
+  dplyr::select(-changePSI) %>%
+  dplyr::mutate(from.to.state = paste(from.state, to.state, sep = '_')) %>%
+  dplyr::filter(from.to.state %in% c('SC_MESO5', 'MESO5_MESO15', 'MESO15_MESO30'))
 ```
-Based on the previous analysis here we define four groups of differentiation stages: SC, DE, ECTO and MESO (which is a intersection of mesoderm at day 15 and 30).
 
 #### Get co-expression results from synapse
 ```{r coexp, include = FALSE}
@@ -194,7 +195,9 @@ coexpression = downloadFile(coexp.id) %>%
       return(filter(x, coexpression <= 0))
     else
       return(x)
-  })
+  }) %>%
+  dplyr::mutate(from.to.state = paste(from.state, to.state, sep = '_')) %>%
+  dplyr::filter(from.to.state %in% c('MESO5_SC', 'MESO15_MESO5', 'MESO30_MESO15'))
 
 writeLines('Total number of possible interactions between assays are')
 coexpression %>%
@@ -229,8 +232,7 @@ total.interactions %>%
 coexpression = rbindlist(list(coexpression,
                               coexpression %>% 
                                 dplyr::rename(from.state = to.state, to.state = from.state)),
-                         use.names = T, fill = T) %>%
-  filter(from.state == 'SC')
+                         use.names = T, fill = T)
 ```
 
 ### Regulatory networks of lineage differentiation
@@ -239,16 +241,20 @@ all.int = coexpression %>%
   inner_join(diffexp %>%
                dplyr::rename(target = feature, target.assay = Assay, target.lfc = logFC, target.fdr = adj.P.value,
                              target.beta = changeBETA, target.direction = Direction) %>%
-               filter(from.state == 'SC', target.assay != 'splicing')) %>%
+               filter(target.assay != 'splicing')) %>%
   inner_join( diffexp %>%
                 dplyr::rename(feature.assay = Assay, feature.lfc = logFC, feature.fdr = adj.P.value, 
                               feature.beta = changeBETA, feature.direction = Direction) %>%
-                filter(from.state == 'SC', feature.assay != 'splicing')) 
+                filter(feature.assay != 'splicing')) %>%
+  dplyr::mutate(from.to.state = paste(from.state, to.state, sep = '_')) %>%
+  dplyr::filter(from.to.state %in% c('SC_MESO5', 'MESO5_MESO15', 'MESO15_MESO30'))
 
 # Add features that are differentially expressed but doesn't have any coexpression interactions (singletons)
-singleton.int = diffexp %>% 
-  filter(from.state == 'SC', Assay != 'splicing') %>%
-  ddply(.(from.state, to.state), .fun = function(x, allInt){
+singleton.int = diffexp %>%
+  dplyr::mutate(from.to.state = paste(from.state, to.state, sep = '_')) %>%
+  dplyr::filter(from.to.state %in% c('SC_MESO5', 'MESO5_MESO15', 'MESO15_MESO30')) %>% 
+  dplyr::filter(Assay != 'splicing') %>%
+  ddply(.(from.to.state), .fun = function(x, allInt){
     tmp = filter(allInt, from.state == unique(x$from.state), to.state == unique(x$to.state))
     filter(x, !(feature %in% tmp$target)) %>%
       dplyr::rename(target.assay = Assay, target = feature, target.fdr = adj.P.value,
@@ -256,27 +262,18 @@ singleton.int = diffexp %>%
   }, all.int)
 
 all.int = rbindlist(list(all.int, singleton.int), 
-                    use.names = T, fill = T)
+                    use.names = T, fill = T) %>%
+  dplyr::mutate(from.to.state = paste(from.state, to.state, sep = '_')) %>%
+  dplyr::filter(from.to.state %in% c('SC_MESO5', 'MESO5_MESO15', 'MESO15_MESO30'))
 
 all.int$feature[is.na(all.int$feature)] = 'NONE'
 all.int$feature.assay[all.int$feature %in% TFs] = 'TF'
 all.int$target.assay[all.int$target %in% TFs] = 'TF'
+all.int$feature.assay[is.na(all.int$feature.assay)] = 'NONE'
+all.int$target.assay[is.na(all.int$target.assay)] = 'NONE'
+# all.int$target.assay[all.int$target %in% TFs] = 'TF'
 all.int$Assay = paste(all.int$feature.assay, all.int$target.assay, sep = '_')
 all.int = filter(all.int, ! (Assay %in% c('mrna_mrna', 'mrna_TF')))
-
-# Combine MESO15 and 30 together
-all.int.MESO  = filter(all.int, to.state %in% c('MESO15','MESO30'))
-all.int.notMESO  = filter(all.int, to.state %in% c('DE','ECTO','EB','MESO5'))
-
-all.int.MESO = all.int.MESO %>%
-  ddply(.(feature, target), .fun = function(x){
-    if(dim(x)[1] == 2)
-        x = top_n(x,1,abs(target.lfc))
-    else
-      return(NULL)
-  })
-all.int.MESO$to.state = 'MESO'
-all.int = rbindlist(list(all.int.notMESO, all.int.MESO), fill = T, use.names = T)
 
 # Store active interactions to synapse
 all.int %>% write.table(file = 'ActiveInteractions.tsv', sep = '\t', quote=F, row.names = F)
@@ -284,7 +281,7 @@ obj = File('ActiveInteractions.tsv',
            name = 'Active Interactions',
            parentId = CODE$properties$id)
 obj = synStore(obj, 
-               activityName = 'Network Identification', 
+               activityName = 'Mesoderm Network Identification', 
                executed = thisFile, 
                used = as.character(ALL_USED_IDs))
 ```
@@ -335,8 +332,8 @@ regulatorAnalysis.directed <- function(g, G, h=3, FDR = 0.05){
     foreach::foreach(i = 1:length(neighborNodes[[x]]), 
                      .combine = c, 
                      .export =c('neighborNodes', 'G', 'backgroundGenes', 'fisherEnrichment')) %dopar% {
-      fisherEnrichment(names(neighborNodes[[x]][i][[1]]), G, backgroundGenes)$pval
-    }
+                       fisherEnrichment(names(neighborNodes[[x]][i][[1]]), G, backgroundGenes)$pval
+                     }
   }, neighbor.nodes, G, background.genes) %>%
     apply(1, min, na.rm = T) %>%
     stats::p.adjust(method = 'fdr')
@@ -407,9 +404,9 @@ regulatorAnalysis.directed_weighted <- function(g, G, h = 3, n = 100, FDR = 0.05
                                       .packages = c('igraph', 'dplyr', 'parallel', 'doParallel', 'foreach'),
                                       .export = c('score.nodes'),
                                       .verbose = TRUE) %dopar% {
-    pg = igraph::permute(g, sample(1:length(background.genes), length(background.genes)))
-    perm.node.scores = score.nodes(pg, G, h, mode = 'out')
-  } 
+                                        pg = igraph::permute(g, sample(1:length(background.genes), length(background.genes)))
+                                        perm.node.scores = score.nodes(pg, G, h, mode = 'out')
+                                      } 
   
   # Perform one sample t-test to estimate significance
   pval = foreach::foreach(i = 1:length(background.genes), .combine = rbind) %dopar% {
@@ -442,26 +439,23 @@ regulatorAnalysis.directed_weighted <- function(g, G, h = 3, n = 100, FDR = 0.05
 ```{r score.nodes}
 # Create state transition networks from edgelist
 all.graphs = all.int %>%
-  dlply(.(to.state), .fun = function(x){
-  g <- x %>%
-    dplyr::select(feature, target) %>%
-    filter(feature != 'NONE', feature != target) %>%
-    as.data.frame() %>%
-    igraph::graph_from_data_frame()
-})
+  dlply(.(from.to.state), .fun = function(x){
+    g <- x %>%
+      dplyr::select(feature, target) %>%
+      filter(feature != 'NONE', feature != target) %>%
+      as.data.frame() %>%
+      igraph::graph_from_data_frame()
+  })
+all.graphs[c(1:2)] = NULL
 
 # Extract signatures
-signatures = dlply(state.specific.signatures, .(from.state), .fun = function(x){unique(x$feature)})
-signatures$DE = unique(c(signatures$DE, signatures$SC))
-signatures$ECTO = unique(c(signatures$ECTO, signatures$SC))
-signatures$MESO = unique(c(signatures$MESO, signatures$SC))
-signatures$SC = NULL
+signatures = dlply(state.specific.signatures, .(from.to.state), .fun = function(x){unique(x$feature)})
 
 # Perform key regulator analysis (unweighted)
 key.regulators.unw = mapply(function(g, G){
   regulatorAnalysis.directed(g, G, h=4, FDR = 0.05)
-}, all.graphs[c('DE','ECTO','MESO')], signatures[c('DE','ECTO','MESO')], SIMPLIFY = F)
-names(key.regulators.unw) = c('DE','ECTO','MESO')
+}, all.graphs, signatures[names(all.graphs)], SIMPLIFY = F)
+names(key.regulators.unw) = names(all.graphs)
 
 # Store results to synapse
 save(list = 'key.regulators.unw', file = 'kye.regulators.unw.RData')
@@ -472,26 +466,22 @@ obj = synStore(obj, activityName = 'Scoring network nodes',
 ```
 
 Weighted scoring of network nodes (based on pvalue)
-```{r score.nodes2, cache=TRUE}
+```{r score.nodes2}
 # Extract signatures
 weighted.signatures = lapply(names(signatures), function(x, Signatures, DiffExp){
-  dplyr::filter(DiffExp, from.state == 'SC', to.state == x, feature %in% Signatures[[x]]) %>%
+  DiffExp %>%
+    dplyr::mutate(from.to.state = paste(from.state, to.state, sep = '_')) %>%
+    dplyr::filter(from.to.state == x, feature %in% Signatures[[x]]) %>%
     dplyr::select(feature, adj.P.value, logFC) %>%
     daply(.(feature), .fun = function(y){-log10(y$adj.P.value)*abs(y$logFC)})
 }, signatures, diffexp)
 names(weighted.signatures) = names(signatures)
 
-weighted.signatures$MESO = dplyr::filter(diffexp, from.state == 'SC', to.state %in% c('MESO15', 'MESO30'), 
-                                         feature %in% signatures[['MESO']]) %>%
-  dplyr::select(feature, to.state, adj.P.value, logFC) %>%
-  ddply(.(feature, to.state), .fun = function(y){-log10(y$adj.P.value)*abs(y$logFC)}) %>%
-  daply(.(feature), .fun = function(y){max(y$V1, na.rm=T)})
-
 # Perform key regulator analysis (weighted)
 key.regulators.w = mapply(function(g, G){
   regulatorAnalysis.directed_weighted(g, G, h = 4, n = 100, FDR = 0.05)
-}, all.graphs[c('DE','ECTO','MESO')], weighted.signatures[c('DE','ECTO','MESO')], SIMPLIFY = F)
-names(key.regulators.w) = c('DE','ECTO','MESO')
+}, all.graphs, weighted.signatures[names(all.graphs)], SIMPLIFY = F)
+names(key.regulators.w) = names(all.graphs)
 
 # Store results to synapse
 save(list = 'key.regulators.w', file = 'key.regulators.w.RData')
