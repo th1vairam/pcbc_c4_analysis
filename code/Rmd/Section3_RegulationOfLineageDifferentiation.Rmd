@@ -194,7 +194,8 @@ coexpression = downloadFile(coexp.id) %>%
       return(filter(x, coexpression <= 0))
     else
       return(x)
-  })
+  }) %>%
+  dplyr::filter(!(from.state %in% c('EB','MESO5')))
 
 writeLines('Total number of possible interactions between assays are')
 coexpression %>%
