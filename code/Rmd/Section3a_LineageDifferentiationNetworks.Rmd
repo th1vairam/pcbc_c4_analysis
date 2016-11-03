@@ -114,23 +114,78 @@ all.networks = lapply(names(key.regulators.w), function(x, Signatures, keyRegula
                 rownameToFirstColumn('feature') %>%
                 dplyr::rename(enrich.fdr = DF))
   
-  vertex$global.reg[vertex$feature %in% keyRegulators[[x]]$global.regulators] = 1
-  vertex$local.reg[vertex$feature %in% keyRegulators[[x]]$local.regulators] = 1
+  vertex$global.reg = FALSE
+  vertex$global.reg[vertex$feature %in% keyRegulators[[x]]$global.regulators] = TRUE
+  vertex$local.reg = FALSE
+  vertex$local.reg[vertex$feature %in% keyRegulators[[x]]$local.regulators] = TRUE
   
   Signatures = filter(Signatures, from.state == 'SC' || from.state == x)
-  vertex$signature[vertex$feature %in% Signatures$feature] = 1
+  vertex$signature = FALSE
+  vertex$signature[vertex$feature %in% Signatures$feature] = TRUE
   
-  # Store in edges in synapse
-  write.table(edge, file = paste0('Edge_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
-  obj = File(paste0('Edge_',x,'.tsv'), name = paste(x, 'Edges'), parentId = CODE$properties$id)
-  obj = synStore(obj, used = all.used.ids, executed = thisFile)
-  
-  # Store in nodes in synapse
-  write.table(vertex, file = paste0('Node_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
-  obj = File(paste0('Node_',x,'.tsv'), name = paste(x, 'Nodes'), parentId = CODE$properties$id)
-  obj = synStore(obj, used = all.used.ids, executed = thisFile)
+  # # Store in edges in synapse
+  # write.table(edge, file = paste0('Edge_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
+  # obj = File(paste0('Edge_',x,'.tsv'), name = paste(x, 'Edges'), parentId = CODE$properties$id)
+  # obj = synStore(obj, used = all.used.ids, executed = thisFile)
+  # 
+  # # Store in nodes in synapse
+  # write.table(vertex, file = paste0('Node_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
+  # obj = File(paste0('Node_',x,'.tsv'), name = paste(x, 'Nodes'), parentId = CODE$properties$id)
+  # obj = synStore(obj, used = all.used.ids, executed = thisFile)
   
   return(list(edge = edge, node = vertex))
 }, gx.signatures, key.regulators.w, active.int)
 names(all.networks) = names(key.regulators.w)
+```
+
+#### Compare regulators
+```{r reg.comp}
+reg = lapply(key.regulators.w, function(x){x$regulators})
+tmp = Vennerable::Venn(reg)
+plot(tmp)
+
+writeLines('Stem cell specific regulators are')
+writeLines(paste(intersect(reg$DE, reg$ECTO) %>% intersect(reg$MESO), collapse = ', '))
+
+writeLines('DE specific regulators')
+writeLines(paste(intersect(reg$MESO, reg$ECTO) %>% setdiff(reg$DE,.), collapse = ', '))
+
+writeLines('ECTO specific regulators')
+writeLines(paste(intersect(reg$MESO, reg$DE) %>% setdiff(reg$ECTO,.), collapse = ', '))
+
+writeLines('MESO specific regulators')
+writeLines(paste(intersect(reg$DE, reg$ECTO) %>% setdiff(reg$MESO,.), collapse = ', '))
+```
+
+#### Endodermal differentiation
+```{r de}
+g.de = igraph::graph_from_data_frame(all.networks$DE$edge, directed = T, vertices = all.networks$DE$node)
+igraph::write_graph(g.de, file = 'SCtoDE_Full.graphml', format = 'graphml')
+
+g.sub = induced_subgraph(g.de, which(V(g.de)$global.reg == 1 | V(g.de)$local.reg == 1))# | V(g.de)$signature == 1
+scc = components(g.sub)
+g.sub = induced_subgraph(g.sub, scc$membership == 1)
+igraph::write_graph(g.de, file = 'SCtoDE_Regulators.graphml', format = 'graphml')
+```
+
+#### Ectodermal differentiation
+```{r ecto}
+g.ecto = igraph::graph_from_data_frame(all.networks$ECTO$edge, directed = T, vertices = all.networks$ECTO$node)
+igraph::write_graph(g.de, file = 'SCtoECTO_Full.graphml', format = 'graphml')
+
+g.sub = induced_subgraph(g.ecto, which(V(g.ecto)$global.reg == 1 | V(g.ecto)$local.reg == 1))# | V(g.ecto)$signature == 1
+scc = components(g.sub)
+g.sub = induced_subgraph(g.sub, scc$membership == 1)
+igraph::write_graph(g.ecto, file = 'SCtoECTO_Regulators.graphml', format = 'graphml')
+```
+
+#### Mesodermal differentiation
+```{r meso}
+g.meso = igraph::graph_from_data_frame(all.networks$MESO$edge, directed = T, vertices = all.networks$MESO$node)
+igraph::write_graph(g.meso, file = 'SCtoMESO_Full.graphml', format = 'graphml')
+
+g.sub = induced_subgraph(g.meso, which(V(g.meso)$global.reg == 1 | V(g.meso)$local.reg == 1))# | V(g.meso)$signature == 1
+scc = components(g.sub)
+g.sub = induced_subgraph(g.sub, scc$membership == 1)
+igraph::write_graph(g.meso, file = 'SCtoMESO_Regulators.graphml', format = 'graphml')
 ```
