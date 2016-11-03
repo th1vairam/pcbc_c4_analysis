@@ -106,6 +106,15 @@ all.networks = lapply(names(key.regulators.w), function(x, Signatures, keyRegula
                              dplyr::rename(feature = target, assay = target.assay, 
                                            lfc = target.lfc, beta = target.beta, fdr = target.fdr)),
                      use.names = T, fill = T) %>%
+    ddply(.(feature), .fun = function(x){
+      if(unique(x$feature) == 'NONE'){
+        return(x);
+      } else {
+        ind = which.min(x$lfc); 
+        x = x[ind,]; 
+        return(x)
+      }
+    }) %>%
     unique %>%
     left_join(keyRegulators[[x]]$score %>%
                 rownameToFirstColumn('feature') %>%
