@@ -120,15 +120,15 @@ all.networks = lapply(names(key.regulators.w), function(x, Signatures, keyRegula
   Signatures = filter(Signatures, from.state == 'SC' || from.state == x)
   vertex$signature[vertex$feature %in% Signatures$feature] = 1
   
-  # Store in edges in synapse
-  write.table(edge, file = paste0('Edge_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
-  obj = File(paste0('Edge_',x,'.tsv'), name = paste(x, 'Edges'), parentId = CODE$properties$id)
-  obj = synStore(obj, used = all.used.ids, executed = thisFile)
-  
-  # Store in nodes in synapse
-  write.table(vertex, file = paste0('Node_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
-  obj = File(paste0('Node_',x,'.tsv'), name = paste(x, 'Nodes'), parentId = CODE$properties$id)
-  obj = synStore(obj, used = all.used.ids, executed = thisFile)
+  # # Store in edges in synapse
+  # write.table(edge, file = paste0('Edge_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
+  # obj = File(paste0('Edge_',x,'.tsv'), name = paste(x, 'Edges'), parentId = CODE$properties$id)
+  # obj = synStore(obj, used = all.used.ids, executed = thisFile)
+  # 
+  # # Store in nodes in synapse
+  # write.table(vertex, file = paste0('Node_',x,'.tsv'), row.names = F, sep = '\t', quote=F)
+  # obj = File(paste0('Node_',x,'.tsv'), name = paste(x, 'Nodes'), parentId = CODE$properties$id)
+  # obj = synStore(obj, used = all.used.ids, executed = thisFile)
   
   return(list(edge = edge, node = vertex))
 }, gx.signatures, key.regulators.w, active.int)
