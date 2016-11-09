@@ -46,7 +46,7 @@ library(parallel)
 library(doParallel)
 library(foreach)
 
-cl = makeCluster(12)
+cl = makeCluster(6)
 registerDoParallel(cl)
 
 options(xtable.type="html")
@@ -194,7 +194,8 @@ coexpression = downloadFile(coexp.id) %>%
       return(filter(x, coexpression <= 0))
     else
       return(x)
-  })
+  }) %>%
+  dplyr::filter(!(from.state %in% c('EB','MESO5')))
 
 writeLines('Total number of possible interactions between assays are')
 coexpression %>%
@@ -261,9 +262,6 @@ all.int = rbindlist(list(all.int, singleton.int),
 all.int$feature[is.na(all.int$feature)] = 'NONE'
 all.int$feature.assay[all.int$feature %in% TFs] = 'TF'
 all.int$target.assay[all.int$target %in% TFs] = 'TF'
-all.int$feature.assay[is.na(all.int$feature.assay)] = 'NONE'
-all.int$target.assay[is.na(all.int$target.assay)] = 'NONE'
-# all.int$target.assay[all.int$target %in% TFs] = 'TF'
 all.int$Assay = paste(all.int$feature.assay, all.int$target.assay, sep = '_')
 all.int = filter(all.int, ! (Assay %in% c('mrna_mrna', 'mrna_TF')))
 
@@ -479,16 +477,33 @@ Weighted scoring of network nodes (based on pvalue)
 # Extract signatures
 weighted.signatures = lapply(names(signatures), function(x, Signatures, DiffExp){
   dplyr::filter(DiffExp, from.state == 'SC', to.state == x, feature %in% Signatures[[x]]) %>%
-    dplyr::select(feature, adj.P.value, logFC) %>%
-    daply(.(feature), .fun = function(y){-log10(y$adj.P.value)*abs(y$logFC)})
+    dplyr::select(feature, Assay, adj.P.value, logFC) %>%
+    ddply(.(Assay), .fun = function(y){
+      y = dplyr::mutate(y,
+                        pval = -log10(y$adj.P.value),
+                        rlfc = rank(-abs(y$logFC), ties.method = 'average'),
+                        rlfc = -log10(rlfc/max(rlfc)), 
+                        score = pval*rlfc)
+    }) %>%
+    daply(.(feature), .fun = function(y){
+      y$score
+    })
 }, signatures, diffexp)
 names(weighted.signatures) = names(signatures)
 
-weighted.signatures$MESO = dplyr::filter(diffexp, from.state == 'SC', to.state %in% c('MESO15', 'MESO30'), 
+weighted.signatures$MESO = dplyr::filter(diffexp, 
+                                         from.state == 'SC', 
+                                         to.state %in% c('MESO15', 'MESO30'), 
                                          feature %in% signatures[['MESO']]) %>%
-  dplyr::select(feature, to.state, adj.P.value, logFC) %>%
-  ddply(.(feature, to.state), .fun = function(y){-log10(y$adj.P.value)*abs(y$logFC)}) %>%
-  daply(.(feature), .fun = function(y){max(y$V1, na.rm=T)})
+  dplyr::select(feature, Assay, to.state, adj.P.value, logFC) %>%
+  ddply(.(Assay, to.state), .fun = function(y){
+      y = dplyr::mutate(y,
+                        pval = -log10(y$adj.P.value),
+                        rlfc = rank(-abs(y$logFC), ties.method = 'average'),
+                        rlfc = -log10(rlfc/max(rlfc)), 
+                        score = pval*rlfc)
+    }) %>%
+  daply(.(feature), .fun = function(y){max(y$score, na.rm=T)})
 
 # Perform key regulator analysis (weighted)
 key.regulators.w = mapply(function(g, G){
