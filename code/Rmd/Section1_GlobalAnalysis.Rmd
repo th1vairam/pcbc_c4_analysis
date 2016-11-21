@@ -43,7 +43,6 @@ library(synapseClient)
 library(knitr)
 library(githubr)
 
-library(SNFtool)
 library(igraph)
 library(Vennerable)
 
@@ -86,6 +85,17 @@ thisFile <- getPermlink(repository = thisRepo,
 expr.id = c(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642')
 ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
 expr = lapply(expr.id, downloadFile)
+
+expr.mean = mapply(function(cov, exp){
+  cov %>% dlply(.(Diffname_short), .fun = function(x, exp){
+    data.frame(feature = exp[,1],
+               DF = rowMeans(exp[,x$UID], na.rm = T)) %>%
+      plyr::rename(c('DF' = unique(x$Diffname_short)))
+  }, exp) %>%
+    join_all(type = 'full') %>%
+    tidyr::gather(state, mn.expr, -feature)
+}, covariates, expr, SIMPLIFY = F) %>%
+  rbindlist(idcol = 'Assay')
 ```
 
 #### Get covariates from synapse
@@ -121,7 +131,6 @@ mrna.lcpm <- 3
 mirna.lcpm <- 4
 methyl.beta <- 0.3
 ```
-
 
 ```{r diffexp, include=FALSE}
 ### Download differential expression results from synapse
