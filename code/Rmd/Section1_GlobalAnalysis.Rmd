@@ -43,7 +43,6 @@ library(synapseClient)
 library(knitr)
 library(githubr)
 
-library(SNFtool)
 library(igraph)
 library(Vennerable)
 
@@ -86,6 +85,17 @@ thisFile <- getPermlink(repository = thisRepo,
 expr.id = c(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642')
 ALL_USED_IDs = c(ALL_USED_IDs, as.character(expr.id))
 expr = lapply(expr.id, downloadFile)
+
+expr.mean = mapply(function(cov, exp){
+  cov %>% dlply(.(Diffname_short), .fun = function(x, exp){
+    data.frame(feature = exp[,1],
+               DF = rowMeans(exp[,x$UID], na.rm = T)) %>%
+      plyr::rename(c('DF' = unique(x$Diffname_short)))
+  }, exp) %>%
+    join_all(type = 'full') %>%
+    tidyr::gather(state, mn.expr, -feature)
+}, covariates, expr, SIMPLIFY = F) %>%
+  rbindlist(idcol = 'Assay')
 ```
 
 #### Get covariates from synapse
@@ -116,6 +126,10 @@ mrna.lfc.th <- log2(2)
 mirna.lfc.th <- log2(2)
 methyl.changeBeta.th <- 0.35
 splicing.changePSI.th <- 0.2
+
+mrna.lcpm <- 3
+mirna.lcpm <- 4
+methyl.beta <- 0.3
 ```
 
 ```{r diffexp, include=FALSE}
@@ -132,40 +146,60 @@ diffexp = list()
 diffexp$mrna = downloadFile(diffexp.id['mrna']) %>%
   dplyr::rename(feature = GeneSymbol) %>%
   tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
-  dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mrna.lfc.th & Comparison %in% Comparisons) %>%
-  dplyr::select(feature, Comparison, adj.P.value, logFC) 
+  tidyr::separate(Comparison, into = c('from.state','to.state'), sep = '_vs_') %>%
+  left_join(expr.mean %>%
+              dplyr::rename(from.state = state, from.mn.expr = mn.expr)) %>%
+  left_join(expr.mean %>%
+              dplyr::rename(to.state = state, to.mn.expr = mn.expr)) %>%
+  ddply(.(feature, from.state, to.state), .fun = function(x){
+    x$mx.mn.expr = max(x$from.mn.expr, x$to.mn.expr)
+    return(x)
+  }) %>%
+  dplyr::filter(adj.P.value <= pval.th, abs(logFC) >= mrna.lfc.th, mx.mn.expr > mrna.lcpm) %>%
+  dplyr::select(feature, from.state, from.mn.expr, to.state,  to.mn.expr, Assay, adj.P.value, logFC) 
 
 # Get mirna differential expression results from synapse
 diffexp$mirna = downloadFile(diffexp.id['mirna']) %>%
   dplyr::rename(feature = GeneSymbol) %>%
   tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
-  dplyr::filter(adj.P.value <= pval.th & abs(logFC) >= mirna.lfc.th & Comparison %in% Comparisons) %>%
-  dplyr::select(feature, Comparison, adj.P.value, logFC) 
+  tidyr::separate(Comparison, into = c('from.state','to.state'), sep = '_vs_') %>%
+  left_join(expr.mean %>%
+              dplyr::rename(from.state = state, from.mn.expr = mn.expr)) %>%
+  left_join(expr.mean %>%
+              dplyr::rename(to.state = state, to.mn.expr = mn.expr)) %>%
+  ddply(.(feature, from.state, to.state), .fun = function(x){
+    x$mx.mn.expr = max(x$from.mn.expr, x$to.mn.expr)
+    return(x)
+  }) %>%
+  dplyr::filter(adj.P.value <= pval.th, abs(logFC) >= mirna.lfc.th, mx.mn.expr > mirna.lcpm) %>%
+  dplyr::select(feature, from.state, from.mn.expr, to.state,  to.mn.expr, Assay, adj.P.value, logFC) 
 
 # Get methyl differential expression results from synapse
 diffexp$methyl = downloadFile(diffexp.id['methyl']) %>%
   dplyr::select(-one_of('feature')) %>%
   dplyr::rename(feature = methProbeIDs) %>%
   tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
-  dplyr::filter(adj.P.value <= pval.th & abs(changeBETA) >= methyl.changeBeta.th & Comparison %in% Comparisons) %>%
-  dplyr::select(feature, Comparison, adj.P.value, logFC, changeBETA) 
+  tidyr::separate(Comparison, into = c('from.state','to.state'), sep = '_vs_') %>%
+  left_join(expr.mean %>%
+              dplyr::rename(from.state = state, from.mn.expr = mn.expr)) %>%
+  left_join(expr.mean %>%
+              dplyr::rename(to.state = state, to.mn.expr = mn.expr)) %>%
+  dplyr::filter(adj.P.value <= pval.th, abs(changeBETA) >= methyl.changeBeta.th) %>%
+  ddply(.(feature, from.state, to.state), .fun = function(x){
+    x$mx.mn.expr = max(x$from.mn.expr, x$to.mn.expr)
+    return(x)
+  }) %>%
+  dplyr::filter(mx.mn.expr > methyl.beta) %>%
+  dplyr::select(feature, from.state, from.mn.expr, to.state, to.mn.expr, Assay, adj.P.value, logFC, changeBETA) 
 
-# Get splicing differential expression results from synapse
-diffexp$splicing = downloadFile(diffexp.id['splicing']) %>%
-  dplyr::select(-one_of('feature')) %>%
-  plyr::rename(c('Minor-Isoform' = 'feature')) %>%
-  tidyr::separate(Comparison, into = c('V1','Comparison','V3'), sep = '\\__') %>%
-  dplyr::filter(adj.P.value <= pval.th & abs(changePSI) >= splicing.changePSI.th & Comparison %in% Comparisons) %>%
-  dplyr::select(feature, Comparison, adj.P.value, logFC, changePSI) 
-
-diffexp = rbindlist(diffexp, use.names = T, fill = T, idcol = 'Assay') %>%
-  tidyr::separate(Comparison, c('from.state','to.state'), sep = '_vs_')
+diffexp = rbindlist(diffexp, use.names = T, fill = T)
 
 diffexp = rbindlist(list(diffexp,
                          diffexp %>%
-                           dplyr::rename(to.state = from.state, from.state = to.state) %>%
+                           dplyr::rename(to.state = from.state, from.state = to.state,
+                                         to.mn.expr = from.mn.expr, from.mn.expr = to.mn.expr) %>%
                            dplyr::mutate(
-                             logFC = -logFC, changeBETA = -changeBETA, changePSI = -changePSI)),
+                             logFC = -logFC, changeBETA = -changeBETA)),
                     use.names = T, fill =T) %>%
   dplyr::mutate(Direction = logFC/abs(logFC))
 ```
@@ -191,12 +225,16 @@ Filter miRNAs and methylation probes that are differentially expressed as well a
 # Combine diffexp with literature specific interactions
 diffexp.int = inner_join(all.int,
                          diffexp %>%
-                           dplyr::rename(feature.assay = Assay, feature.fdr = adj.P.value, feature.lfc = logFC, 
-                                         feature.cb = changeBETA, feature.psi = changePSI, feature.direction = Direction)) %>%
+                           dplyr::select(-from.mn.expr,-to.mn.expr) %>%
+                           dplyr::rename(feature.assay = Assay, feature.fdr = adj.P.value, 
+                                         feature.lfc = logFC, feature.cb = changeBETA, 
+                                         feature.direction = Direction)) %>%
   inner_join(diffexp %>%
-               dplyr::rename(target = feature, target.assay = Assay, target.fdr = adj.P.value, target.lfc = logFC, 
-                             target.cb = changeBETA, target.psi = changePSI, target.direction = Direction)) %>%
-  filter(feature.direction != target.direction)
+               dplyr::select(-from.mn.expr,-to.mn.expr) %>%
+               dplyr::rename(target = feature, target.assay = Assay, 
+                             target.fdr = adj.P.value, target.lfc = logFC, 
+                             target.cb = changeBETA, target.direction = Direction)) %>%
+  filter(feature.assay %in% c('methyl','mirna'), feature.direction != target.direction)
 
 writeLines('Number of active miRNAs and methylation probes are')
 group_by(diffexp.int, from.state, feature.assay, feature.direction) %>%
