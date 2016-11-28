@@ -448,21 +448,21 @@ all.graphs = all.int %>%
   })
 all.graphs[c(1:2)] = NULL
 
-# Extract signatures
-signatures = dlply(state.specific.signatures, .(from.to.state), .fun = function(x){unique(x$feature)})
-
-# Perform key regulator analysis (unweighted)
-key.regulators.unw = mapply(function(g, G){
-  regulatorAnalysis.directed(g, G, h=4, FDR = 0.05)
-}, all.graphs, signatures[names(all.graphs)], SIMPLIFY = F)
-names(key.regulators.unw) = names(all.graphs)
-
-# Store results to synapse
-save(list = 'key.regulators.unw', file = 'kye.regulators.unw.RData')
-obj = File('kye.regulators.unw.RData', name = 'Key Regulators UnWeighted', parentId = CODE$properties$id)
-obj = synStore(obj, activityName = 'Scoring network nodes', 
-               executed = thisFile, 
-               used = as.character(ALL_USED_IDs))
+# # Extract signatures
+# signatures = dlply(state.specific.signatures, .(from.to.state), .fun = function(x){unique(x$feature)})
+# 
+# # Perform key regulator analysis (unweighted)
+# key.regulators.unw = mapply(function(g, G){
+#   regulatorAnalysis.directed(g, G, h=4, FDR = 0.05)
+# }, all.graphs, signatures[names(all.graphs)], SIMPLIFY = F)
+# names(key.regulators.unw) = names(all.graphs)
+# 
+# # Store results to synapse
+# save(list = 'key.regulators.unw', file = 'kye.regulators.unw.RData')
+# obj = File('kye.regulators.unw.RData', name = 'Key Regulators UnWeighted', parentId = CODE$properties$id)
+# obj = synStore(obj, activityName = 'Scoring network nodes', 
+#                executed = thisFile, 
+#                used = as.character(ALL_USED_IDs))
 ```
 
 Weighted scoring of network nodes (based on pvalue)
@@ -477,18 +477,18 @@ weighted.signatures = lapply(names(signatures), function(x, Signatures, DiffExp)
 }, signatures, diffexp)
 names(weighted.signatures) = names(signatures)
 
-# Perform key regulator analysis (weighted)
-key.regulators.w = mapply(function(g, G){
-  regulatorAnalysis.directed_weighted(g, G, h = 4, n = 100, FDR = 0.05)
-}, all.graphs, weighted.signatures[names(all.graphs)], SIMPLIFY = F)
-names(key.regulators.w) = names(all.graphs)
-
-# Store results to synapse
-save(list = 'key.regulators.w', file = 'key.regulators.w.RData')
-obj = File('key.regulators.w.RData', name = 'Key Regulators Weighted', parentId = CODE$properties$id)
-obj = synStore(obj, activityName = 'Scoring network nodes', 
-               executed = thisFile, 
-               used = as.character(ALL_USED_IDs))
-
-stopCluster(cl)
+# # Perform key regulator analysis (weighted)
+# key.regulators.w = mapply(function(g, G){
+#   regulatorAnalysis.directed_weighted(g, G, h = 4, n = 100, FDR = 0.05)
+# }, all.graphs, weighted.signatures[names(all.graphs)], SIMPLIFY = F)
+# names(key.regulators.w) = names(all.graphs)
+# 
+# # Store results to synapse
+# save(list = 'key.regulators.w', file = 'key.regulators.w.RData')
+# obj = File('key.regulators.w.RData', name = 'Key Regulators Weighted', parentId = CODE$properties$id)
+# obj = synStore(obj, activityName = 'Scoring network nodes', 
+#                executed = thisFile, 
+#                used = as.character(ALL_USED_IDs))
+# 
+# stopCluster(cl)
 ```

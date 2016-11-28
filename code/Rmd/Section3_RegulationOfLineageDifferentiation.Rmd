@@ -80,6 +80,21 @@ CODE <- synStore(CODE)
 ```
 
 ### Data download from synapse
+#### Get covariates from synapse
+```{r covars, include=FALSE}
+covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669')
+covariates.table.id = c(mrna = 'syn3156503', mirna = 'syn3219876', methyl = 'syn3156828')
+ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
+covariates = lapply(covariates.id, downloadFile)
+covariates.table = lapply(covariates.table.id, function(x){
+  synTableQuery(paste('select UID,C4_Cell_Line_ID from',x))@values
+})
+
+covariates = mapply(function(x,y){
+  left_join(x,y)
+},covariates, covariates.table)
+```
+
 #### Get raw logCPM counts from synapse
 ```{r getRawCount, include=FALSE}
 expr.id = c(mrna = 'syn5011095', mirna = 'syn5014454', methyl = 'syn4487642')
@@ -96,21 +111,6 @@ expr.mean = mapply(function(cov, exp){
     tidyr::gather(state, mn.expr, -feature)
 }, covariates, expr, SIMPLIFY = F) %>%
   rbindlist(idcol = 'Assay')
-```
-
-#### Get covariates from synapse
-```{r covars, include=FALSE}
-covariates.id = c(mrna = 'syn5011149', mirna = 'syn5014460', methyl = 'syn4487669')
-covariates.table.id = c(mrna = 'syn3156503', mirna = 'syn3219876', methyl = 'syn3156828')
-ALL_USED_IDs = c(ALL_USED_IDs, as.character(covariates.id), as.character(covariates.table.id))
-covariates = lapply(covariates.id, downloadFile)
-covariates.table = lapply(covariates.table.id, function(x){
-  synTableQuery(paste('select UID,C4_Cell_Line_ID from',x))@values
-})
-
-covariates = mapply(function(x,y){
-  left_join(x,y)
-},covariates, covariates.table)
 ```
 
 #### Get all possible TFs from synapse
