@@ -206,17 +206,22 @@ diffexp = rbindlist(list(diffexp,
 
 ### Results
 #### Summarise differential expression results
-Following are the unique set of molecular features extracted from the 21 different comparisons between 7 differentiation stages
+Following are the unique set of molecular features extracted from the 6 different comparisons between Sc and one of the 6 differentiation stages
 ```{r diffexp.summary}
-writeLines('Number of entities that are differentially expressed in our data are')
-group_by(diffexp, from.state, Assay, Direction) %>%
+writeLines('Number of entities that are differentially expressed between SC and anyother differentiation state are')
+diffexp %>%
+  filter(from.state == 'SC') %>%
+  group_by(to.state, Assay, Direction) %>%
   summarise(count = length(unique(feature))) %>%
-  tidyr::spread(from.state, count) %>%
   dplyr::mutate(Direction = factor(Direction, labels = c('-1' = 'Down', '1' = 'Up'))) %>%
+  tidyr::unite(Assay.Direction, Assay, Direction) %>%
+  tidyr::spread(Assay.Direction, count) %>%
   kable
 
 writeLines('Overall combining 7 differentiation stages following features are differentially expressed atleast in one comparison')
-group_by(diffexp, Assay) %>%
+diffexp %>%
+  filter(from.state == 'SC') %>%
+  group_by(Assay) %>%
   summarise(count = length(unique(feature))) %>%
   kable
 ```

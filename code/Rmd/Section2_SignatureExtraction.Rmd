@@ -255,6 +255,16 @@ kable(specific.signatures %>%
         group_by(from.state, feature.assay, feature.direction) %>%
         summarise(ncount = length(unique(feature))) %>%
         spread(from.state, ncount))
+
+tmp = specific.signatures %>%
+  group_by(from.state, feature.assay, feature.direction) %>%
+  summarise(ncount = length(unique(feature)))
+
+tmp1 = specific.signatures %>%
+  group_by(from.state, feature.assay, feature.direction) %>%
+  summarise(features = paste(unique(feature), collapse = ', ')) %>%
+  left_join(tmp, .)
+
 ```
 Following are the visualisations of these signatures
 

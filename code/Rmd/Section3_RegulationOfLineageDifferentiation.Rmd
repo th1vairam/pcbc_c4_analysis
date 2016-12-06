@@ -229,8 +229,9 @@ coexpression = downloadFile(coexp.id) %>%
       return(filter(x, coexpression <= 0))
     else
       return(x)
-  }) %>%
-  dplyr::filter(!(from.state %in% c('EB','MESO5')))
+  }) 
+# %>%
+#   dplyr::filter(!(from.state %in% c('EB','MESO5')))
 
 writeLines('Total number of possible interactions between assays are')
 coexpression %>%
@@ -326,6 +327,30 @@ obj = synStore(obj,
                activityName = 'Network Identification', 
                executed = thisFile, 
                used = as.character(ALL_USED_IDs))
+
+
+# Plot percent regulators
+tmp = filter(all.int, from.state == 'SC', feature != 'NONE') %>%
+  group_by(to.state, target.assay, target.direction) %>%
+  summarise(count = length(unique(target)))
+
+tmp1 = all.int
+tmp1$target.assay[tmp1$target.assay == 'TF'] = 'mrna'
+tmp1 = filter(tmp1, from.state == 'SC', feature != 'NONE') %>%
+  group_by(to.state, feature.assay, target.assay, target.direction) %>%
+  summarise(ncount = length(unique(target)))
+
+tmp2 = left_join(tmp1, tmp) %>%
+  as.data.frame %>%
+  dplyr::mutate(percent = ncount/count*100) %>%
+  filter(target.assay != 'mirna') %>%
+  dplyr::mutate(feature.assay = factor(feature.assay, labels = c('methyl' = 'DNA Methylation', 'mirna' = 'miRNA', 'TF' = 'TF')),
+                target.direction = factor(target.direction, labels = c('-1' = 'DOWN', '1' = 'UP')))
+p = ggplot(tmp2, aes(x = to.state, y = percent, fill = to.state)) + geom_bar(stat = 'identity') 
+p = p + facet_grid(feature.assay~.+target.direction, scale = 'free')
+p = p + ggtitle('Relative control of mRNA') + ylab('Percentage of genes in the network') + xlab('Lineage Stage')
+p = p + theme(legend.position = 'NONE')
+p
 ```
 
 ### Network analysis
